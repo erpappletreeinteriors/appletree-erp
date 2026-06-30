@@ -362,6 +362,12 @@ font-weight:500;}
 .kpi.b::after{background:var(--blue);}
 .kpi.v::after{background:var(--violet);}
 .kpi.t::after{background:var(--teal);}
+
+@keyframes mchFlash{
+  0%{box-shadow:0 0 0 3px var(--gold);background:var(--gold-pale);}
+  100%{box-shadow:0 0 0 0px transparent;background:var(--white);}
+}
+.mch-flash{animation:mchFlash 1.8s ease-out;}
 .kpi-label{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
 .kpi-val{font-family:'Manrope',sans-serif;font-size:24px;line-height:1;color:var(--dark);margin-bottom:4px;}
 .kpi-sub{font-size:10.5px;color:var(--muted);}
@@ -646,12 +652,6 @@ textarea.inp{resize:vertical;min-height:72px;}
         <div class="sub" style="margin-top:2px">Operations ERP</div>
       </div>
     </div>
-  </div>
-
-  <div class="sb-proj">
-    <select id="globalProject" onchange="onProjectChange()">
-      <option value="">— Select Project —</option>
-    </select>
   </div>
 
   <nav class="sb-nav">
@@ -2834,11 +2834,7 @@ function renderPage(pg){
 
 // Populate all project selectors
 function populateGlobalProjectDropdowns(){
-  const sel=document.getElementById('globalProject');
   const pjs=DB.projects;
-  // Sync sidebar project dropdown
-  sel.innerHTML='<option value="">— Select Project —</option>'+
-    pjs.map(p=>`<option value="${p.id}" ${sel.value===p.id?'selected':''}>${p.client} (${p.code})</option>`).join('');
 
   // All in-page selects with project options
   ['prod-proj-filter','lab-proj-f','exp-proj-f','iss-proj-f','ret-proj-f',
@@ -2871,15 +2867,6 @@ function populateGlobalProjectDropdowns(){
   }
 }
 
-function onProjectChange(){
-  const v=document.getElementById('globalProject').value;
-  if(!v)return;
-  // Pre-select this project in sub-dropdowns
-  ['prod-proj-filter','lab-proj-f','exp-proj-f','iss-proj-f','ret-proj-f','qc-proj-f'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el){el.value=v;}
-  });
-}
 
 // ═══════════════════════════════════════════
 //  TABLE HELPERS
@@ -5941,8 +5928,22 @@ function boqSave(navigateBack){
   q.notes    = document.getElementById('boq-notes')?.value  ||'';
   document.getElementById('boq-title').textContent = q.customer || 'Quotation';
   document.getElementById('boq-sub').textContent   = q.refNo + ' · ' + q.status;
+
+  // Automation: creating a quotation for a lead moves that lead to "Quoted",
+  // unless it's already further along the pipeline (Won/Lost/Quoted).
+  if(q.customer){
+    const lead = DB.leads.find(l=>l.name.trim().toLowerCase()===q.customer.trim().toLowerCase());
+    if(lead && !['Quoted','Won','Lost'].includes(lead.status)){
+      lead.status = 'Quoted';
+      toast(`Quotation saved ✓ — lead "${lead.name}" moved to Quoted`,'ok');
+    } else {
+      toast('Quotation saved ✓','ok');
+    }
+  } else {
+    toast('Quotation saved ✓','ok');
+  }
+
   saveDB();
-  toast('Quotation saved ✓','ok');
   if(navigateBack) nav('quotations', null);
 }
 
@@ -6722,6 +6723,17 @@ function autoCreateJobs(){
 // ═══════════════════════════════════════════
 //  MES — MACHINES
 // ═══════════════════════════════════════════
+// Returns {dueDate, daysLeft, level} where level is 'ok'|'soon'|'overdue'
+function machineMaintStatus(m){
+  const interval = m.maintIntervalDays || 60;
+  if(!m.lastMaint) return {dueDate:null, daysLeft:null, level:'unknown'};
+  const due = new Date(m.lastMaint);
+  due.setDate(due.getDate() + interval);
+  const daysLeft = Math.ceil((due - new Date()) / 86400000);
+  const level = daysLeft < 0 ? 'overdue' : daysLeft <= 7 ? 'soon' : 'ok';
+  return {dueDate:due, daysLeft, level};
+}
+
 function renderMachines(){
   const grid = document.getElementById('machines-grid');
   if(!DB.machines.length){grid.innerHTML='<div class="empty"><div class="ei">🔧</div><p>No machines added yet.</p></div>';return;}
@@ -6732,12 +6744,29 @@ function renderMachines(){
     const activeOp = DB.mfgOps.find(o=>o.machineId===m.id&&o.status==='In Progress');
     const activeJob = activeOp ? DB.mfgJobs.find(j=>j.id===activeOp.jobId) : null;
     const activeProd = activeJob ? DB.products.find(p=>p.id===activeJob.productId) : null;
-    return `<div style="background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden">
+
+    const maint = machineMaintStatus(m);
+    let maintStyle;
+    if(maint.level==='overdue'){
+      maintStyle = {bg:'var(--red-l)',border:'var(--red-b)',color:'var(--red)',icon:'🛑',
+        text:`Maintenance overdue by ${Math.abs(maint.daysLeft)} day${Math.abs(maint.daysLeft)===1?'':'s'}`};
+    } else if(maint.level==='soon'){
+      maintStyle = {bg:'var(--amber-l)',border:'var(--amber-b)',color:'var(--amber)',icon:'🛢️',
+        text: maint.daysLeft===0?'Maintenance due today':`Maintenance due in ${maint.daysLeft} day${maint.daysLeft===1?'':'s'}`};
+    } else if(maint.level==='ok'){
+      maintStyle = {bg:'var(--green-l)',border:'var(--green-b)',color:'var(--green)',icon:'✅',
+        text:`Next service: ${fmtDate(maint.dueDate.toISOString().slice(0,10))}`};
+    } else {
+      maintStyle = {bg:'var(--border2)',border:'var(--border)',color:'var(--muted)',icon:'❔',
+        text:'No maintenance date on record'};
+    }
+
+    return `<div id="mch-card-${m.id}" style="background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden">
       <div style="background:${bgColor};padding:14px 16px;display:flex;align-items:center;gap:10px">
         <div style="width:10px;height:10px;border-radius:50%;background:${stColor};flex-shrink:0"></div>
         <div>
-          <div style="font-weight:700;font-size:14px;color:var(--dark)">${m.name}</div>
-          <div style="font-size:10px;color:var(--muted)">${m.type} · ${m.make} ${m.model}</div>
+          <div style="font-weight:700;font-size:14px;color:var(--dark)">${escHtml(m.name)}</div>
+          <div style="font-size:10px;color:var(--muted)">${escHtml(m.type)} · ${escHtml(m.make)} ${escHtml(m.model)}</div>
         </div>
         <div style="margin-left:auto;display:flex;gap:4px">
           ${editBtn('editMachine',m.id)}
@@ -6746,9 +6775,13 @@ function renderMachines(){
       <div style="padding:12px 16px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px">
           <div><span class="muted">Status</span><br><strong style="color:${stColor}">${m.status}</strong></div>
-          <div><span class="muted">Operator</span><br><strong>${m.operator||'—'}</strong></div>
+          <div><span class="muted">Operator</span><br><strong>${escHtml(m.operator)||'—'}</strong></div>
           <div><span class="muted">Last Maintenance</span><br><strong>${fmtDate(m.lastMaint)}</strong></div>
-          <div><span class="muted">Current Job</span><br><strong>${activeProd?activeProd.name:'Idle'}</strong></div>
+          <div><span class="muted">Current Job</span><br><strong>${activeProd?escHtml(activeProd.name):'Idle'}</strong></div>
+        </div>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:8px;background:${maintStyle.bg};border:1px solid ${maintStyle.border};border-radius:var(--r-sm);padding:8px 10px">
+          <span style="font-size:14px">${maintStyle.icon}</span>
+          <span style="font-size:11px;font-weight:600;color:${maintStyle.color}">${maintStyle.text}</span>
         </div>
         <div style="margin-top:10px;display:flex;gap:6px">
           <button class="btn btn-outline btn-xs" onclick="setMachineStatus('${m.id}','Running')">▶ Running</button>
@@ -6940,10 +6973,13 @@ function openModal_machine(){
       </select></div>
       <div class="fg"><label class="fl">Last Maintenance</label><input class="inp" type="date" id="f-mch-maint"></div>
     </div>
-    <div class="fg"><label class="fl">Default Operator</label><select class="inp" id="f-mch-op">
-      <option value="">— None —</option>
-      ${DB.workers.map(w=>`<option>${w.name}</option>`).join('')}
-    </select></div>`;
+    <div class="f2">
+      <div class="fg"><label class="fl">Default Operator</label><select class="inp" id="f-mch-op">
+        <option value="">— None —</option>
+        ${DB.workers.map(w=>`<option>${w.name}</option>`).join('')}
+      </select></div>
+      <div class="fg"><label class="fl">Maintenance Interval (days)</label><input class="inp" type="number" id="f-mch-interval" placeholder="e.g. 60" value="60"></div>
+    </div>`;
   openOverlay();
 }
 
@@ -6959,11 +6995,14 @@ function editMachine(machId){
       </select></div>
       <div class="fg"><label class="fl">Last Maintenance</label><input class="inp" type="date" id="f-emch-maint" value="${m.lastMaint||''}"></div>
     </div>
-    <div class="fg"><label class="fl">Default Operator</label><select class="inp" id="f-emch-op">
-      <option value="">— None —</option>
-      ${DB.workers.map(w=>`<option ${m.operator===w.name?'selected':''}>${w.name}</option>`).join('')}
-    </select></div>
-    <div class="fg"><label class="fl">Notes</label><input class="inp" id="f-emch-notes" value="${m.notes||''}"></div>`;
+    <div class="f2">
+      <div class="fg"><label class="fl">Default Operator</label><select class="inp" id="f-emch-op">
+        <option value="">— None —</option>
+        ${DB.workers.map(w=>`<option ${m.operator===w.name?'selected':''}>${w.name}</option>`).join('')}
+      </select></div>
+      <div class="fg"><label class="fl">Maintenance Interval (days)</label><input class="inp" type="number" id="f-emch-interval" value="${m.maintIntervalDays||60}"></div>
+    </div>
+    <div class="fg"><label class="fl">Notes</label><input class="inp" id="f-emch-notes" value="${escHtml(m.notes||'')}"></div>`;
   openOverlay();
 }
 
@@ -6994,12 +7033,21 @@ openModal = function(type){
 
 function saveMachine(){
   const name = g('f-mch-name'); if(!name){toast('Machine name required','err');return;}
+  const newId = 'MCH'+uid();
   DB.machines.push({
-    id:'MCH'+uid(), name, type:g('f-mch-type'), make:g('f-mch-make'),
+    id:newId, name, type:g('f-mch-type'), make:g('f-mch-make'),
     model:g('f-mch-model'), status:g('f-mch-status')||'Idle',
-    operator:g('f-mch-op'), lastMaint:g('f-mch-maint'), notes:''
+    operator:g('f-mch-op'), lastMaint:g('f-mch-maint'),
+    maintIntervalDays:+g('f-mch-interval')||60, notes:''
   });
-  closeModal(); toast('Machine added ✓','ok'); renderMachines();
+  closeModal(); toast('Machine added ✓','ok');
+  renderMachines();
+  // Make the newly added card unmistakable — it lands at the end of the
+  // grid, which is easy to miss and gets mistaken for "didn't save".
+  setTimeout(()=>{
+    const card = document.getElementById('mch-card-'+newId);
+    if(card){ card.scrollIntoView({behavior:'smooth',block:'center'}); card.classList.add('mch-flash'); }
+  },50);
 }
 
 function saveEditMfgJob(jobId){
@@ -7923,6 +7971,7 @@ function saveEditMachine(machId){
   m.status   = g('f-emch-status');
   m.lastMaint= g('f-emch-maint');
   m.operator = g('f-emch-op');
+  m.maintIntervalDays = +g('f-emch-interval')||60;
   m.notes    = g('f-emch-notes');
   closeModal(); toast('Machine updated ✓','ok'); renderMachines();
 }
