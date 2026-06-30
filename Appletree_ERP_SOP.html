@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Appletree Interiors ERP — SOP & Process Flowchart</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Manrope',Arial,sans-serif;color:#1A1612;background:#fff;font-size:11pt}
+
+  /* ── PRINT SETTINGS ── */
+  @media print{
+    @page{size:A4;margin:14mm 16mm}
+    .page-break{page-break-before:always}
+    .no-print{display:none}
+    body{font-size:10pt}
+    .cover{min-height:unset;height:100vh}
+  }
+
+  /* ── COVER PAGE ── */
+  .cover{min-height:100vh;background:linear-gradient(160deg,#1A1612 60%,#2E2720);color:#fff;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:60px 40px;position:relative}
+  .cover-logo{font-size:44px;font-weight:800;letter-spacing:-.02em;margin-bottom:8px}
+  .cover-logo span{color:#C3B152}
+  .cover-sub{font-size:11px;letter-spacing:.25em;text-transform:uppercase;color:#9D9A91;margin-bottom:48px}
+  .cover-title{font-size:28px;font-weight:800;color:#C3B152;margin-bottom:10px;letter-spacing:-.01em}
+  .cover-doc{font-size:14px;color:#9D9A91;margin-bottom:48px}
+  .cover-meta{font-size:10px;color:#9D9A91;letter-spacing:.08em;border-top:1px solid rgba(255,255,255,.1);padding-top:20px;width:100%;text-align:center}
+  .cover-badge{display:inline-block;background:#C3B152;color:#1A1612;font-size:10px;font-weight:700;padding:4px 14px;border-radius:20px;margin-bottom:32px;letter-spacing:.08em;text-transform:uppercase}
+
+  /* ── TOC ── */
+  .toc{padding:40px}
+  .toc h2{font-size:18px;font-weight:800;color:#1A1612;border-bottom:3px solid #C3B152;padding-bottom:10px;margin-bottom:20px}
+  .toc-item{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dotted #ddd;font-size:11px}
+  .toc-item.section{font-weight:700;color:#1A1612;margin-top:10px;font-size:12px}
+  .toc-item.sub{padding-left:20px;color:#555}
+  .toc-num{color:#C3B152;font-weight:700}
+
+  /* ── SECTION HEADERS ── */
+  .section-hd{background:#1A1612;color:#fff;padding:16px 24px;margin-bottom:0}
+  .section-hd h2{font-size:15px;font-weight:800;color:#C3B152;letter-spacing:.02em}
+  .section-hd p{font-size:10px;color:#9D9A91;margin-top:3px}
+  .section-body{padding:20px 24px}
+
+  /* ── FLOWCHART SVG WRAPPER ── */
+  .flowchart-wrap{background:#FAF7F2;border:1px solid #E6DDD0;border-radius:8px;padding:20px;margin:16px 0;overflow:visible}
+  .flowchart-wrap svg{width:100%;height:auto;display:block}
+
+  /* ── SOP CARDS ── */
+  .sop-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+  .sop-card{border:1px solid #E6DDD0;border-radius:8px;overflow:hidden}
+  .sop-card-hd{background:#F0E9DE;padding:10px 14px;display:flex;align-items:center;gap:10px}
+  .sop-card-hd .icon{font-size:18px}
+  .sop-card-hd .label{font-size:12px;font-weight:800;color:#1A1612}
+  .sop-card-hd .role{font-size:9px;color:#9D9A91;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-top:1px}
+  .sop-card-body{padding:12px 14px}
+  .sop-steps{list-style:none;padding:0}
+  .sop-steps li{padding:4px 0 4px 20px;position:relative;font-size:10px;color:#333;line-height:1.5;border-bottom:1px solid #F5F0EA}
+  .sop-steps li:last-child{border-bottom:none}
+  .sop-steps li::before{content:counter(step);counter-increment:step;position:absolute;left:0;background:#C3B152;color:#1A1612;font-size:8px;font-weight:800;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;top:5px}
+  .sop-steps{counter-reset:step}
+  .sop-io{display:flex;gap:8px;margin-top:10px}
+  .sop-io-box{flex:1;background:#FAF7F2;border-radius:6px;padding:8px 10px;font-size:9px}
+  .sop-io-box .io-label{font-weight:700;color:#9D9A91;text-transform:uppercase;letter-spacing:.08em;font-size:8px;margin-bottom:4px}
+  .sop-io-box .io-val{color:#333;line-height:1.5}
+
+  /* ── ROLE MATRIX ── */
+  .role-table{width:100%;border-collapse:collapse;font-size:9.5px;margin:12px 0}
+  .role-table th{background:#1A1612;color:#C3B152;padding:8px 10px;text-align:left;font-weight:700;font-size:9px;letter-spacing:.06em;text-transform:uppercase}
+  .role-table td{padding:7px 10px;border-bottom:1px solid #F0E9DE;vertical-align:top}
+  .role-table tr:nth-child(even) td{background:#FAF7F2}
+  .check{color:#1E8449;font-weight:700;text-align:center}
+  .cross{color:#ddd;text-align:center}
+
+  /* ── CODE REFERENCE TABLE ── */
+  .code-table{width:100%;border-collapse:collapse;font-size:10px;margin:12px 0}
+  .code-table th{background:#C3B152;color:#1A1612;padding:7px 12px;font-weight:800;font-size:9px;letter-spacing:.06em;text-transform:uppercase}
+  .code-table td{padding:6px 12px;border-bottom:1px solid #F0E9DE;font-family:'Courier New',monospace}
+  .code-table td:first-child{font-weight:700;color:#1A1612}
+  .code-table td:nth-child(2){color:#C3B152}
+  .code-table td:nth-child(3){font-family:'Manrope',Arial,sans-serif;font-size:9.5px;color:#555}
+
+  /* ── ALERTS / NOTES ── */
+  .note{background:#FEF9EC;border-left:4px solid #C3B152;padding:10px 14px;border-radius:0 6px 6px 0;font-size:10px;color:#5A4E2A;margin:10px 0}
+  .warn{background:#FEF2F2;border-left:4px solid #C0392B;padding:10px 14px;border-radius:0 6px 6px 0;font-size:10px;color:#7B1A1A;margin:10px 0}
+
+  /* ── FLOW STEP LEGEND ── */
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0;font-size:9px}
+  .legend-item{display:flex;align-items:center;gap:6px}
+  .legend-box{width:14px;height:14px;border-radius:3px;flex-shrink:0}
+
+  /* ── PAGE CONTENT ── */
+  .page{padding:0;margin-bottom:0}
+  h3{font-size:13px;font-weight:800;color:#1A1612;margin:16px 0 8px}
+  h4{font-size:11px;font-weight:700;color:#5A4E2A;margin:12px 0 6px;border-bottom:1px solid #E6DDD0;padding-bottom:4px}
+  p{font-size:10.5px;line-height:1.6;color:#333;margin-bottom:8px}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     COVER PAGE
+══════════════════════════════════════ -->
+<div class="cover">
+  <div class="cover-logo">🍎 Appletree <span>Interiors</span></div>
+  <div class="cover-sub">Premium Interior Design &amp; Manufacturing</div>
+  <div class="cover-badge">Internal Document</div>
+  <div class="cover-title">ERP System — Standard Operating Procedures</div>
+  <div class="cover-doc">Detailed Process Flowchart &amp; Module-wise SOP Guide</div>
+  <div style="display:flex;gap:40px;margin:32px 0;font-size:11px;color:#9D9A91">
+    <div><div style="color:#C3B152;font-weight:700;font-size:18px">12</div>Modules</div>
+    <div><div style="color:#C3B152;font-weight:700;font-size:18px">7</div>User Roles</div>
+    <div><div style="color:#C3B152;font-weight:700;font-size:18px">End-to-End</div>Process Flow</div>
+  </div>
+  <div class="cover-meta">
+    Appletree Interiors &nbsp;|&nbsp; sales.appletreeinteriors@gmail.com &nbsp;|&nbsp; Version 2.1 &nbsp;|&nbsp; 2026
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     TABLE OF CONTENTS
+══════════════════════════════════════ -->
+<div class="page page-break">
+  <div class="section-hd"><h2>Table of Contents</h2></div>
+  <div class="toc">
+    <div class="toc-item section"><span>1. System Overview &amp; End-to-End Flow</span><span class="toc-num">3</span></div>
+    <div class="toc-item section"><span>2. Module SOPs</span><span class="toc-num">4</span></div>
+    <div class="toc-item sub"><span>2.1 Lead &amp; Enquiry Management</span><span>4</span></div>
+    <div class="toc-item sub"><span>2.2 Quotation &amp; BOQ Builder</span><span>4</span></div>
+    <div class="toc-item sub"><span>2.3 Project Creation</span><span>5</span></div>
+    <div class="toc-item sub"><span>2.4 Bill of Materials (BOM) &amp; Budget</span><span>5</span></div>
+    <div class="toc-item sub"><span>2.5 Milestones &amp; Payment Schedule</span><span>6</span></div>
+    <div class="toc-item sub"><span>2.6 Purchase Orders &amp; Procurement</span><span>6</span></div>
+    <div class="toc-item sub"><span>2.7 Warehouse &amp; Stock Management</span><span>7</span></div>
+    <div class="toc-item sub"><span>2.8 Material Requests &amp; Issues</span><span>7</span></div>
+    <div class="toc-item sub"><span>2.9 Manufacturing Jobs &amp; Job Cards</span><span>8</span></div>
+    <div class="toc-item sub"><span>2.10 Quality Control (QC)</span><span>8</span></div>
+    <div class="toc-item sub"><span>2.11 Site Delivery &amp; Installation</span><span>9</span></div>
+    <div class="toc-item sub"><span>2.12 Invoicing &amp; Collections</span><span>9</span></div>
+    <div class="toc-item section"><span>3. Role &amp; Access Matrix</span><span class="toc-num">10</span></div>
+    <div class="toc-item section"><span>4. Auto-Generated Code Reference</span><span class="toc-num">11</span></div>
+    <div class="toc-item section"><span>5. Key Business Rules</span><span class="toc-num">11</span></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     SECTION 1: SYSTEM OVERVIEW FLOWCHART
+══════════════════════════════════════ -->
+<div class="page page-break">
+  <div class="section-hd">
+    <h2>1. System Overview — End-to-End Process Flow</h2>
+    <p>Complete journey from first client enquiry to final payment collection</p>
+  </div>
+  <div class="section-body">
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-box" style="background:#2563EB"></div>CRM &amp; Sales</div>
+      <div class="legend-item"><div class="legend-box" style="background:#1A1612"></div>Projects</div>
+      <div class="legend-item"><div class="legend-box" style="background:#7B3FA0"></div>Inventory</div>
+      <div class="legend-item"><div class="legend-box" style="background:#1E6B3C"></div>Factory / MES</div>
+      <div class="legend-item"><div class="legend-box" style="background:#B7770D"></div>Site</div>
+      <div class="legend-item"><div class="legend-box" style="background:#C0392B"></div>Finance</div>
+      <div class="legend-item"><div class="legend-box" style="background:#C3B152"></div>Decision / Gate</div>
+    </div>
+
+    <!-- MAIN FLOWCHART SVG -->
+    <div class="flowchart-wrap">
+    <svg viewBox="0 0 750 1100" xmlns="http://www.w3.org/2000/svg" font-family="Manrope,Arial,sans-serif">
+      <defs>
+        <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#555"/>
+        </marker>
+        <marker id="arr-gold" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+          <polygon points="0 0,8 3,0 6" fill="#C3B152"/>
+        </marker>
+      </defs>
+
+      <!-- ── STEP 1: LEAD ── -->
+      <rect x="270" y="10" width="210" height="46" rx="8" fill="#2563EB"/>
+      <text x="375" y="28" text-anchor="middle" fill="#fff" font-size="11" font-weight="800">STEP 1: LEAD / ENQUIRY</text>
+      <text x="375" y="44" text-anchor="middle" fill="#93C5FD" font-size="9">CRM &amp; Sales → Leads &amp; Enquiries</text>
+
+      <!-- Arrow -->
+      <line x1="375" y1="56" x2="375" y2="76" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── STEP 2: QUOTATION ── -->
+      <rect x="270" y="76" width="210" height="46" rx="8" fill="#2563EB"/>
+      <text x="375" y="94" text-anchor="middle" fill="#fff" font-size="11" font-weight="800">STEP 2: QUOTATION (BOQ)</text>
+      <text x="375" y="110" text-anchor="middle" fill="#93C5FD" font-size="9">Room-wise itemised Bill of Quantities</text>
+
+      <!-- Arrow -->
+      <line x1="375" y1="122" x2="375" y2="142" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── DECISION: Approved? ── -->
+      <polygon points="375,142 480,168 375,194 270,168" fill="#C3B152"/>
+      <text x="375" y="163" text-anchor="middle" fill="#1A1612" font-size="10" font-weight="800">Client Approves?</text>
+      <text x="375" y="178" text-anchor="middle" fill="#1A1612" font-size="9">Status → Approved</text>
+
+      <!-- NO branch -->
+      <line x1="480" y1="168" x2="570" y2="168" stroke="#C0392B" stroke-width="1.5" marker-end="url(#arr)"/>
+      <rect x="570" y="153" width="100" height="30" rx="6" fill="#FEF2F2" stroke="#C0392B" stroke-width="1"/>
+      <text x="620" y="165" text-anchor="middle" fill="#C0392B" font-size="9" font-weight="700">Revise /</text>
+      <text x="620" y="178" text-anchor="middle" fill="#C0392B" font-size="9" font-weight="700">Mark Lost</text>
+      <text x="540" y="162" fill="#C0392B" font-size="9" font-weight="700">NO</text>
+
+      <!-- YES arrow -->
+      <line x1="375" y1="194" x2="375" y2="214" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+      <text x="385" y="208" fill="#1E6B3C" font-size="9" font-weight="700">YES</text>
+
+      <!-- ── STEP 3: PROJECT ── -->
+      <rect x="270" y="214" width="210" height="46" rx="8" fill="#1A1612"/>
+      <text x="375" y="232" text-anchor="middle" fill="#C3B152" font-size="11" font-weight="800">STEP 3: CREATE PROJECT</text>
+      <text x="375" y="248" text-anchor="middle" fill="#9D9A91" font-size="9">One-click convert from Quotation</text>
+
+      <line x1="375" y1="260" x2="375" y2="280" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── STEP 4: BOM ── -->
+      <rect x="270" y="280" width="210" height="46" rx="8" fill="#1A1612"/>
+      <text x="375" y="298" text-anchor="middle" fill="#C3B152" font-size="11" font-weight="800">STEP 4: BOM &amp; BUDGET</text>
+      <text x="375" y="314" text-anchor="middle" fill="#9D9A91" font-size="9">Materials + Labour + Costs + Milestones</text>
+
+      <line x1="375" y1="326" x2="375" y2="346" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── STEP 5: PO ── -->
+      <rect x="270" y="346" width="210" height="46" rx="8" fill="#7B3FA0"/>
+      <text x="375" y="364" text-anchor="middle" fill="#fff" font-size="11" font-weight="800">STEP 5: PURCHASE ORDER</text>
+      <text x="375" y="380" text-anchor="middle" fill="#E9D5FF" font-size="9">Raise PO → Vendor → Receive to Warehouse</text>
+
+      <line x1="375" y1="392" x2="375" y2="412" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── STEP 6: MATERIAL REQUEST ── -->
+      <rect x="270" y="412" width="210" height="46" rx="8" fill="#7B3FA0"/>
+      <text x="375" y="430" text-anchor="middle" fill="#fff" font-size="11" font-weight="800">STEP 6: MATERIAL REQUEST</text>
+      <text x="375" y="446" text-anchor="middle" fill="#E9D5FF" font-size="9">Factory raises MR → Auto-approve or manual</text>
+
+      <!-- Auto-approve branch -->
+      <line x1="480" y1="435" x2="570" y2="435" stroke="#C3B152" stroke-width="1.5" marker-end="url(#arr-gold)"/>
+      <rect x="570" y="420" width="110" height="30" rx="6" fill="#FEF9EC" stroke="#C3B152" stroke-width="1"/>
+      <text x="625" y="432" text-anchor="middle" fill="#5A4E2A" font-size="8.5" font-weight="700">Auto-Approved if</text>
+      <text x="625" y="444" text-anchor="middle" fill="#5A4E2A" font-size="8.5">qty &lt;= BOM budget</text>
+
+      <line x1="375" y1="458" x2="375" y2="478" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── STEP 7: MANUFACTURING ── -->
+      <rect x="270" y="478" width="210" height="46" rx="8" fill="#1E6B3C"/>
+      <text x="375" y="496" text-anchor="middle" fill="#fff" font-size="11" font-weight="800">STEP 7: MANUFACTURING</text>
+      <text x="375" y="512" text-anchor="middle" fill="#86EFAC" font-size="9">Job Cards → Operations → Worker Assignment</text>
+
+      <line x1="375" y1="524" x2="375" y2="544" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── STEP 8: QC ── -->
+      <rect x="270" y="544" width="210" height="46" rx="8" fill="#1E6B3C"/>
+      <text x="375" y="562" text-anchor="middle" fill="#fff" font-size="11" font-weight="800">STEP 8: QUALITY CHECK</text>
+      <text x="375" y="578" text-anchor="middle" fill="#86EFAC" font-size="9">QC Inspection → Pass / Fail</text>
+
+      <!-- QC fail branch -->
+      <line x1="270" y1="567" x2="160" y2="567" stroke="#C0392B" stroke-width="1.5" marker-end="url(#arr)"/>
+      <rect x="60" y="553" width="100" height="28" rx="6" fill="#FEF2F2" stroke="#C0392B" stroke-width="1"/>
+      <text x="110" y="565" text-anchor="middle" fill="#C0392B" font-size="9" font-weight="700">Rework /</text>
+      <text x="110" y="577" text-anchor="middle" fill="#C0392B" font-size="9" font-weight="700">Reject</text>
+      <text x="180" y="561" fill="#C0392B" font-size="9" font-weight="700">FAIL</text>
+
+      <line x1="375" y1="590" x2="375" y2="610" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+      <text x="385" y="605" fill="#1E6B3C" font-size="9" font-weight="700">PASS</text>
+
+      <!-- ── STEP 9: DELIVERY ── -->
+      <rect x="270" y="610" width="210" height="46" rx="8" fill="#B7770D"/>
+      <text x="375" y="628" text-anchor="middle" fill="#fff" font-size="11" font-weight="800">STEP 9: SITE DELIVERY</text>
+      <text x="375" y="644" text-anchor="middle" fill="#FDE68A" font-size="9">Dispatch → Delivery Log → Milestone trigger</text>
+
+      <line x1="375" y1="656" x2="375" y2="676" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── STEP 10: INSTALLATION ── -->
+      <rect x="270" y="676" width="210" height="46" rx="8" fill="#B7770D"/>
+      <text x="375" y="694" text-anchor="middle" fill="#fff" font-size="11" font-weight="800">STEP 10: INSTALLATION</text>
+      <text x="375" y="710" text-anchor="middle" fill="#FDE68A" font-size="9">Site work → Handover → Milestone trigger</text>
+
+      <line x1="375" y1="722" x2="375" y2="742" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── STEP 11: INVOICE ── -->
+      <rect x="270" y="742" width="210" height="46" rx="8" fill="#C0392B"/>
+      <text x="375" y="760" text-anchor="middle" fill="#fff" font-size="11" font-weight="800">STEP 11: INVOICE</text>
+      <text x="375" y="776" text-anchor="middle" fill="#FECACA" font-size="9">Milestone triggers → Raise Invoice → Send</text>
+
+      <line x1="375" y1="788" x2="375" y2="808" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── STEP 12: RECEIPT ── -->
+      <rect x="270" y="808" width="210" height="46" rx="8" fill="#C0392B"/>
+      <text x="375" y="826" text-anchor="middle" fill="#fff" font-size="11" font-weight="800">STEP 12: RECEIPT</text>
+      <text x="375" y="842" text-anchor="middle" fill="#FECACA" font-size="9">Record client payment → Outstanding reduced</text>
+
+      <line x1="375" y1="854" x2="375" y2="874" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+
+      <!-- ── STEP 13: REPORTS ── -->
+      <rect x="245" y="874" width="260" height="46" rx="8" fill="#374151"/>
+      <text x="375" y="892" text-anchor="middle" fill="#fff" font-size="11" font-weight="800">STEP 13: REPORTS &amp; VARIANCE</text>
+      <text x="375" y="908" text-anchor="middle" fill="#D1D5DB" font-size="9">P&amp;L · BOM Variance · Receivables · Payroll</text>
+
+      <!-- ── MILESTONE SIDE FLOW ── -->
+      <line x1="375" y1="920" x2="375" y2="940" stroke="#555" stroke-width="1.5" marker-end="url(#arr)"/>
+      <rect x="245" y="940" width="260" height="36" rx="8" fill="#C3B152"/>
+      <text x="375" y="953" text-anchor="middle" fill="#1A1612" font-size="11" font-weight="800">PROJECT COMPLETE</text>
+      <text x="375" y="967" text-anchor="middle" fill="#1A1612" font-size="9">Status → Completed · Archive</text>
+    </svg>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     SECTION 2: MODULE SOPs
+══════════════════════════════════════ -->
+<div class="page page-break">
+  <div class="section-hd">
+    <h2>2. Module-wise Standard Operating Procedures</h2>
+    <p>Step-by-step guide for each module with inputs, outputs and responsible roles</p>
+  </div>
+  <div class="section-body">
+
+    <h3>2.1 &nbsp; Lead &amp; Enquiry Management</h3>
+    <div class="sop-grid">
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">📋</div>
+          <div><div class="label">Logging a New Lead</div><div class="role">Role: Sales</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>CRM &amp; Sales → Leads &amp; Enquiries</strong></li>
+            <li>Click <strong>+ New Lead</strong></li>
+            <li>Enter: Client name, phone, email, location, requirement</li>
+            <li>Select source (Referral / Walk-in / Social / etc.)</li>
+            <li>Set initial status to <strong>New</strong></li>
+            <li>Save — lead code auto-generates (ENQ/001)</li>
+          </ol>
+          <div class="sop-io">
+            <div class="sop-io-box"><div class="io-label">Input</div><div class="io-val">Client contact, requirement details, source</div></div>
+            <div class="sop-io-box"><div class="io-label">Output</div><div class="io-val">Lead record with auto-code ENQ/001</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">🔄</div>
+          <div><div class="label">Follow-up &amp; Conversion</div><div class="role">Role: Sales</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Update lead status: New → Followed Up → Qualified</li>
+            <li>Add follow-up notes and next action date</li>
+            <li>If interested: create a <strong>Quotation</strong> from the lead</li>
+            <li>If not interested: mark as <strong>Lost</strong> with reason</li>
+            <li>Converted leads automatically link to the quotation</li>
+          </ol>
+          <div class="sop-io">
+            <div class="sop-io-box"><div class="io-label">Statuses</div><div class="io-val">New → Followed Up → Qualified → Converted / Lost</div></div>
+            <div class="sop-io-box"><div class="io-label">Output</div><div class="io-val">Qualified lead → triggers Quotation creation</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>2.2 &nbsp; Quotation &amp; BOQ Builder</h3>
+    <div class="sop-grid">
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">📐</div>
+          <div><div class="label">Creating a BOQ</div><div class="role">Role: Sales / CEO</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>CRM &amp; Sales → Quotations → Open BOQ</strong></li>
+            <li>Fill: Client name, site address, designer, validity</li>
+            <li>Click <strong>+ Add Room</strong> for each space (Bedroom, Kitchen…)</li>
+            <li>Within each room, add line items: Description, Unit, Qty, Rate</li>
+            <li>Amount auto-calculates per item; Grand Total updates live</li>
+            <li>Fill Terms: Payment terms, warranty, scope includes/excludes</li>
+            <li>Click <strong>Save</strong> — returns to Quotations list</li>
+          </ol>
+          <div class="sop-io">
+            <div class="sop-io-box"><div class="io-label">Input</div><div class="io-val">Room-wise items with qty &amp; rates</div></div>
+            <div class="sop-io-box"><div class="io-label">Output</div><div class="io-val">Quotation with auto ref STR/Q/001</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">👁</div>
+          <div><div class="label">Preview &amp; Send to Client</div><div class="role">Role: Sales / CEO</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>On the quotation list, click <strong>Preview</strong></li>
+            <li>Choose template: <strong>Classic / Modern / Minimal</strong></li>
+            <li>Review the formatted quotation document</li>
+            <li>Click <strong>Print / PDF</strong> → Save as PDF</li>
+            <li>Share PDF with client via email/WhatsApp</li>
+            <li>Update status to <strong>Sent</strong> after sharing</li>
+          </ol>
+          <div class="note">
+            <strong>Templates:</strong> Classic (dark gold), Modern (blue), Minimal (black &amp; white). Template choice persists during the session.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="page page-break">
+  <div class="section-body">
+
+    <h3>2.3 &nbsp; Project Creation</h3>
+    <div class="sop-grid">
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">🏗</div>
+          <div><div class="label">Convert Quotation to Project</div><div class="role">Role: CEO / Admin</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Set quotation status to <strong>Approved</strong></li>
+            <li>Click <strong>Convert to Project</strong> button on the quotation row</li>
+            <li>System auto-creates: Project code (P001), Client name, Contract value</li>
+            <li>All BOQ line items become <strong>Products</strong> under the project</li>
+            <li>Each product carries the quoted price from the BOQ</li>
+            <li>Project appears in <strong>Projects</strong> module with status: Planning</li>
+          </ol>
+          <div class="sop-io">
+            <div class="sop-io-box"><div class="io-label">Input</div><div class="io-val">Approved quotation</div></div>
+            <div class="sop-io-box"><div class="io-label">Output</div><div class="io-val">Project P001 + products with quoted prices</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">📦</div>
+          <div><div class="label">Adding Products Manually</div><div class="role">Role: CEO / Factory Supervisor</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Projects → Products</strong></li>
+            <li>Select the project from the filter dropdown</li>
+            <li>Click <strong>+ Add Product</strong> — project is pre-filled automatically</li>
+            <li>Enter: Product name, category, estimated cost, notes</li>
+            <li>Save — product linked to the current project</li>
+          </ol>
+          <div class="note">
+            <strong>Categories:</strong> Wardrobe, Kitchen, TV Unit, Study, Cot/Bed, Shoe Rack, Loft, Pooja Unit, Dining, Bathroom Vanity, Other.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>2.4 &nbsp; Bill of Materials (BOM) &amp; Budget</h3>
+    <div class="flowchart-wrap" style="padding:16px">
+      <svg viewBox="0 0 700 120" xmlns="http://www.w3.org/2000/svg" font-family="Manrope,Arial,sans-serif">
+        <defs><marker id="a2" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><polygon points="0 0,7 2.5,0 5" fill="#555"/></marker></defs>
+        <!-- Tab flow -->
+        <rect x="10" y="35" width="110" height="50" rx="6" fill="#1A1612"/>
+        <text x="65" y="56" text-anchor="middle" fill="#C3B152" font-size="10" font-weight="800">Material BOM</text>
+        <text x="65" y="70" text-anchor="middle" fill="#9D9A91" font-size="8">Items + Qty + Rate</text>
+        <text x="65" y="82" text-anchor="middle" fill="#9D9A91" font-size="8">Waste % auto-nets</text>
+
+        <line x1="120" y1="60" x2="140" y2="60" stroke="#555" stroke-width="1.5" marker-end="url(#a2)"/>
+
+        <rect x="140" y="35" width="110" height="50" rx="6" fill="#1A1612"/>
+        <text x="195" y="56" text-anchor="middle" fill="#C3B152" font-size="10" font-weight="800">Labour BOM</text>
+        <text x="195" y="70" text-anchor="middle" fill="#9D9A91" font-size="8">Work Centre</text>
+        <text x="195" y="82" text-anchor="middle" fill="#9D9A91" font-size="8">Hours x Rate</text>
+
+        <line x1="250" y1="60" x2="270" y2="60" stroke="#555" stroke-width="1.5" marker-end="url(#a2)"/>
+
+        <rect x="270" y="35" width="110" height="50" rx="6" fill="#1A1612"/>
+        <text x="325" y="56" text-anchor="middle" fill="#C3B152" font-size="10" font-weight="800">Other Costs</text>
+        <text x="325" y="70" text-anchor="middle" fill="#9D9A91" font-size="8">Transport, Expenses</text>
+        <text x="325" y="82" text-anchor="middle" fill="#9D9A91" font-size="8">Contingency</text>
+
+        <line x1="380" y1="60" x2="400" y2="60" stroke="#555" stroke-width="1.5" marker-end="url(#a2)"/>
+
+        <rect x="400" y="35" width="110" height="50" rx="6" fill="#7B3FA0"/>
+        <text x="455" y="56" text-anchor="middle" fill="#fff" font-size="10" font-weight="800">Milestones</text>
+        <text x="455" y="70" text-anchor="middle" fill="#E9D5FF" font-size="8">Payment schedule</text>
+        <text x="455" y="82" text-anchor="middle" fill="#E9D5FF" font-size="8">% of contract value</text>
+
+        <line x1="510" y1="60" x2="530" y2="60" stroke="#555" stroke-width="1.5" marker-end="url(#a2)"/>
+
+        <rect x="530" y="35" width="160" height="50" rx="6" fill="#C3B152"/>
+        <text x="610" y="56" text-anchor="middle" fill="#1A1612" font-size="10" font-weight="800">Save BOM</text>
+        <text x="610" y="70" text-anchor="middle" fill="#1A1612" font-size="8">All tabs saved together</text>
+        <text x="610" y="82" text-anchor="middle" fill="#1A1612" font-size="8">Becomes budget baseline</text>
+      </svg>
+    </div>
+
+    <div class="sop-grid">
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">📊</div>
+          <div><div class="label">Setting Up Project BOM</div><div class="role">Role: CEO / Factory Supervisor</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Projects → Project BOM</strong>, select project</li>
+            <li><strong>Material BOM tab:</strong> Add each raw material — select from warehouse items or type custom. Enter Budget Qty and Waste %. Net Qty auto-calculates.</li>
+            <li><strong>Labour BOM tab:</strong> Add work centres (Carpentry, Site Installation, etc.). Enter hours and rate — amount auto-calculates.</li>
+            <li><strong>Other Costs tab:</strong> Enter Transport, Expenses, Contingency</li>
+            <li><strong>Milestones tab:</strong> Default 30/40/30 schedule pre-filled. Edit names, amounts, and triggers.</li>
+            <li>Click <strong>Save BOM</strong> — all tabs saved as budget baseline</li>
+          </ol>
+        </div>
+      </div>
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">🎯</div>
+          <div><div class="label">Product-level BOM</div><div class="role">Role: CEO / Factory Supervisor</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Projects → Products</strong>, click <strong>BOM</strong> on any product</li>
+            <li>Add materials specific to this product (Wardrobe, Kitchen, etc.)</li>
+            <li>Add labour operations and their costs</li>
+            <li>Add product-specific expenses</li>
+            <li>Live <strong>Margin</strong> shows: Quoted Price − BOM Cost (CEO/Admin only)</li>
+            <li>Click <strong>Save Product BOM</strong></li>
+          </ol>
+          <div class="note"><strong>Note:</strong> Margin and quoted price are visible to CEO and Admin only.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="page page-break">
+  <div class="section-body">
+
+    <h3>2.5 &nbsp; Milestones &amp; Payment Schedule</h3>
+    <div class="sop-card" style="max-width:100%">
+      <div class="sop-card-hd">
+        <div class="icon">💳</div>
+        <div><div class="label">Milestone Management</div><div class="role">Role: CEO / Accounts</div></div>
+      </div>
+      <div class="sop-card-body">
+        <div class="sop-grid" style="margin-top:0">
+          <div>
+            <h4>Setting Milestones</h4>
+            <ol class="sop-steps">
+              <li>Open Project BOM → <strong>Milestones tab</strong></li>
+              <li>Default 30% / 40% / 30% schedule pre-populated</li>
+              <li>Edit milestone names as needed</li>
+              <li>Enter Amount or % — the other auto-calculates</li>
+              <li>Set trigger for each milestone</li>
+              <li>Save BOM — milestones are saved simultaneously</li>
+            </ol>
+          </div>
+          <div>
+            <h4>Milestone Triggers</h4>
+            <table style="width:100%;font-size:9.5px;border-collapse:collapse">
+              <tr style="background:#F0E9DE"><td style="padding:5px 8px;font-weight:700">Trigger</td><td style="padding:5px 8px;font-weight:700">What activates it</td></tr>
+              <tr><td style="padding:5px 8px;border-bottom:1px solid #F0E9DE">Manual</td><td style="padding:5px 8px;border-bottom:1px solid #F0E9DE">You click "Mark Ready"</td></tr>
+              <tr><td style="padding:5px 8px;border-bottom:1px solid #F0E9DE">On Delivery</td><td style="padding:5px 8px;border-bottom:1px solid #F0E9DE">Auto when delivery logged</td></tr>
+              <tr><td style="padding:5px 8px;border-bottom:1px solid #F0E9DE">On Installation</td><td style="padding:5px 8px;border-bottom:1px solid #F0E9DE">Auto when installation complete</td></tr>
+              <tr><td style="padding:5px 8px;border-bottom:1px solid #F0E9DE">On Handover</td><td style="padding:5px 8px;border-bottom:1px solid #F0E9DE">Auto when handover signed off</td></tr>
+              <tr><td style="padding:5px 8px">On QC Pass</td><td style="padding:5px 8px">Auto when QC inspection passes</td></tr>
+            </table>
+          </div>
+        </div>
+        <div class="note">Once a milestone status becomes <strong>Invoiced</strong> it is locked and cannot be edited or deleted.</div>
+      </div>
+    </div>
+
+    <h3>2.6 &nbsp; Purchase Orders &amp; Procurement</h3>
+    <div class="sop-grid">
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">🛒</div>
+          <div><div class="label">Raising a Purchase Order</div><div class="role">Role: Procurement / CEO</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Inventory → Purchase Orders → + New PO</strong></li>
+            <li>Select <strong>Vendor</strong> from vendor master</li>
+            <li>Select <strong>Project</strong> and delivery destination (Warehouse / Site)</li>
+            <li>Click <strong>+ Add Item</strong> for each material: name, unit, qty, rate</li>
+            <li>Amount auto-calculates per line; total updates live</li>
+            <li>Set expected delivery date and any instructions</li>
+            <li>Click <strong>Save</strong> — PO code auto-generates (PO/001)</li>
+            <li>Preview and print PO using <strong>Preview / Print</strong></li>
+            <li>Change status to <strong>Sent to Vendor</strong> after sharing</li>
+          </ol>
+        </div>
+      </div>
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">📦</div>
+          <div><div class="label">Receiving Goods</div><div class="role">Role: Procurement / Factory Supervisor</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Open the PO (status must be <strong>Sent</strong> or <strong>Partially Received</strong>)</li>
+            <li>Click <strong>Receive</strong> on the PO list row</li>
+            <li>Enter received quantity per item</li>
+            <li>If delivered to <strong>Warehouse</strong>: stock automatically updated</li>
+            <li>PO status changes to Partially Received or Fully Received</li>
+            <li>Record vendor bill in <strong>Finance → Vendor Bills</strong></li>
+          </ol>
+          <div class="warn"><strong>Important:</strong> All materials must arrive via PO or purchase to update warehouse stock. No ad-hoc stock additions.</div>
+        </div>
+      </div>
+    </div>
+
+    <h3>2.7 &nbsp; Warehouse &amp; Stock Management</h3>
+    <div class="sop-card" style="max-width:100%">
+      <div class="sop-card-hd">
+        <div class="icon">🏪</div>
+        <div><div class="label">Stock Operations</div><div class="role">Role: Procurement / Factory Supervisor</div></div>
+      </div>
+      <div class="sop-card-body">
+        <div class="sop-grid" style="margin-top:0">
+          <div>
+            <h4>Adding Stock</h4>
+            <ol class="sop-steps">
+              <li>Receive via PO (preferred) — qty auto-updates</li>
+              <li>Or: Manual Purchase → set destination to Warehouse</li>
+              <li>Or: Stock Adjustment for corrections</li>
+            </ol>
+          </div>
+          <div>
+            <h4>Stock Levels</h4>
+            <ol class="sop-steps">
+              <li>Go to <strong>Inventory → Warehouse</strong></li>
+              <li>View current qty, unit, rate per item</li>
+              <li>Low stock items shown in <strong>Reports → Stock Report</strong></li>
+              <li>Reorder when stock falls below safety level</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="page page-break">
+  <div class="section-body">
+
+    <h3>2.8 &nbsp; Material Requests &amp; Issues</h3>
+    <div class="flowchart-wrap">
+      <svg viewBox="0 0 700 130" xmlns="http://www.w3.org/2000/svg" font-family="Manrope,Arial,sans-serif">
+        <defs><marker id="a3" markerWidth="7" markerHeight="5" refX="7" refY="2.5" orient="auto"><polygon points="0 0,7 2.5,0 5" fill="#555"/></marker></defs>
+        <rect x="10" y="40" width="130" height="50" rx="6" fill="#7B3FA0"/>
+        <text x="75" y="61" text-anchor="middle" fill="#fff" font-size="10" font-weight="800">Raise MR</text>
+        <text x="75" y="75" text-anchor="middle" fill="#E9D5FF" font-size="8">Select project, product</text>
+        <text x="75" y="87" text-anchor="middle" fill="#E9D5FF" font-size="8">item &amp; qty needed</text>
+        <line x1="140" y1="65" x2="165" y2="65" stroke="#555" stroke-width="1.5" marker-end="url(#a3)"/>
+        <!-- Decision -->
+        <polygon points="230,40 295,65 230,90 165,65" fill="#C3B152"/>
+        <text x="230" y="61" text-anchor="middle" fill="#1A1612" font-size="9" font-weight="800">Qty &lt;= BOM</text>
+        <text x="230" y="75" text-anchor="middle" fill="#1A1612" font-size="9">budget?</text>
+        <!-- YES -->
+        <line x1="295" y1="65" x2="320" y2="65" stroke="#1E6B3C" stroke-width="1.5" marker-end="url(#a3)"/>
+        <text x="307" y="59" fill="#1E6B3C" font-size="8" font-weight="700">YES</text>
+        <rect x="320" y="40" width="130" height="50" rx="6" fill="#1E6B3C"/>
+        <text x="385" y="61" text-anchor="middle" fill="#fff" font-size="10" font-weight="800">Auto-Approved</text>
+        <text x="385" y="75" text-anchor="middle" fill="#86EFAC" font-size="8">Issue created instantly</text>
+        <text x="385" y="87" text-anchor="middle" fill="#86EFAC" font-size="8">Stock deducted</text>
+        <!-- NO -->
+        <line x1="230" y1="90" x2="230" y2="110" stroke="#C0392B" stroke-width="1.5" marker-end="url(#a3)"/>
+        <text x="240" y="105" fill="#C0392B" font-size="8" font-weight="700">NO</text>
+        <rect x="165" y="110" width="130" height="16" rx="4" fill="#FEF2F2" stroke="#C0392B" stroke-width="1"/>
+        <text x="230" y="121" text-anchor="middle" fill="#C0392B" font-size="8" font-weight="700">Pending → Manual Approval Required</text>
+        <!-- After auto -->
+        <line x1="450" y1="65" x2="475" y2="65" stroke="#555" stroke-width="1.5" marker-end="url(#a3)"/>
+        <rect x="475" y="40" width="130" height="50" rx="6" fill="#1A1612"/>
+        <text x="540" y="61" text-anchor="middle" fill="#C3B152" font-size="10" font-weight="800">Issue Record</text>
+        <text x="540" y="75" text-anchor="middle" fill="#9D9A91" font-size="8">ISS/001 created</text>
+        <text x="540" y="87" text-anchor="middle" fill="#9D9A91" font-size="8">Remaining qty updated</text>
+      </svg>
+    </div>
+
+    <div class="sop-grid">
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">📋</div>
+          <div><div class="label">Raising a Material Request</div><div class="role">Role: Factory Supervisor</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Inventory → Material Requests → + New Request</strong></li>
+            <li>Select Project, Product, and the required Item</li>
+            <li>Enter quantity needed and reason</li>
+            <li>System checks: Requested qty vs BOM Budget remaining</li>
+            <li>If within budget → <strong>Auto-Approved</strong>, issue created instantly</li>
+            <li>If over budget → status <strong>Pending</strong>, wait for CEO/Admin approval</li>
+          </ol>
+          <div class="warn"><strong>Rule:</strong> No direct material issue. ALL issues must go through a Material Request first.</div>
+        </div>
+      </div>
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">↩</div>
+          <div><div class="label">Material Returns</div><div class="role">Role: Factory Supervisor</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Inventory → Material Returns → + Return</strong></li>
+            <li>Select the original Issue record</li>
+            <li>Enter quantity being returned and reason</li>
+            <li>Stock automatically added back to warehouse</li>
+            <li>Remaining BOM budget qty is recalculated</li>
+          </ol>
+          <div class="note">Returns reduce issued qty and restore remaining budget, allowing future requests against the same BOM budget.</div>
+        </div>
+      </div>
+    </div>
+
+    <h3>2.9 &nbsp; Manufacturing Jobs &amp; Job Cards</h3>
+    <div class="sop-grid">
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">🏭</div>
+          <div><div class="label">Manufacturing Jobs</div><div class="role">Role: Factory Supervisor</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Factory / MES → Manufacturing Jobs</strong></li>
+            <li>Click <strong>Auto-Create Jobs</strong> to generate one job per product</li>
+            <li>Or click <strong>+ New Job</strong> to create manually</li>
+            <li>Set priority (Normal / High / Urgent) and due date</li>
+            <li>Open the job → click <strong>Operations</strong> to add work steps</li>
+            <li>Assign each operation to a worker and machine</li>
+            <li>Update operation status as work progresses</li>
+          </ol>
+        </div>
+      </div>
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">🪪</div>
+          <div><div class="label">Job Cards for Workers</div><div class="role">Role: Factory Supervisor</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Factory / MES → Job Cards</strong></li>
+            <li>Filter by worker, status, or work centre</li>
+            <li>Each card shows: Product, Operation, Machine, Due Date</li>
+            <li>Click <strong>Print for Worker</strong> to print that worker's cards</li>
+            <li>Click <strong>Print All</strong> for full factory card set</li>
+            <li>Workers update their operation status (In Progress / Done)</li>
+          </ol>
+          <div class="note">Job cards include signature lines for worker acknowledgment.</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="page page-break">
+  <div class="section-body">
+
+    <h3>2.10 &nbsp; Quality Control (QC)</h3>
+    <div class="sop-grid">
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">✅</div>
+          <div><div class="label">QC Inspection</div><div class="role">Role: Factory Supervisor / CEO</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Operations → QC Inspections</strong></li>
+            <li>Click <strong>+ New QC Entry</strong></li>
+            <li>Select Project and Product being inspected</li>
+            <li>Record inspection date and inspector name</li>
+            <li>Set result: <strong>Pass</strong> or <strong>Fail</strong></li>
+            <li>Add remarks (defects, observations)</li>
+            <li>If Pass → product cleared for delivery</li>
+            <li>If Fail → return to factory for rework</li>
+          </ol>
+          <div class="note">A QC Pass on a product triggers any milestone set to <strong>On QC Pass</strong>.</div>
+        </div>
+      </div>
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">📊</div>
+          <div><div class="label">QC Reports</div><div class="role">Role: CEO / Factory Supervisor</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Operations → QC</strong> to view all inspections</li>
+            <li>Filter by project or status (Pass/Fail)</li>
+            <li>Track fail rate per project or product type</li>
+            <li>Use data to improve material selection and carpentry SOP</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <h3>2.11 &nbsp; Site Delivery &amp; Installation</h3>
+    <div class="sop-grid">
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">🚚</div>
+          <div><div class="label">Site Delivery</div><div class="role">Role: Site Supervisor</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Site &amp; Installation → Deliveries → + New Delivery</strong></li>
+            <li>Select project and list items being delivered</li>
+            <li>Record delivery date, vehicle, and driver</li>
+            <li>Log client acknowledgment</li>
+            <li>Save — any milestone set to <strong>On Delivery</strong> auto-triggers</li>
+            <li>Toast notification confirms milestone is "Ready to Invoice"</li>
+          </ol>
+        </div>
+      </div>
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">🔧</div>
+          <div><div class="label">Installation &amp; Handover</div><div class="role">Role: Site Supervisor</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Site &amp; Installation → Installation</strong></li>
+            <li>Create installation record linked to project</li>
+            <li>Assign installation team and set dates</li>
+            <li>Update status: Scheduled → In Progress → Completed</li>
+            <li>Enter handover date on completion</li>
+            <li>Milestones for <strong>On Installation</strong> and <strong>On Handover</strong> auto-trigger</li>
+            <li>Project status can be changed to <strong>Completed</strong></li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+    <h3>2.12 &nbsp; Invoicing &amp; Collections</h3>
+    <div class="sop-grid">
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">🧾</div>
+          <div><div class="label">Raising an Invoice</div><div class="role">Role: Accounts / CEO</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Finance → Milestones</strong></li>
+            <li>Find milestone with status <strong>Ready to Invoice</strong></li>
+            <li>Click <strong>Raise Invoice</strong> — invoice modal pre-fills amount &amp; description</li>
+            <li>Confirm details and Save — invoice code auto-generates (INV/001)</li>
+            <li>Alternatively: go to <strong>Finance → Sales Invoices → + New Invoice</strong></li>
+            <li>Share invoice with client</li>
+          </ol>
+        </div>
+      </div>
+      <div class="sop-card">
+        <div class="sop-card-hd">
+          <div class="icon">💰</div>
+          <div><div class="label">Recording Receipts</div><div class="role">Role: Accounts / CEO</div></div>
+        </div>
+        <div class="sop-card-body">
+          <ol class="sop-steps">
+            <li>Go to <strong>Finance → Receipts → + Record Receipt</strong></li>
+            <li>Select project and link to invoice</li>
+            <li>Enter amount received, date, and mode (NEFT/Cash/Cheque)</li>
+            <li>Save — outstanding balance auto-reduces</li>
+            <li>View outstanding per project in <strong>Reports → Receivables</strong></li>
+            <li>Milestone status updates to <strong>Invoiced</strong> once fully received</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     SECTION 3: ROLE MATRIX
+══════════════════════════════════════ -->
+<div class="page page-break">
+  <div class="section-hd">
+    <h2>3. Role &amp; Access Matrix</h2>
+    <p>What each role can see and do in the system</p>
+  </div>
+  <div class="section-body">
+
+    <table class="role-table">
+      <thead>
+        <tr>
+          <th style="width:160px">Module</th>
+          <th style="text-align:center">CEO</th>
+          <th style="text-align:center">Admin</th>
+          <th style="text-align:center">Factory Supervisor</th>
+          <th style="text-align:center">Site Supervisor</th>
+          <th style="text-align:center">Accounts</th>
+          <th style="text-align:center">Sales</th>
+          <th style="text-align:center">Procurement</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Overview / Dashboard</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
+        <tr><td>CRM &amp; Sales (Leads, Quotations)</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td><td class="check">✓</td><td class="cross">—</td></tr>
+        <tr><td>Projects &amp; Products</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td></tr>
+        <tr><td>Operations (Labour, Expenses, QC)</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td></tr>
+        <tr><td>Inventory (Warehouse, MR, Issues)</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td><td class="check">✓</td></tr>
+        <tr><td>Purchases &amp; Purchase Orders</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td><td class="check">✓</td></tr>
+        <tr><td>Finance (Invoices, Receipts, Bills)</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td></tr>
+        <tr><td>Banking &amp; Accounts</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td></tr>
+        <tr><td>Reports (P&amp;L, Variance, Receivables)</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td></tr>
+        <tr><td>Site &amp; Installation</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td></tr>
+        <tr><td>Factory / MES (Jobs, Cards)</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td></tr>
+        <tr><td>HR &amp; Payroll</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td></tr>
+        <tr><td>Master Data (Items, Vendors, Workers)</td><td class="check">✓</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td><td class="check">✓</td></tr>
+        <tr><td>User Management</td><td class="check">✓</td><td class="check">✓</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td><td class="cross">—</td></tr>
+      </tbody>
+    </table>
+
+    <h4 style="margin-top:20px">Restricted Financial Data (CEO &amp; Admin Only)</h4>
+    <table class="role-table">
+      <thead><tr><th>Data</th><th>Visibility</th><th>Where Restricted</th></tr></thead>
+      <tbody>
+        <tr><td>Gross Margin % per product</td><td>CEO &amp; Admin only</td><td>Product BOM overlay</td></tr>
+        <tr><td>Quoted price on BOM</td><td>CEO &amp; Admin only</td><td>Product BOM overlay</td></tr>
+        <tr><td>Projected Profit per project</td><td>CEO &amp; Admin only</td><td>AI assistant, Project detail</td></tr>
+        <tr><td>P&amp;L Report</td><td>CEO &amp; Admin only</td><td>Reports → Profit &amp; Loss</td></tr>
+        <tr><td>Variance Tab</td><td>CEO &amp; Admin only</td><td>Project BOM → Variance</td></tr>
+        <tr><td>Business Snapshot (AI)</td><td>CEO &amp; Admin only</td><td>AI assistant</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Landing Page Per Role</h4>
+    <table class="role-table">
+      <thead><tr><th>Role</th><th>Opens At Login</th><th>Primary Focus</th></tr></thead>
+      <tbody>
+        <tr><td><strong>CEO</strong></td><td>CEO Dashboard</td><td>Full business overview, all KPIs</td></tr>
+        <tr><td><strong>Admin</strong></td><td>Dashboard</td><td>System administration, full access</td></tr>
+        <tr><td><strong>Factory Supervisor</strong></td><td>Factory Dashboard</td><td>Jobs in progress, material requests</td></tr>
+        <tr><td><strong>Site Supervisor</strong></td><td>Site Dashboard</td><td>Deliveries, installations, handovers</td></tr>
+        <tr><td><strong>Accounts</strong></td><td>Sales Invoices</td><td>Invoicing, receipts, billing</td></tr>
+        <tr><td><strong>Sales</strong></td><td>Leads &amp; Enquiries</td><td>Leads pipeline, quotations</td></tr>
+        <tr><td><strong>Procurement</strong></td><td>Purchases</td><td>Purchase orders, warehouse stock</td></tr>
+      </tbody>
+    </table>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     SECTION 4: AUTO CODE REFERENCE
+══════════════════════════════════════ -->
+<div class="page page-break">
+  <div class="section-hd">
+    <h2>4. Auto-Generated Code Reference</h2>
+    <p>System-generated codes for all records — format and examples</p>
+  </div>
+  <div class="section-body">
+    <table class="code-table">
+      <thead><tr><th>Module / Record</th><th>Code Format</th><th>Example</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Lead / Enquiry</td><td>ENQ/001</td><td>ENQ/001</td><td>Sequential, 3-digit padded</td></tr>
+        <tr><td>Quotation</td><td>STR/Q/001</td><td>STR/Q/001</td><td>STR = Appletree prefix</td></tr>
+        <tr><td>Project</td><td>P001</td><td>P001</td><td>Sequentially from P001</td></tr>
+        <tr><td>Product</td><td>P001_001</td><td>P001_001</td><td>ProjectCode_ProductSeq</td></tr>
+        <tr><td>Purchase Order</td><td>PO/001</td><td>PO/001</td><td>Sequential, 3-digit padded</td></tr>
+        <tr><td>Material Request</td><td>MRQ/001</td><td>MRQ/001</td><td>Sequential</td></tr>
+        <tr><td>Material Issue</td><td>ISS/001</td><td>ISS/001</td><td>Sequential</td></tr>
+        <tr><td>Material Return</td><td>RET/001</td><td>RET/001</td><td>Sequential</td></tr>
+        <tr><td>Manufacturing Job</td><td>JOB/001</td><td>JOB/001</td><td>Sequential, 3-digit padded</td></tr>
+        <tr><td>Sales Invoice</td><td>INV/001</td><td>INV/001</td><td>Sequential</td></tr>
+        <tr><td>Receipt</td><td>REC/001</td><td>REC/001</td><td>Sequential</td></tr>
+        <tr><td>Vendor Bill</td><td>BILL/001</td><td>BILL/001</td><td>Sequential</td></tr>
+        <tr><td>Milestone</td><td>MS + UID</td><td>MS7f3a...</td><td>Auto internal ID</td></tr>
+        <tr><td>Project Budget</td><td>PB + UID</td><td>PB9c1d...</td><td>Auto internal ID</td></tr>
+        <tr><td>Warehouse Item</td><td>W + UID</td><td>Wab12...</td><td>Auto internal ID</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     SECTION 5: KEY BUSINESS RULES
+══════════════════════════════════════ -->
+<div class="page page-break">
+  <div class="section-hd">
+    <h2>5. Key Business Rules &amp; Controls</h2>
+    <p>System-enforced rules and important operating guidelines</p>
+  </div>
+  <div class="section-body">
+
+    <h3>Material Control Rules</h3>
+    <div class="warn">
+      <strong>RULE 1 — No Direct Material Issue:</strong> All material issues must go through a Material Request. No worker or supervisor can take stock directly from the warehouse without raising an MR first.
+    </div>
+    <div class="warn">
+      <strong>RULE 2 — Budget Enforcement:</strong> If the requested quantity exceeds the remaining BOM budget, the request cannot be auto-approved. It must be manually approved by CEO or Admin.
+    </div>
+    <div class="note">
+      <strong>RULE 3 — Remaining Qty Calculation:</strong> Remaining = BOM Budget Qty − (Total Issued − Total Returned). This is recalculated live on every request.
+    </div>
+
+    <h3>Financial Controls</h3>
+    <div class="warn">
+      <strong>RULE 4 — Margin Confidentiality:</strong> Gross margin %, quoted price, and projected profit are visible only to CEO and Admin. All other roles see cost data but not the profit calculation.
+    </div>
+    <div class="note">
+      <strong>RULE 5 — Milestone Locking:</strong> Once a milestone is invoiced, it cannot be edited or deleted. This ensures billing history integrity.
+    </div>
+    <div class="note">
+      <strong>RULE 6 — Purchase to Warehouse:</strong> All material purchases must specify a destination (Warehouse or Site). Warehouse purchases automatically update stock levels.
+    </div>
+
+    <h3>Process Gates</h3>
+    <table class="role-table">
+      <thead><tr><th>Gate</th><th>Condition to Pass</th><th>What Happens</th></tr></thead>
+      <tbody>
+        <tr><td>Quotation → Project</td><td>Status must be <strong>Approved</strong></td><td>Convert button appears; one-click creates project</td></tr>
+        <tr><td>Material Request → Auto-Issue</td><td>Requested qty &lt;= remaining BOM budget AND warehouse has stock</td><td>Issue created instantly, stock deducted</td></tr>
+        <tr><td>Milestone → Ready to Invoice</td><td>Trigger condition met (delivery logged, installation complete, etc.)</td><td>Auto-triggered; "Raise Invoice" button appears</td></tr>
+        <tr><td>QC Pass → Delivery</td><td>QC status = Pass</td><td>Product cleared for dispatch; milestone may trigger</td></tr>
+        <tr><td>Project → Completed</td><td>All invoices raised, installations done</td><td>Status changed manually to Completed</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Naming &amp; Data Conventions</h3>
+    <div class="sop-grid" style="margin-top:8px">
+      <div class="note">
+        <strong>Project Codes</strong> are permanent once created. Never rename or delete a project code — it links to all products, BOMs, invoices, and material records.
+      </div>
+      <div class="note">
+        <strong>Warehouse Items</strong> should use consistent naming. The same item with two different names will create duplicate stock entries.
+      </div>
+      <div class="note">
+        <strong>Vendor Names</strong> must be set up in Master Data → Vendor Master before raising a PO against them.
+      </div>
+      <div class="note">
+        <strong>Workers</strong> must be set up in Master Data → Workers before being assigned to job operations.
+      </div>
+    </div>
+
+    <h3>AI Assistant — What It Knows</h3>
+    <p>The built-in AI assistant can answer business questions using live data. Type natural language queries in the chat panel.</p>
+    <table class="role-table">
+      <thead><tr><th>Query Type</th><th>Example</th><th>Who Can Ask</th></tr></thead>
+      <tbody>
+        <tr><td>Project status</td><td>"Show all projects" / "Status of Sharma project"</td><td>All roles</td></tr>
+        <tr><td>Outstanding payments</td><td>"How much is outstanding" / "Who hasn't paid"</td><td>All roles</td></tr>
+        <tr><td>Factory status</td><td>"What jobs are in progress" / "Factory status"</td><td>All roles</td></tr>
+        <tr><td>Stock &amp; inventory</td><td>"What is our stock" / "Low stock items"</td><td>All roles</td></tr>
+        <tr><td>Profit &amp; margin</td><td>"What is our profit" / "Show margins"</td><td>CEO &amp; Admin only</td></tr>
+        <tr><td>Business snapshot</td><td>"How are we doing" / "Business summary"</td><td>CEO &amp; Admin only</td></tr>
+        <tr><td>Material requests</td><td>"Pending MRs" / "Material requests"</td><td>All roles</td></tr>
+        <tr><td>Quotations pipeline</td><td>"Show quotations" / "Sales pipeline"</td><td>Sales / CEO / Admin</td></tr>
+      </tbody>
+    </table>
+
+    <!-- FOOTER -->
+    <div style="margin-top:40px;padding-top:16px;border-top:2px solid #C3B152;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:9px;color:#9D9A91">
+        <strong style="color:#1A1612">Appletree Interiors ERP</strong> — Internal SOP Document<br>
+        Version 2.1 &nbsp;|&nbsp; sales.appletreeinteriors@gmail.com
+      </div>
+      <div style="font-size:9px;color:#9D9A91;text-align:right">
+        Confidential — For Internal Use Only<br>
+        &copy; 2026 Appletree Interiors
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="no-print" style="position:fixed;bottom:24px;right:24px;z-index:999">
+  <button onclick="window.print()" style="background:#1A1612;color:#C3B152;border:none;padding:12px 24px;border-radius:8px;font-family:'Manrope',Arial,sans-serif;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.3)">
+    🖨 Save as PDF (Ctrl+P)
+  </button>
+</div>
+
+</body>
+</html>

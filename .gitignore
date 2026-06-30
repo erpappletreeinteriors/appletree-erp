@@ -1,0 +1,10 @@
+# Secrets / local-only Claude Code settings (contains service_role key,
+# OAuth secrets, and temp passwords used during setup — NEVER commit)
+.claude/settings.local.json
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# Duplicate logo upload (kept logo.png as canonical copy)
+Appletree logo.png
