@@ -326,9 +326,28 @@ font-weight:500;}
 
 /* ── KPI GRID ── */
 .kpi-row{display:grid;gap:14px;margin-bottom:20px;}
+.kpi-row.c5{grid-template-columns:repeat(5,1fr);}
 .kpi-row.c4{grid-template-columns:repeat(4,1fr);}
 .kpi-row.c3{grid-template-columns:repeat(3,1fr);}
 .kpi-row.c2{grid-template-columns:repeat(2,1fr);}
+@media (max-width:1100px){.kpi-row.c5{grid-template-columns:repeat(2,1fr);}}
+
+/* Dashboard: quick actions */
+.qa-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;padding:4px}
+.qa-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:16px 10px;cursor:pointer;transition:.14s}
+.qa-tile:hover{background:var(--gold-pale);border-color:var(--gold);transform:translateY(-1px)}
+.qa-icon{font-size:22px}
+.qa-label{font-size:11.5px;font-weight:600;color:var(--dark);text-align:center}
+
+/* Dashboard: condensed project rows */
+.d-proj-row{display:grid;grid-template-columns:1fr 2fr auto;align-items:center;gap:16px;padding:12px 8px;border-bottom:1px solid var(--border2);cursor:pointer}
+.d-proj-row:last-child{border-bottom:none}
+.d-proj-row:hover{background:var(--bg)}
+.d-proj-name{font-size:13px;font-weight:700;color:var(--dark)}
+.d-proj-meta{font-size:10.5px;color:var(--muted);margin-top:1px}
+.d-proj-bar-track{background:var(--border2);border-radius:10px;height:6px}
+.d-proj-bar-fill{height:100%;border-radius:10px}
+.d-proj-pct{font-size:10px;color:var(--muted);margin-top:4px}
 
 .kpi{
   background:var(--white);border:1px solid var(--border);
@@ -694,12 +713,6 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="nav-item" data-pg="installation" onclick="nav('installation',this)"><span class="ni">🔩</span> Installation</div>
     </div>
     <div class="nav-grp">
-      <span class="nav-grp-label">Site & Installation</span>
-      <div class="nav-item" data-pg="sitedash" onclick="nav('sitedash',this)"><span class="ni">🏗️</span> Site Dashboard</div>
-      <div class="nav-item" data-pg="deliveries" onclick="nav('deliveries',this)"><span class="ni">📦</span> Deliveries</div>
-      <div class="nav-item" data-pg="installation" onclick="nav('installation',this)"><span class="ni">🔩</span> Installation</div>
-    </div>
-    <div class="nav-grp">
       <span class="nav-grp-label">Factory / MES</span>
       <div class="nav-item" data-pg="factorydash" onclick="nav('factorydash',this)"><span class="ni">🏭</span> Factory Dashboard</div>
       <div class="nav-item" data-pg="mfgjobs" onclick="nav('mfgjobs',this)"><span class="ni">⚙️</span> Manufacturing Jobs</div>
@@ -751,25 +764,32 @@ textarea.inp{resize:vertical;min-height:72px;}
      PAGE: DASHBOARD
 ══════════════════════════════════════════════ -->
 <div id="pg-dashboard" class="page active">
-  <div class="kpi-row c4" id="dash-kpis">
+  <div style="margin-bottom:18px">
+    <div style="font-family:'Manrope',sans-serif;font-size:20px;font-weight:700;color:var(--dark)" id="d-greeting">Welcome</div>
+    <div style="font-size:12px;color:var(--muted);margin-top:2px" id="d-date"></div>
+  </div>
+
+  <div class="kpi-row c5" id="dash-kpis">
     <div class="kpi"><div class="kpi-label">Active Projects</div><div class="kpi-val" id="d-projects">0</div><div class="kpi-sub">In progress</div></div>
     <div class="kpi g"><div class="kpi-label">Total Revenue</div><div class="kpi-val" id="d-revenue">₹0</div><div class="kpi-sub">All invoiced</div></div>
-    <div class="kpi r"><div class="kpi-label">Total Cost</div><div class="kpi-val" id="d-cost">₹0</div><div class="kpi-sub">Materials + Labour</div></div>
-    <div class="kpi b"><div class="kpi-label">Warehouse Items</div><div class="kpi-val" id="d-stock">0</div><div class="kpi-sub">SKUs in stock</div></div>
+    <div class="kpi r"><div class="kpi-label">Outstanding</div><div class="kpi-val" id="d-outstanding">₹0</div><div class="kpi-sub">Yet to be collected</div></div>
+    <div class="kpi b"><div class="kpi-label">Warehouse</div><div class="kpi-val" id="d-stock">0</div><div class="kpi-sub" id="d-stock-sub">SKUs in stock</div></div>
+    <div class="kpi" id="d-kpi5-card"><div class="kpi-label">Total Cost</div><div class="kpi-val">₹0</div><div class="kpi-sub">—</div></div>
   </div>
-  <div class="g2">
-    <div class="card">
-      <div class="card-hd"><div><div class="card-title">Recent Projects</div><div class="card-sub">Latest activity</div></div><button class="btn btn-outline btn-sm" onclick="nav('projects',null)">View All</button></div>
-      <div class="tbl-wrap"><table><thead><tr><th>Project</th><th>Client</th><th>Status</th><th>Cost ₹</th></tr></thead><tbody id="dash-projects-tb"></tbody></table></div>
-    </div>
-    <div class="card">
-      <div class="card-hd"><div><div class="card-title">Stock Alerts</div><div class="card-sub">Low or zero stock</div></div></div>
-      <div class="tbl-wrap"><table><thead><tr><th>Item</th><th>Unit</th><th>Qty</th></tr></thead><tbody id="dash-stock-tb"></tbody></table></div>
-    </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-hd"><div class="card-title">Needs Attention</div></div>
+    <div id="d-alerts" style="padding:4px"></div>
   </div>
+
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-hd"><div class="card-title">Quick Actions</div></div>
+    <div id="d-quick-actions" class="qa-grid"></div>
+  </div>
+
   <div class="card">
-    <div class="card-hd"><div class="card-title">Recent Material Issues & Returns</div></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Item</th><th>Project</th><th>Product</th><th>Qty</th><th>Amount ₹</th></tr></thead><tbody id="dash-moves-tb"></tbody></table></div>
+    <div class="card-hd"><div><div class="card-title">Active Projects</div><div class="card-sub">Spend vs. contract value</div></div><button class="btn btn-outline btn-sm" onclick="nav('projects',null)">View All</button></div>
+    <div id="d-projects-list" style="padding:4px"></div>
   </div>
 </div>
 
@@ -2884,49 +2904,77 @@ function filterCol(id,ci,val){
 
 // DASHBOARD
 function renderDashboard(){
-  document.getElementById('d-projects').textContent=DB.projects.filter(p=>p.status==='Active').length;
-  const totalRev=DB.invoices.reduce((s,i)=>s+i.amount,0);
-  const totalCost=DB.issues.reduce((s,i)=>s+i.amount,0)+DB.labour.reduce((s,l)=>s+l.amount,0)+DB.expenses.reduce((s,e)=>s+e.amount,0);
-  document.getElementById('d-revenue').textContent=INR(totalRev);
-  document.getElementById('d-cost').textContent=INR(totalCost);
-  document.getElementById('d-stock').textContent=DB.warehouse.length;
+  const now = new Date();
+  document.getElementById('d-greeting').textContent =
+    `${now.getHours()<12?'Good morning':now.getHours()<17?'Good afternoon':'Good evening'}, ${_currentUser?_currentUser.name:''}`;
+  document.getElementById('d-date').textContent =
+    now.toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 
-  // Projects table
-  const ptb=document.getElementById('dash-projects-tb');
-  const projCosts={};
+  // ── KPI row ──
+  const activeProj = DB.projects.filter(p=>p.status==='Active').length;
+  const totalRev   = DB.invoices.reduce((s,i)=>s+i.amount,0);
+  const totalPaid  = DB.receipts.reduce((s,r)=>s+r.amount,0);
+  const outstanding= totalRev-totalPaid;
+  const totalCost  = DB.issues.reduce((s,i)=>s+i.amount,0)-DB.returns.reduce((s,r)=>s+r.value,0)
+                    + DB.labour.reduce((s,l)=>s+l.amount,0) + DB.expenses.reduce((s,e)=>s+e.amount,0);
+  const lowStockCt = DB.warehouse.filter(w=>w.qty<=w.reorder).length;
+  const canSeeMargin = requireRole('CEO','Admin');
+
+  document.getElementById('d-projects').textContent = activeProj;
+  document.getElementById('d-revenue').textContent  = INR(totalRev);
+  document.getElementById('d-outstanding').textContent = INR(outstanding);
+  document.getElementById('d-stock').textContent    = lowStockCt ? lowStockCt+' low' : DB.warehouse.length;
+  document.getElementById('d-stock-sub').textContent = lowStockCt ? 'Need reordering' : 'SKUs in stock';
+
+  // 5th KPI card: profit (CEO/Admin only) or total cost (everyone else)
+  const profitCard = document.getElementById('d-kpi5-card');
+  if(canSeeMargin){
+    const profit = totalRev - totalCost;
+    profitCard.querySelector('.kpi-label').textContent = 'Profit';
+    profitCard.querySelector('.kpi-val').textContent = INR(profit);
+    profitCard.querySelector('.kpi-sub').textContent = totalRev>0 ? `${(profit/totalRev*100).toFixed(1)}% margin` : '—';
+  } else {
+    profitCard.querySelector('.kpi-label').textContent = 'Total Cost';
+    profitCard.querySelector('.kpi-val').textContent = INR(totalCost);
+    profitCard.querySelector('.kpi-sub').textContent = 'Materials + Labour + Expenses';
+  }
+
+  // ── Alerts (shared with CEO Dashboard — single source of truth) ──
+  renderAlertStrip('d-alerts', now);
+
+  // ── Quick Actions ──
+  const qa = [
+    {icon:'🎯',label:'New Lead',      pg:'leads',     fn:"openModal('lead')"},
+    {icon:'📋',label:'New Quotation', pg:'quotations',fn:"createNewQuotation()"},
+    {icon:'📝',label:'New PO',        pg:'purchaseorders',fn:"openPOBuilder()"},
+    {icon:'📤',label:'Material Request',pg:'matrequest',fn:"openModal('matrequest')"},
+  ];
+  document.getElementById('d-quick-actions').innerHTML = qa.map(a=>
+    `<div class="qa-tile" onclick="nav('${a.pg}',null);${a.fn}">
+       <div class="qa-icon">${a.icon}</div><div class="qa-label">${a.label}</div>
+     </div>`).join('');
+
+  // ── Project snapshot (condensed — full detail lives on the Projects page) ──
+  const projCosts={}, projInv={};
   DB.issues.forEach(i=>projCosts[i.projectId]=(projCosts[i.projectId]||0)+i.amount);
   DB.labour.forEach(l=>projCosts[l.projectId]=(projCosts[l.projectId]||0)+l.amount);
-  ptb.innerHTML=DB.projects.map(p=>`<tr>
-    <td><strong>${p.client}</strong><div class="muted small">${p.code}</div></td>
-    <td>${p.location||'—'}</td>
-    <td>${statusTag(p.status)}</td>
-    <td class="mono right">${INR(projCosts[p.id]||0)}</td>
-  </tr>`).join('');
+  DB.expenses.forEach(e=>projCosts[e.projectId]=(projCosts[e.projectId]||0)+e.amount);
+  DB.invoices.forEach(i=>projInv[i.projectId]=(projInv[i.projectId]||0)+i.amount);
 
-  // Stock alerts
-  const stb=document.getElementById('dash-stock-tb');
-  const low=DB.warehouse.filter(w=>w.qty<=w.reorder);
-  stb.innerHTML=low.length?low.map(w=>`<tr>
-    <td><strong>${w.name}</strong></td>
-    <td>${w.unit}</td>
-    <td class="${w.qty===0?'stock-zero':'stock-low'}">${w.qty}</td>
-  </tr>`).join(''):`<tr><td colspan="3" class="muted" style="text-align:center;padding:20px">✅ All stock levels OK</td></tr>`;
-
-  // Recent moves
-  const mtb=document.getElementById('dash-moves-tb');
-  const moves=[
-    ...DB.issues.slice(-5).map(i=>({date:i.date,type:'Issue',item:i.itemName,proj:projName(i.projectId),prod:prodName(i.productId),qty:i.qty,amt:i.amount})),
-    ...DB.returns.slice(-3).map(r=>({date:r.date,type:'Return',item:r.itemName,proj:projName(r.projectId),prod:prodName(r.productId),qty:r.returnQty,amt:-r.value})),
-  ].sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,8);
-  mtb.innerHTML=moves.map(m=>`<tr>
-    <td>${fmtDate(m.date)}</td>
-    <td>${m.type==='Issue'?'<span class="tag tag-blue">Issue</span>':'<span class="tag tag-violet">Return</span>'}</td>
-    <td>${m.item}</td>
-    <td class="small">${m.proj}</td>
-    <td class="small">${m.prod}</td>
-    <td class="mono">${m.qty}</td>
-    <td class="mono ${m.amt<0?'stock-zero':''}">${INR(Math.abs(m.amt))}</td>
-  </tr>`).join('');
+  const active = DB.projects.filter(p=>p.status==='Active').slice(0,5);
+  document.getElementById('d-projects-list').innerHTML = active.length ? active.map(p=>{
+    const cost = projCosts[p.id]||0, inv = projInv[p.id]||0;
+    const costPct = p.contractValue>0 ? Math.min(100,Math.round(cost/p.contractValue*100)) : 0;
+    return `<div class="d-proj-row" onclick="nav('projects',null)">
+      <div class="d-proj-info">
+        <div class="d-proj-name">${escHtml(p.client)}</div>
+        <div class="d-proj-meta">${p.code} · ${escHtml(p.location||'—')}</div>
+      </div>
+      <div class="d-proj-bar"><div class="d-proj-bar-track"><div class="d-proj-bar-fill" style="width:${costPct}%;background:${costPct>90?'var(--red)':'var(--gold)'}"></div></div>
+        <div class="d-proj-pct">${costPct}% spent</div></div>
+      <div class="d-proj-status">${statusTag(p.status)}</div>
+    </div>`;
+  }).join('') : '<div class="muted" style="padding:16px;text-align:center">No active projects.</div>';
 }
 
 // PROJECTS
@@ -5412,6 +5460,34 @@ function _accessDenied(){
 // ═══════════════════════════════════════════
 //  CEO DASHBOARD
 // ═══════════════════════════════════════════
+// Shared by renderDashboard() and renderCEODash() so alert logic
+// lives in exactly one place.
+function computeAlerts(now){
+  const alerts = [];
+  const readyMS = DB.milestones.filter(m=>m.status==='Ready to Invoice');
+  if(readyMS.length) alerts.push({icon:'🔔',color:'var(--amber)',text:`${readyMS.length} milestone${readyMS.length>1?'s':''} ready to invoice — ${INR(readyMS.reduce((s,m)=>s+m.amount,0))} pending`,link:'milestones'});
+  const delayedJobs = DB.mfgJobs.filter(j=>j.status!=='Completed'&&j.dueDate&&new Date(j.dueDate)<now);
+  if(delayedJobs.length) alerts.push({icon:'⚠️',color:'var(--red)',text:`${delayedJobs.length} manufacturing job${delayedJobs.length>1?'s':''} delayed in factory`,link:'mfgjobs'});
+  const qcPending = DB.qc.filter(q=>q.result==='Pending');
+  if(qcPending.length) alerts.push({icon:'🔍',color:'var(--violet)',text:`${qcPending.length} QC inspection${qcPending.length>1?'s':''} awaiting sign-off`,link:'qc'});
+  const lowStock = DB.warehouse.filter(w=>w.qty<=w.reorder);
+  if(lowStock.length) alerts.push({icon:'📦',color:'var(--blue)',text:`${lowStock.length} item${lowStock.length>1?'s':''} below reorder level`,link:'warehouse'});
+  const pendingDel = (DB.siteDeliveries||[]).filter(d=>d.status==='En Route');
+  if(pendingDel.length) alerts.push({icon:'🚚',color:'var(--teal)',text:`${pendingDel.length} delivery pending confirmation at site`,link:'deliveries'});
+  return {alerts, readyMS, delayedJobs, qcPending, lowStock, pendingDel};
+}
+
+function renderAlertStrip(elId, now){
+  const {alerts} = computeAlerts(now);
+  document.getElementById(elId).innerHTML = alerts.length
+    ? alerts.map(a=>`<div onclick="nav('${a.link}',null)" style="display:flex;align-items:center;gap:10px;background:var(--white);border:1px solid var(--border);border-left:4px solid ${a.color};border-radius:var(--r);padding:10px 14px;margin-bottom:8px;cursor:pointer;transition:box-shadow .14s" onmouseover="this.style.boxShadow='var(--shadow-md)'" onmouseout="this.style.boxShadow=''">
+        <span style="font-size:16px">${a.icon}</span>
+        <span style="font-size:12px;font-weight:500;color:var(--dark)">${a.text}</span>
+        <span style="margin-left:auto;font-size:11px;color:var(--muted)">View →</span>
+      </div>`).join('')
+    : '<div style="background:var(--green-l);border:1px solid var(--green-b);border-radius:var(--r);padding:12px 16px;font-size:12px;color:var(--green);font-weight:600">✅ No alerts — everything is on track</div>';
+}
+
 function renderCEODash(){
   const now   = new Date();
   const hour  = now.getHours();
@@ -5440,25 +5516,8 @@ function renderCEODash(){
   document.getElementById('ceo-projects').textContent    = activeProj;
 
   // ── Alert Strip ──
-  const alerts = [];
-  const readyMS = DB.milestones.filter(m=>m.status==='Ready to Invoice');
-  if(readyMS.length) alerts.push({icon:'🔔',color:'var(--amber)',text:`${readyMS.length} milestone${readyMS.length>1?'s':''} ready to invoice — ${INR(readyMS.reduce((s,m)=>s+m.amount,0))} pending`,link:'milestones'});
-  const delayedJobs = DB.mfgJobs.filter(j=>j.status!=='Completed'&&j.dueDate&&new Date(j.dueDate)<now);
-  if(delayedJobs.length) alerts.push({icon:'⚠️',color:'var(--red)',text:`${delayedJobs.length} manufacturing job${delayedJobs.length>1?'s':''} delayed in factory`,link:'mfgjobs'});
-  const qcPending = DB.qc.filter(q=>q.result==='Pending');
-  if(qcPending.length) alerts.push({icon:'🔍',color:'var(--violet)',text:`${qcPending.length} QC inspection${qcPending.length>1?'s':''} awaiting sign-off`,link:'qc'});
-  const lowStock = DB.warehouse.filter(w=>w.qty<=w.reorder);
-  if(lowStock.length) alerts.push({icon:'📦',color:'var(--blue)',text:`${lowStock.length} item${lowStock.length>1?'s':''} below reorder level`,link:'warehouse'});
-  const pendingDel = (DB.siteDeliveries||[]).filter(d=>d.status==='En Route');
-  if(pendingDel.length) alerts.push({icon:'🚚',color:'var(--teal)',text:`${pendingDel.length} delivery pending confirmation at site`,link:'deliveries'});
-
-  document.getElementById('ceo-alerts').innerHTML = alerts.length
-    ? alerts.map(a=>`<div onclick="nav('${a.link}',null)" style="display:flex;align-items:center;gap:10px;background:var(--white);border:1px solid var(--border);border-left:4px solid ${a.color};border-radius:var(--r);padding:10px 14px;margin-bottom:8px;cursor:pointer;transition:box-shadow .14s" onmouseover="this.style.boxShadow='var(--shadow-md)'" onmouseout="this.style.boxShadow=''">
-        <span style="font-size:16px">${a.icon}</span>
-        <span style="font-size:12px;font-weight:500;color:var(--dark)">${a.text}</span>
-        <span style="margin-left:auto;font-size:11px;color:var(--muted)">View →</span>
-      </div>`).join('')
-    : '<div style="background:var(--green-l);border:1px solid var(--green-b);border-radius:var(--r);padding:12px 16px;font-size:12px;color:var(--green);font-weight:600">✅ No alerts — everything is on track</div>';
+  renderAlertStrip('ceo-alerts', now);
+  const {readyMS, delayedJobs, qcPending, pendingDel} = computeAlerts(now);
 
   // ── Project Health Cards ──
   const cards = document.getElementById('ceo-project-cards');
