@@ -11839,8 +11839,28 @@ function seedVendorLists(){
   _sb.auth.onAuthStateChange(async(event,session)=>{
     if(event==='SIGNED_IN'||event==='INITIAL_SESSION'){
       if(session) await _handleSession(session);
-    }else if(event==='SIGNED_OUT'){
+    }else if(event==='SIGNED_OUT'||event==='TOKEN_REFRESH_FAILED'){
+      // A session can be invalidated mid-use (token refresh failure, server-
+      // side revocation, etc.). Previously this only cleared _currentUser in
+      // memory without resetting the visible UI, leaving the app in a
+      // confusing half-logged-in state that looked broken/disconnected.
       _currentUser=null;
+      document.getElementById('sb-loading').style.display='none';
+      document.getElementById('overlay')?.classList.remove('show');
+      document.getElementById('login-screen').classList.remove('hidden');
+      if(event==='TOKEN_REFRESH_FAILED'){
+        toast('Your session expired — please sign in again.','err');
+      }
+    }
+  });
+
+  // Safety net: if something throws unexpectedly during a render, surface a
+  // clear message instead of leaving a blank/half-rendered page that looks
+  // disconnected from the app.
+  window.addEventListener('error', function(e){
+    console.error('[ERP] Unhandled error:', e.error||e.message);
+    if(typeof toast==='function'){
+      toast('Something went wrong loading that screen. Please refresh.','err');
     }
   });
 
