@@ -11551,13 +11551,30 @@ function seedVendorLists(){
     _syncTimer=setTimeout(_flushToSupabase,2000);
   };
 
+  // Races a promise against a timeout so one stalled network call (token
+  // refresh stall, flaky connection) can never hang the whole load forever.
+  function _withTimeout(promise, ms, label){
+    return Promise.race([
+      promise,
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error(label+' timed out after '+ms+'ms')),ms))
+    ]);
+  }
+
   async function _loadFromSupabase(){
     for(const key of ERP_KEYS){
       _sbSetLoading('Loading '+key+'…');
-      const {data,error}=await _sb.from(sbTable(key))
-        .select('id,data').eq('org_id','appletree-interiors');
-      if(!error&&data&&data.length>0){
-        DB[key]=data.map(row=>row.data);
+      try{
+        const {data,error}=await _withTimeout(
+          _sb.from(sbTable(key)).select('id,data').eq('org_id','appletree-interiors'),
+          6000, key
+        );
+        if(!error&&data&&data.length>0){
+          DB[key]=data.map(row=>row.data);
+        }
+      }catch(e){
+        // One slow/stuck table must not block the rest — skip it and keep
+        // whatever was already in DB[key] (seed data or last cached copy).
+        console.warn('[ERP] Skipping',key,'—',e.message);
       }
     }
     // Persist locally so offline access still works
@@ -11607,7 +11624,14 @@ function seedVendorLists(){
   });
 
   async function _afterLogin(profile){
-    await _loadFromSupabase();
+    // Each table already has its own 6s timeout, but cap the whole load too
+    // (defence in depth) so a string of stalls can't add up to minutes.
+    try{
+      await _withTimeout(_loadFromSupabase(), 45000, 'data load');
+    }catch(e){
+      console.warn('[ERP] Data load taking too long, continuing with what loaded so far:',e.message);
+      toast('Some data may be out of date — will sync when connection improves.','err');
+    }
     _sbSetLoading('Starting up…');
 
     _currentUser={
@@ -11642,9 +11666,24 @@ function seedVendorLists(){
     _sbSetLoading('Verifying access…');
     const supaUser=session.user;
 
-    // Fetch profile
-    const {data:profile,error}=await _sb.from('user_profiles')
-      .select('*').eq('user_id',supaUser.id).maybeSingle();
+    // Fetch profile (timeout-protected — a stalled request here used to
+    // leave the app stuck on "Verifying access…" forever, most visible
+    // when reopening a tab with an already-persisted session).
+    let profile, error;
+    try{
+      ({data:profile,error}=await _withTimeout(
+        _sb.from('user_profiles').select('*').eq('user_id',supaUser.id).maybeSingle(),
+        8000, 'profile fetch'
+      ));
+    }catch(e){
+      console.error('[ERP] Profile fetch timed out:',e.message);
+      document.getElementById('sb-loading').style.display='none';
+      document.getElementById('login-screen').classList.remove('hidden');
+      document.getElementById('login-err').textContent =
+        'Could not reach the server. Please check your connection and sign in again.';
+      document.getElementById('login-err').style.display='block';
+      return;
+    }
 
     if(profile&&profile.is_approved){
       await _afterLogin(profile);
