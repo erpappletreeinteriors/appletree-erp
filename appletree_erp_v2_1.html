@@ -9697,8 +9697,8 @@ function renderPayrollReport(){
   }
 
   const T = rows.reduce((acc,r)=>({
-    gross:acc.gross+r.grossPay, pf:acc.pf+(r.pfDed||0), esi:acc.esi+(r.esiDed||0),
-    adv:acc.adv+(r.advanceRec||0), net:acc.net+r.netPay, ot:acc.ot+(r.otPay||0)
+    gross:acc.gross+r.grossPay, pf:acc.pf+(r.pfDeduction||0), esi:acc.esi+(r.esiDeduction||0),
+    adv:acc.adv+(r.advanceDeduction||0), net:acc.net+r.netPay, ot:acc.ot+(r.otPay||0)
   }),{gross:0,pf:0,esi:0,adv:0,net:0,ot:0});
   const totalDed = T.pf+T.esi+T.adv;
 
@@ -9727,9 +9727,9 @@ function renderPayrollReport(){
         <td class="mono right">${r.daysPresent??'—'}</td>
         <td class="mono right">${r.otHours||0}</td>
         <td class="mono right">${INR(r.grossPay)}</td>
-        <td class="mono right" style="color:var(--red)">${INR(r.pfDed||0)}</td>
-        <td class="mono right" style="color:var(--red)">${INR(r.esiDed||0)}</td>
-        <td class="mono right" style="color:var(--violet)">${INR(r.advanceRec||0)}</td>
+        <td class="mono right" style="color:var(--red)">${INR(r.pfDeduction||0)}</td>
+        <td class="mono right" style="color:var(--red)">${INR(r.esiDeduction||0)}</td>
+        <td class="mono right" style="color:var(--violet)">${INR(r.advanceDeduction||0)}</td>
         <td class="mono right" style="font-weight:700;color:var(--green)">${INR(r.netPay)}</td>
         <td><span class="tag" style="color:${statusColor[r.status]||'var(--muted)'};background:${statusColor[r.status]||'var(--muted)'}18;border:1px solid ${statusColor[r.status]||'var(--muted)'}44">${r.status}</span></td>
       </tr>`).join('')}
