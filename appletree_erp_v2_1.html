@@ -11570,12 +11570,17 @@ function seedVendorLists(){
   }
 
   async function _loadFromSupabase(){
-    for(const key of ERP_KEYS){
-      _sbSetLoading('Loading '+key+'…');
+    // Fire all 36 table fetches in parallel instead of one at a time —
+    // sequential awaits here meant login always took (round-trip × 36),
+    // easily 10-20+ seconds on a normal connection, which is what made
+    // "Verifying access" feel stuck even when nothing was actually broken.
+    _sbSetLoading('Loading your data…');
+    let doneCount = 0;
+    await Promise.all(ERP_KEYS.map(async (key) => {
       try{
         const {data,error}=await _withTimeout(
           _sb.from(sbTable(key)).select('id,data').eq('org_id','appletree-interiors'),
-          6000, key
+          8000, key
         );
         if(!error&&data&&data.length>0){
           DB[key]=data.map(row=>row.data);
@@ -11584,8 +11589,11 @@ function seedVendorLists(){
         // One slow/stuck table must not block the rest — skip it and keep
         // whatever was already in DB[key] (seed data or last cached copy).
         console.warn('[ERP] Skipping',key,'—',e.message);
+      }finally{
+        doneCount++;
+        _sbSetLoading(`Loading your data… (${doneCount}/${ERP_KEYS.length})`);
       }
-    }
+    }));
     // Persist locally so offline access still works
     try{ localStorage.setItem('at_erp_db',JSON.stringify(DB)); }catch(e){}
   }
