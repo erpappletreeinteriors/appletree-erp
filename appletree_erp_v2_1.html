@@ -376,6 +376,19 @@ font-weight:500;}
   100%{box-shadow:0 0 0 0px transparent;background:var(--white);}
 }
 .mch-flash{animation:mchFlash 1.8s ease-out;}
+
+/* Aging widgets (Current vs Overdue split bar) */
+.aging-total{font-size:11px;color:var(--muted);margin-bottom:4px}
+.aging-val{font-family:'Manrope',sans-serif;font-size:26px;font-weight:700;color:var(--dark);margin-bottom:14px}
+.aging-bar{height:10px;border-radius:6px;overflow:hidden;display:flex;background:var(--border2);margin-bottom:10px}
+.aging-bar-seg{height:100%}
+.aging-legend{display:flex;gap:20px;font-size:12px}
+.aging-legend-item{display:flex;align-items:center;gap:6px;color:var(--dark)}
+.aging-legend-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+
+/* Chart.js canvases default to inline display, which breaks its responsive
+   width auto-sizing inside flex/grid card containers (reports width:0). */
+.card canvas{display:block;width:100%!important;height:100%!important}
 .kpi-label{font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
 .kpi-val{font-family:'Manrope',sans-serif;font-size:24px;line-height:1;color:var(--dark);margin-bottom:4px;}
 .kpi-sub{font-size:10.5px;color:var(--muted);}
@@ -570,6 +583,7 @@ textarea.inp{resize:vertical;min-height:72px;}
 }
 </style>
 <script src="vendor/supabase.js"></script>
+<script src="vendor/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -1716,6 +1730,29 @@ textarea.inp{resize:vertical;min-height:72px;}
 
   <!-- Alert Strip -->
   <div id="ceo-alerts" style="margin-bottom:20px"></div>
+
+  <!-- Financial Trends -->
+  <div class="g2" style="margin-bottom:20px">
+    <div class="card">
+      <div class="card-hd"><div><div class="card-title">Income vs Expense</div><div class="card-sub">Last 12 months</div></div></div>
+      <div style="padding:12px 16px;height:220px"><canvas id="ceo-chart-incexp"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><div><div class="card-title">Cash Flow</div><div class="card-sub">Cumulative receipts − payments</div></div></div>
+      <div style="padding:12px 16px;height:220px"><canvas id="ceo-chart-cashflow"></canvas></div>
+    </div>
+  </div>
+
+  <div class="g2" style="margin-bottom:20px">
+    <div class="card">
+      <div class="card-hd"><div class="card-title">Total Receivables</div></div>
+      <div style="padding:16px" id="ceo-receivables-widget"></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><div class="card-title">Total Payables</div></div>
+      <div style="padding:16px" id="ceo-payables-widget"></div>
+    </div>
+  </div>
 
   <!-- Project Health Cards -->
   <div style="font-family:'Manrope',sans-serif;font-size:16px;color:var(--dark);margin-bottom:12px">Project Health</div>
@@ -5484,6 +5521,125 @@ function renderAlertStrip(elId, now){
     : '<div style="background:var(--green-l);border:1px solid var(--green-b);border-radius:var(--r);padding:12px 16px;font-size:12px;color:var(--green);font-weight:600">✅ No alerts — everything is on track</div>';
 }
 
+// Chart.js instances must be destroyed before re-rendering onto the same
+// <canvas>, otherwise Chart.js throws "Canvas is already in use".
+let _ceoChartIncExp = null, _ceoChartCashflow = null;
+
+function _monthKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function _monthLabel(key){
+  const [y,m]=key.split('-');
+  return new Date(+y,+m-1,1).toLocaleDateString('en-IN',{month:'short',year:'2-digit'});
+}
+
+function renderCEOFinancialCharts(now){
+  // Build the last 12 month buckets (oldest -> newest) so charts read left-to-right.
+  const months = [];
+  for(let i=11;i>=0;i--){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    months.push(_monthKey(d));
+  }
+  const income = Object.fromEntries(months.map(m=>[m,0]));
+  const expense = Object.fromEntries(months.map(m=>[m,0]));
+
+  DB.invoices.forEach(i=>{ const k=_monthKey(new Date(i.date)); if(k in income) income[k]+=i.amount; });
+  DB.issues.forEach(i=>{ const k=_monthKey(new Date(i.date)); if(k in expense) expense[k]+=i.amount; });
+  DB.returns.forEach(r=>{ const k=_monthKey(new Date(r.date)); if(k in expense) expense[k]-=r.value; });
+  DB.labour.forEach(l=>{ const k=_monthKey(new Date(l.date)); if(k in expense) expense[k]+=l.amount; });
+  DB.expenses.forEach(e=>{ const k=_monthKey(new Date(e.date)); if(k in expense) expense[k]+=e.amount; });
+
+  const chartLabels = months.map(_monthLabel);
+  const incomeData = months.map(m=>income[m]);
+  const expenseData = months.map(m=>expense[m]);
+
+  const incExpCanvas = document.getElementById('ceo-chart-incexp');
+  if(incExpCanvas && window.Chart){
+    if(_ceoChartIncExp) _ceoChartIncExp.destroy();
+    _ceoChartIncExp = new Chart(incExpCanvas, {
+      type:'bar',
+      data:{ labels:chartLabels, datasets:[
+        {label:'Income', data:incomeData, backgroundColor:'#1E8449', borderRadius:3},
+        {label:'Expense', data:expenseData, backgroundColor:'#C0392B', borderRadius:3},
+      ]},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}}},
+        scales:{
+          y:{ticks:{callback:v=>'₹'+(v>=100000?(v/100000).toFixed(1)+'L':v.toLocaleString('en-IN')), font:{size:10}}},
+          x:{ticks:{font:{size:10}}}
+        }
+      }
+    });
+  }
+
+  // ── Cash Flow: cumulative bank debit (in) minus credit (out), over time ──
+  const bankSorted = [...(DB.bankEntries||[])].sort((a,b)=>new Date(a.date)-new Date(b.date));
+  let running = 0;
+  const cashPoints = bankSorted.map(e=>{
+    running += (e.debit||0) - (e.credit||0);
+    return {x:e.date, y:running};
+  });
+
+  const cashCanvas = document.getElementById('ceo-chart-cashflow');
+  if(cashCanvas && window.Chart){
+    if(_ceoChartCashflow) _ceoChartCashflow.destroy();
+    _ceoChartCashflow = new Chart(cashCanvas, {
+      type:'line',
+      data:{ labels: cashPoints.map(p=>fmtDate(p.x)), datasets:[
+        { label:'Cash Balance', data: cashPoints.map(p=>p.y), borderColor:'#C3B152', backgroundColor:'rgba(195,177,81,.15)', fill:true, tension:.25, pointRadius:2 }
+      ]},
+      options:{
+        responsive:true, maintainAspectRatio:false,
+        plugins:{legend:{display:false}},
+        scales:{
+          y:{ticks:{callback:v=>'₹'+(Math.abs(v)>=100000?(v/100000).toFixed(1)+'L':v.toLocaleString('en-IN')), font:{size:10}}},
+          x:{ticks:{font:{size:10},maxTicksLimit:8}}
+        }
+      }
+    });
+  }
+
+  // ── Receivables aging widget (Current vs Overdue split, Zoho-style) ──
+  let recCurrent=0, recOverdue=0;
+  DB.invoices.forEach(inv=>{
+    const bal = inv.amount - (inv.paid||0);
+    if(bal<=0) return;
+    if(inv.dueDate && new Date(inv.dueDate) < now) recOverdue += bal; else recCurrent += bal;
+  });
+  _renderAgingWidget('ceo-receivables-widget', recCurrent, recOverdue);
+
+  // ── Payables aging widget ──
+  // Bills have no dueDate field in this schema; assume standard 30-day
+  // vendor terms from the bill date, same convention used elsewhere for
+  // undated aging estimates.
+  let payCurrent=0, payOverdue=0;
+  DB.bills.forEach(b=>{
+    const bal = b.amount - (b.paid||0);
+    if(bal<=0) return;
+    const assumedDue = new Date(b.date); assumedDue.setDate(assumedDue.getDate()+30);
+    if(assumedDue < now) payOverdue += bal; else payCurrent += bal;
+  });
+  _renderAgingWidget('ceo-payables-widget', payCurrent, payOverdue);
+}
+
+function _renderAgingWidget(elId, current, overdue){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  const total = current + overdue;
+  const curPct = total>0 ? (current/total*100) : 0;
+  const ovdPct = total>0 ? (overdue/total*100) : 0;
+  el.innerHTML = `
+    <div class="aging-total">Total Outstanding</div>
+    <div class="aging-val">${INR(total)}</div>
+    <div class="aging-bar">
+      <div class="aging-bar-seg" style="width:${curPct}%;background:var(--blue)"></div>
+      <div class="aging-bar-seg" style="width:${ovdPct}%;background:var(--red)"></div>
+    </div>
+    <div class="aging-legend">
+      <div class="aging-legend-item"><span class="aging-legend-dot" style="background:var(--blue)"></span>Current: ${INR(current)}</div>
+      <div class="aging-legend-item"><span class="aging-legend-dot" style="background:var(--red)"></span>Overdue: ${INR(overdue)}</div>
+    </div>`;
+}
+
 function renderCEODash(){
   const now   = new Date();
   const hour  = now.getHours();
@@ -5514,6 +5670,9 @@ function renderCEODash(){
   // ── Alert Strip ──
   renderAlertStrip('ceo-alerts', now);
   const {readyMS, delayedJobs, qcPending, pendingDel} = computeAlerts(now);
+
+  // ── Financial trend charts + aging widgets (Zoho-Books-style) ──
+  renderCEOFinancialCharts(now);
 
   // ── Project Health Cards ──
   const cards = document.getElementById('ceo-project-cards');
