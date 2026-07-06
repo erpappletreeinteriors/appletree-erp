@@ -251,6 +251,12 @@ end $$;
 -- costing detail (a separate set of tables entirely) is exposed.
 alter table ss_projects enable row level security;
 
+-- Clean up the old blanket policy from before ss_projects was split out of
+-- the shared costing-tables loop above — it didn't include Sales Executive,
+-- and leftover permissive policies combine with new ones, so this needs to
+-- be gone rather than just superseded.
+drop policy if exists ss_projects_all on ss_projects;
+
 drop policy if exists ss_projects_select on ss_projects;
 create policy ss_projects_select on ss_projects for select
   using (ss_current_role() in ('Cost Estimator','Admin Coordinator','Management','CEO'));
