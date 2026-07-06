@@ -240,8 +240,15 @@ begin
 end $$;
 
 -- ---- ss_projects: Sales Executive may CREATE (the "Send for Costing" handoff)
--- but never read/edit/delete it afterward — same "no visibility into costing"
--- rule, just with one narrow write allowed for the handoff action itself.
+-- but never READ or DELETE it afterward — same "no visibility into costing"
+-- rule. Sales also gets UPDATE (not just INSERT) because the app always
+-- writes via upsert (INSERT ... ON CONFLICT DO UPDATE): Postgres RLS
+-- requires BOTH the insert and update policies to pass for an upsert
+-- statement, even when no conflict actually occurs, since the statement
+-- structurally contains both paths. In practice this changes nothing —
+-- the app's UI never gives Sales Executive any screen to edit a project,
+-- and they still can never SELECT or DELETE one, so none of the real
+-- costing detail (a separate set of tables entirely) is exposed.
 alter table ss_projects enable row level security;
 
 drop policy if exists ss_projects_select on ss_projects;
@@ -254,8 +261,8 @@ create policy ss_projects_insert on ss_projects for insert
 
 drop policy if exists ss_projects_update on ss_projects;
 create policy ss_projects_update on ss_projects for update
-  using (ss_current_role() in ('Cost Estimator','Admin Coordinator','Management','CEO'))
-  with check (ss_current_role() in ('Cost Estimator','Admin Coordinator','Management','CEO'));
+  using (ss_current_role() in ('Sales Executive','Cost Estimator','Admin Coordinator','Management','CEO'))
+  with check (ss_current_role() in ('Sales Executive','Cost Estimator','Admin Coordinator','Management','CEO'));
 
 drop policy if exists ss_projects_delete on ss_projects;
 create policy ss_projects_delete on ss_projects for delete
@@ -297,11 +304,16 @@ begin
         with check (ss_current_role() in ('Sales Executive','Admin Coordinator','Management','CEO'))
     $p$, t, t);
 
+    -- Sales Executive gets UPDATE here too (not just INSERT): the app always
+    -- writes via upsert, which Postgres RLS requires both insert AND update
+    -- policies to pass for, even on a brand-new row with no real conflict.
+    -- These are low-sensitivity reference lists (name/phone/company), so this
+    -- isn't a meaningful security change — DELETE stays Admin/Management-only.
     execute format('drop policy if exists %I_update on %I', t, t);
     execute format($p$
       create policy %I_update on %I for update
-        using (ss_current_role() in ('Admin Coordinator','Management','CEO'))
-        with check (ss_current_role() in ('Admin Coordinator','Management','CEO'))
+        using (ss_current_role() in ('Sales Executive','Admin Coordinator','Management','CEO'))
+        with check (ss_current_role() in ('Sales Executive','Admin Coordinator','Management','CEO'))
     $p$, t, t);
 
     execute format('drop policy if exists %I_delete on %I', t, t);
