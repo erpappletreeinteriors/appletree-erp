@@ -221,11 +221,13 @@ drop policy if exists ss_quotations_delete on ss_quotations;
 create policy ss_quotations_delete on ss_quotations for delete
   using (ss_current_role() in ('Sales Executive','Admin Coordinator','Management','CEO'));
 
--- ---- Costing tables: Sales = no access at all; Estimator/Admin/Mgmt = full ----
+-- ---- Costing item tables: Sales = no access at all; Estimator/Admin/Mgmt = full ----
+-- (the actual costing detail — material/hardware/labour lines, margins — never
+-- touches Sales Executive at any point)
 do $$
 declare t text;
 begin
-  foreach t in array array['ss_projects','ss_costing_items','ss_custom_items','ss_simple_items']
+  foreach t in array array['ss_costing_items','ss_custom_items','ss_simple_items']
   loop
     execute format('alter table %I enable row level security', t);
     execute format('drop policy if exists %I_all on %I', t, t);
@@ -236,6 +238,28 @@ begin
     $p$, t, t);
   end loop;
 end $$;
+
+-- ---- ss_projects: Sales Executive may CREATE (the "Send for Costing" handoff)
+-- but never read/edit/delete it afterward — same "no visibility into costing"
+-- rule, just with one narrow write allowed for the handoff action itself.
+alter table ss_projects enable row level security;
+
+drop policy if exists ss_projects_select on ss_projects;
+create policy ss_projects_select on ss_projects for select
+  using (ss_current_role() in ('Cost Estimator','Admin Coordinator','Management','CEO'));
+
+drop policy if exists ss_projects_insert on ss_projects;
+create policy ss_projects_insert on ss_projects for insert
+  with check (ss_current_role() in ('Sales Executive','Cost Estimator','Admin Coordinator','Management','CEO'));
+
+drop policy if exists ss_projects_update on ss_projects;
+create policy ss_projects_update on ss_projects for update
+  using (ss_current_role() in ('Cost Estimator','Admin Coordinator','Management','CEO'))
+  with check (ss_current_role() in ('Cost Estimator','Admin Coordinator','Management','CEO'));
+
+drop policy if exists ss_projects_delete on ss_projects;
+create policy ss_projects_delete on ss_projects for delete
+  using (ss_current_role() in ('Cost Estimator','Admin Coordinator','Management','CEO'));
 
 -- ---- Master data (materials/hardware/labour/templates): same as costing ----
 do $$
