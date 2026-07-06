@@ -239,16 +239,16 @@ begin
   end loop;
 end $$;
 
--- ---- ss_projects: Sales Executive may CREATE (the "Send for Costing" handoff)
--- but never READ or DELETE it afterward — same "no visibility into costing"
--- rule. Sales also gets UPDATE (not just INSERT) because the app always
--- writes via upsert (INSERT ... ON CONFLICT DO UPDATE): Postgres RLS
--- requires BOTH the insert and update policies to pass for an upsert
--- statement, even when no conflict actually occurs, since the statement
--- structurally contains both paths. In practice this changes nothing —
--- the app's UI never gives Sales Executive any screen to edit a project,
--- and they still can never SELECT or DELETE one, so none of the real
--- costing detail (a separate set of tables entirely) is exposed.
+-- ---- ss_projects: Sales Executive can see project status/metadata (needed
+-- for the "Estimation" summary shown on their own quotation, and because
+-- Postgres's INSERT ... ON CONFLICT DO UPDATE requires SELECT visibility to
+-- check for a conflict even when none occurs — an upsert-based write, which
+-- is how this app always writes, is not achievable without it). This table
+-- only ever holds project metadata (name/client/location/architect/status)
+-- — the actual costing detail (material/hardware/labour lines, margins)
+-- lives entirely in ss_costing_items/ss_custom_items/ss_simple_items, which
+-- Sales Executive still has zero access to at all, so nothing sensitive is
+-- exposed by this.
 alter table ss_projects enable row level security;
 
 -- Clean up the old blanket policy from before ss_projects was split out of
@@ -259,7 +259,7 @@ drop policy if exists ss_projects_all on ss_projects;
 
 drop policy if exists ss_projects_select on ss_projects;
 create policy ss_projects_select on ss_projects for select
-  using (ss_current_role() in ('Cost Estimator','Admin Coordinator','Management','CEO'));
+  using (ss_current_role() in ('Sales Executive','Cost Estimator','Admin Coordinator','Management','CEO'));
 
 drop policy if exists ss_projects_insert on ss_projects;
 create policy ss_projects_insert on ss_projects for insert
