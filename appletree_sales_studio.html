@@ -191,7 +191,61 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 </style>
 </head>
 <body>
-<div id="app">
+
+<!-- LOADING OVERLAY (shown while checking session) -->
+<div id="sb-loading" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:10px">
+  <img src="logo.png" alt="Apple Tree" style="width:48px;height:auto">
+  <div style="font-size:12px;color:var(--muted)">Loading Sales &amp; Estimation Studio…</div>
+</div>
+
+<!-- LOGIN / SIGN UP -->
+<div id="login-screen" class="hidden" style="position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;z-index:190;padding:20px">
+  <div class="card" style="width:100%;max-width:400px">
+    <div style="text-align:center;margin-bottom:16px">
+      <img src="logo.png" alt="Apple Tree" style="width:44px;height:auto">
+      <div class="brand-mark" style="font-size:14px;text-transform:uppercase;margin-top:8px;color:var(--gold-dim)">Apple Tree</div>
+      <div class="card-sub">Sales &amp; Estimation Studio</div>
+    </div>
+
+    <div id="login-form">
+      <div class="frow"><label class="fl">Email</label><input class="inp" type="email" id="login-email"></div>
+      <div class="frow"><label class="fl">Password</label><input class="inp" type="password" id="login-pass"></div>
+      <div id="login-error" class="hint" style="color:var(--red);display:none"></div>
+      <button class="btn btn-gold" style="width:100%;margin-top:6px" onclick="doLogin()">Log In</button>
+      <div style="text-align:center;margin-top:12px;font-size:12px">No account yet? <a href="#" onclick="toggleAuthForm('signup');return false">Sign Up</a></div>
+    </div>
+
+    <div id="signup-form" style="display:none">
+      <div class="frow"><label class="fl req">Full Name</label><input class="inp" id="signup-name"></div>
+      <div class="frow"><label class="fl req">Email</label><input class="inp" type="email" id="signup-email"></div>
+      <div class="frow"><label class="fl">Phone</label><input class="inp" id="signup-phone"></div>
+      <div class="frow"><label class="fl req">Password</label><input class="inp" type="password" id="signup-pass"></div>
+      <div class="frow"><label class="fl req">Your Role</label>
+        <select class="inp" id="signup-role">
+          <option value="Sales Executive">Sales Executive</option>
+          <option value="Cost Estimator">Cost Estimator</option>
+          <option value="Admin Coordinator">Admin Coordinator</option>
+          <option value="Management">Management</option>
+        </select>
+      </div>
+      <div id="signup-error" class="hint" style="color:var(--red);display:none"></div>
+      <button class="btn btn-gold" style="width:100%;margin-top:6px" onclick="doSignup()">Create Account</button>
+      <div style="text-align:center;margin-top:12px;font-size:12px">Already have an account? <a href="#" onclick="toggleAuthForm('login');return false">Log In</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- PENDING APPROVAL -->
+<div id="pending-screen" style="position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;z-index:190;padding:20px">
+  <div class="card" style="width:100%;max-width:420px;text-align:center">
+    <img src="logo.png" alt="Apple Tree" style="width:44px;height:auto;margin-bottom:10px">
+    <div class="card-title">Waiting for Approval</div>
+    <div class="card-sub" style="margin-top:8px;line-height:1.6">Your account has been created and is waiting for an Admin Coordinator or Management to approve your access and confirm your role. Check back shortly, or ask them to open "Team &amp; Approvals" inside this app.</div>
+    <button class="btn btn-outline" style="margin-top:14px" onclick="doLogout()">Log Out</button>
+  </div>
+</div>
+
+<div id="app" style="display:none">
   <div id="sidebar">
     <div class="brand" style="display:flex;align-items:center;gap:10px">
       <img src="logo.png" alt="Apple Tree" style="width:34px;height:auto;flex-shrink:0">
@@ -200,36 +254,40 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
         <div class="brand-sub">Sales &amp; Estimation Studio</div>
       </div>
     </div>
-    <div class="nav-group">
+    <div class="nav-group" id="navgroup-overview">
       <div class="nav-label">Overview</div>
       <div class="nav-item" data-pg="dashboard" onclick="nav('dashboard',this)"><span class="ni">📊</span> Dashboard</div>
     </div>
-    <div class="nav-group">
+    <div class="nav-group" id="navgroup-quotations">
       <div class="nav-label">Quotations</div>
       <div class="nav-item" data-pg="quotations" onclick="nav('quotations',this)"><span class="ni">📋</span> All Quotations</div>
       <div class="nav-item" data-pg="kanban" onclick="nav('kanban',this)"><span class="ni">🗂️</span> Kanban Board</div>
       <div class="nav-item" data-pg="calendar" onclick="nav('calendar',this)"><span class="ni">📅</span> Calendar</div>
     </div>
-    <div class="nav-group">
+    <div class="nav-group" id="navgroup-masterdata">
       <div class="nav-label">Master Data</div>
       <div class="nav-item" data-pg="materials" onclick="nav('materials',this)"><span class="ni">🪵</span> Material Master</div>
       <div class="nav-item" data-pg="hardware" onclick="nav('hardware',this)"><span class="ni">🔩</span> Hardware Master</div>
       <div class="nav-item" data-pg="labour" onclick="nav('labour',this)"><span class="ni">👷</span> Labour Master</div>
       <div class="nav-item" data-pg="templates" onclick="nav('templates',this)"><span class="ni">🛋️</span> Furniture Templates</div>
     </div>
-    <div class="nav-group">
+    <div class="nav-group" id="navgroup-estimation">
       <div class="nav-label">Estimation</div>
       <div class="nav-item" data-pg="projects" onclick="nav('projects',this)"><span class="ni">📁</span> Costing Projects</div>
       <div class="nav-item" data-pg="approvals" onclick="nav('approvals',this)"><span class="ni">✅</span> Estimation Approvals</div>
       <div class="nav-item" data-pg="costingdashboard" onclick="nav('costingdashboard',this)"><span class="ni">📐</span> Costing Dashboard</div>
       <div class="nav-item" data-pg="reports" onclick="nav('reports',this)"><span class="ni">🖨️</span> Costing Reports</div>
     </div>
-    <div class="nav-group">
+    <div class="nav-group" id="navgroup-crm">
       <div class="nav-label">CRM</div>
       <div class="nav-item" data-pg="partners" onclick="nav('partners',this)"><span class="ni">🤝</span> Partners &amp; Staff</div>
       <div class="nav-item" data-pg="analytics" onclick="nav('analytics',this)"><span class="ni">📈</span> Analytics</div>
     </div>
-    <div class="nav-group">
+    <div class="nav-group" id="navgroup-admin">
+      <div class="nav-label">Admin</div>
+      <div class="nav-item" data-pg="teamapprovals" onclick="nav('teamapprovals',this)"><span class="ni">🔐</span> Team &amp; Approvals</div>
+    </div>
+    <div class="nav-group" id="navgroup-system">
       <div class="nav-label">System</div>
       <div class="nav-item" data-pg="settings" onclick="nav('settings',this)"><span class="ni">⚙️</span> Settings</div>
     </div>
@@ -238,7 +296,11 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
   <div id="main">
     <div id="topbar">
       <div class="page-title" id="pg-title">Dashboard</div>
-      <div style="font-size:11px;color:var(--muted)">Standalone build — works fully offline · not yet linked to the main ERP</div>
+      <div class="chip-row" style="align-items:center">
+        <span style="font-size:11px;color:var(--muted)" id="topbar-syncstatus">●&nbsp;Synced</span>
+        <span style="font-size:11.5px;color:var(--text)"><b id="topbar-username">—</b> · <span id="topbar-userrole" class="tag tag-grey" style="margin-left:2px"></span></span>
+        <button class="btn btn-sm btn-outline" onclick="doLogout()">Log Out</button>
+      </div>
     </div>
     <div id="content">
 
@@ -954,6 +1016,18 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
         <div id="rep-output"></div>
       </div>
 
+      <!-- TEAM & APPROVALS -->
+      <div id="pg-teamapprovals" class="page">
+        <div class="sec-hd"><div class="sec-title">Team &amp; Approvals</div><div class="card-sub">Approve new sign-ups and see who has access to this tool</div></div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Pending Sign-ups</div></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Requested Role</th><th>Requested</th><th></th></tr></thead>
+            <tbody id="tb-pendingusers"></tbody>
+          </table></div>
+        </div>
+      </div>
+
       <!-- SETTINGS -->
       <div id="pg-settings" class="page">
         <div class="sec-hd"><div class="sec-title">Settings</div><span class="small">Changes here only affect new quotations/items — existing ones keep what was already saved.</span></div>
@@ -1100,6 +1174,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 <script>window.PagedConfig = { auto:false };</script>
 <script src="vendor/paged.polyfill.js"></script>
 <script src="vendor/xlsx.full.min.js"></script>
+<script src="vendor/supabase.js"></script>
 <script>
 /* ============================== CONSTANTS ============================== */
 const STORE_KEY='appletree_sales_studio_db_v1';
@@ -1160,6 +1235,7 @@ function statusTag(s){ return `<span class="tag ${STATUS_COLOR_MAP[s]||'tag-grey
 function persist(){
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }
   catch(e){ alert('Could not save — your browser storage is full.'); console.error('persist() failed',e); }
+  if(_sb && _currentUser) _sbQueueSync();
 }
 function defaultTerms(){
   return {
@@ -1408,7 +1484,19 @@ function sanitizeAllData(){
   DB.quotations.forEach(sanitizeQuotation);
   DB.projects.forEach(p=>{ if(!PROJECT_STATUSES.includes(p.status)) p.status = p.status==='Sent'?'Submitted' : p.status==='Approved'?'Approved' : 'Draft'; if(!p.quotationId) p.quotationId=''; });
 }
-function loadOrSeed(){
+async function loadOrSeed(){
+  if(_sb && _currentUser){
+    try{
+      await _sbLoadAll();
+      sanitizeAllData();
+      try{ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }catch(e){}
+      await _maybeOfferLocalUpload();
+      return;
+    }catch(e){ console.error('Cloud load failed, falling back to local cache',e); }
+  }
+  loadOrSeedLocal();
+}
+function loadOrSeedLocal(){
   const raw=localStorage.getItem(STORE_KEY);
   if(raw){
     try{
@@ -3442,7 +3530,7 @@ function reportTitle(key){ return {internal:'Internal Cost Sheet',quotation:'Cli
 
 /* ============================== NAV ============================== */
 const PAGE_TITLES={dashboard:'Dashboard',quotations:'Quotations',editor:'Quotation Editor',print:'Preview & Print',settings:'Settings',partners:'Partners & Staff',analytics:'Analytics',kanban:'Kanban Board',calendar:'Follow-up Calendar',
-  materials:'Material Master',hardware:'Hardware Master',labour:'Labour Master',templates:'Furniture Template Library',projects:'Costing Projects',projectdetail:'Project',itemdetail:'Furniture Item',customitemdetail:'Custom Wood Item',simpleitemdetail:'Simple Costing Item',reports:'Costing Reports',costingdashboard:'Costing Dashboard',approvals:'Estimation Approvals'};
+  materials:'Material Master',hardware:'Hardware Master',labour:'Labour Master',templates:'Furniture Template Library',projects:'Costing Projects',projectdetail:'Project',itemdetail:'Furniture Item',customitemdetail:'Custom Wood Item',simpleitemdetail:'Simple Costing Item',reports:'Costing Reports',costingdashboard:'Costing Dashboard',approvals:'Estimation Approvals',teamapprovals:'Team & Approvals'};
 const NAV_GROUP_MAP={editor:'quotations',print:'quotations',projectdetail:'projects',itemdetail:'projects',customitemdetail:'projects',simpleitemdetail:'projects'};
 function nav(pg,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -3452,7 +3540,7 @@ function nav(pg,el){
   if(el) el.classList.add('active');
   else { const match=document.querySelector(`.nav-item[data-pg="${NAV_GROUP_MAP[pg]||pg}"]`); if(match) match.classList.add('active'); }
   const renderers={dashboard:renderDashboard,quotations:renderQuotations,editor:renderEditor,settings:renderSettings,partners:renderPartners,analytics:renderAnalytics,kanban:renderKanban,calendar:renderCalendar,
-    materials:renderMaterials,hardware:renderHardware,labour:renderLabour,templates:renderTemplates,projects:renderProjects,reports:renderReportsPage,costingdashboard:renderCostingDashboard,approvals:renderEstimationApprovals,
+    materials:renderMaterials,hardware:renderHardware,labour:renderLabour,templates:renderTemplates,projects:renderProjects,reports:renderReportsPage,costingdashboard:renderCostingDashboard,approvals:renderEstimationApprovals,teamapprovals:renderTeamApprovals,
     projectdetail:renderProjectDetail,itemdetail:renderCostingItemDetail,customitemdetail:renderCustomItemDetail,simpleitemdetail:renderSimpleItemDetail};
   if(renderers[pg]) renderers[pg]();
 }
@@ -4835,22 +4923,229 @@ async function renderPrintPreview(){
   }
 }
 
+/* ============================== SUPABASE AUTH + CLOUD SYNC ============================== */
+const SB_URL='https://meuqchwjzxegxtglajxj.supabase.co';
+const SB_KEY='sb_publishable_oLTN5ONcrPfTk1NtO4WM3g_r6fln-Zm';
+const SS_ROLES=['Sales Executive','Cost Estimator','Admin Coordinator','Management'];
+const SS_ADMIN_ROLES=['Admin Coordinator','Management','CEO'];
+const SS_TABLE_MAP={quotations:'ss_quotations',staff:'ss_staff',architects:'ss_architects',builders:'ss_builders',b2bPartners:'ss_b2b_partners',
+  materials:'ss_materials',hardware:'ss_hardware',labour:'ss_labour',templates:'ss_templates',
+  projects:'ss_projects',costingItems:'ss_costing_items',customItems:'ss_custom_items',simpleItems:'ss_simple_items'};
+const SS_KEYS=Object.keys(SS_TABLE_MAP);
+const SS_SETTINGS_ROW_ID='org-settings';
+
+let _sb=null, _currentUser=null;
+try{ if(window.supabase) _sb=window.supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true}}); }
+catch(e){ console.error('Supabase init failed',e); }
+
+function _showScreen(name){
+  document.getElementById('sb-loading').style.display = name==='loading' ? 'flex' : 'none';
+  document.getElementById('login-screen').style.display = name==='login' ? 'flex' : 'none';
+  document.getElementById('pending-screen').style.display = name==='pending' ? 'flex' : 'none';
+  document.getElementById('app').style.display = name==='app' ? 'flex' : 'none';
+}
+function toggleAuthForm(which){
+  document.getElementById('login-form').style.display = which==='login' ? '' : 'none';
+  document.getElementById('signup-form').style.display = which==='signup' ? '' : 'none';
+  document.getElementById('login-error').style.display='none';
+  document.getElementById('signup-error').style.display='none';
+}
+function _authError(elId,msg){ const el=document.getElementById(elId); el.textContent=msg; el.style.display=''; }
+
+async function doLogin(){
+  const email=document.getElementById('login-email').value.trim().toLowerCase();
+  const pass=document.getElementById('login-pass').value;
+  if(!email||!pass){ _authError('login-error','Enter your email and password.'); return; }
+  const {data,error}=await _sb.auth.signInWithPassword({email,password:pass});
+  if(error){ _authError('login-error',error.message); return; }
+  await _handleSession(data.session);
+}
+async function doSignup(){
+  const name=document.getElementById('signup-name').value.trim();
+  const email=document.getElementById('signup-email').value.trim().toLowerCase();
+  const phone=document.getElementById('signup-phone').value.trim();
+  const pass=document.getElementById('signup-pass').value;
+  const role=document.getElementById('signup-role').value;
+  if(!name||!email||!pass){ _authError('signup-error','Name, email and password are required.'); return; }
+  if(pass.length<6){ _authError('signup-error','Password must be at least 6 characters.'); return; }
+  const {data,error}=await _sb.auth.signUp({email,password:pass});
+  if(error){ _authError('signup-error',error.message); return; }
+  const userId = data.user?.id || data.session?.user?.id;
+  if(!userId){ _authError('signup-error','Could not create account — try logging in, or contact your admin.'); return; }
+  try{ await _sb.from('ss_pending_users').insert({user_id:userId,name,email,phone,requested_role:role,status:'pending'}); }
+  catch(e){ console.error('Could not save signup request',e); }
+  if(data.session){ await _handleSession(data.session); } else { _showScreen('pending'); }
+}
+async function doLogout(){
+  try{ if(_sb) await _sb.auth.signOut(); }catch(e){}
+  location.reload();
+}
+
+async function _handleSession(session){
+  if(!session||!session.user){ _showScreen('login'); return; }
+  _showScreen('loading');
+  const userId=session.user.id;
+  let profile=null;
+  try{
+    const {data}=await _sb.from('user_profiles').select('*').eq('user_id',userId).maybeSingle();
+    profile=data;
+  }catch(e){ console.error('Profile lookup failed',e); }
+
+  const recognizedRole = (profile && profile.is_approved && (SS_ROLES.includes(profile.role)||profile.role==='CEO')) ? profile.role : null;
+  if(!recognizedRole){ _showScreen('pending'); return; }
+
+  _currentUser={id:userId,email:session.user.email,name:profile.name||session.user.email,role:recognizedRole};
+  document.getElementById('topbar-username').textContent=_currentUser.name;
+  document.getElementById('topbar-userrole').textContent=_currentUser.role;
+  applyRoleNav(_currentUser.role);
+  try{
+    await loadOrSeed();
+    _showScreen('app');
+    nav('dashboard',document.querySelector('.nav-item[data-pg="dashboard"]'));
+  }catch(e){
+    console.error('Fatal error loading Sales Studio data',e);
+    _showScreen('app');
+    document.getElementById('content').innerHTML=`<div class="card">
+      <div class="card-title">Something went wrong loading your data</div>
+      <div class="card-sub" style="margin-top:8px;line-height:1.6">This usually happens when data saved on this computer from an older version doesn't match the latest version. Click below to reset your local cache and reload — your cloud data is safe either way.</div>
+      <button class="btn btn-red" style="margin-top:14px" onclick="localStorage.removeItem('${STORE_KEY}');window.location.reload()">Reset Local Cache &amp; Reload</button>
+    </div>`;
+  }
+}
+
+function applyRoleNav(role){
+  const isFull = SS_ADMIN_ROLES.includes(role);
+  const groupVisibility = {
+    'navgroup-overview':true,
+    'navgroup-quotations': isFull || role==='Sales Executive',
+    'navgroup-masterdata': isFull || role==='Cost Estimator',
+    'navgroup-estimation': isFull || role==='Cost Estimator',
+    'navgroup-crm': isFull || role==='Sales Executive',
+    'navgroup-admin': isFull,
+    'navgroup-system': true
+  };
+  Object.entries(groupVisibility).forEach(([id,visible])=>{
+    const el=document.getElementById(id);
+    if(el) el.style.display = visible ? '' : 'none';
+  });
+}
+
+/* ---- Cloud sync ---- */
+let _dirty=new Set(), _syncTimer=null;
+function _sbQueueSync(){
+  SS_KEYS.forEach(k=>_dirty.add(k));
+  _dirty.add('settings');
+  const st=document.getElementById('topbar-syncstatus'); if(st) st.textContent='● Saving…';
+  if(_syncTimer) clearTimeout(_syncTimer);
+  _syncTimer=setTimeout(_sbFlush,2000);
+}
+async function _sbFlush(){
+  if(!_sb||!_currentUser) return;
+  const keys=[..._dirty]; _dirty.clear();
+  for(const k of keys){
+    try{
+      if(k==='settings'){
+        await _sb.from('ss_settings').upsert({id:SS_SETTINGS_ROW_ID,data:DB.settings,updated_at:new Date().toISOString()},{onConflict:'id'});
+        continue;
+      }
+      const table=SS_TABLE_MAP[k];
+      if(!table) continue;
+      const rows=(DB[k]||[]).map(r=>({id:String(r.id),data:r,created_by:_currentUser.id,updated_at:new Date().toISOString()}));
+      if(rows.length) await _sb.from(table).upsert(rows,{onConflict:'id'});
+    }catch(e){ console.error('Sync failed for',k,e); }
+  }
+  const st=document.getElementById('topbar-syncstatus'); if(st) st.textContent='● Synced';
+}
+async function _sbLoadAll(){
+  const entries=await Promise.all(SS_KEYS.map(async k=>{
+    const table=SS_TABLE_MAP[k];
+    const {data,error}=await _sb.from(table).select('id,data');
+    if(error) throw error;
+    return [k,(data||[]).map(row=>row.data)];
+  }));
+  entries.forEach(([k,rows])=>{ DB[k]=rows; });
+  try{
+    const {data}=await _sb.from('ss_settings').select('data').eq('id',SS_SETTINGS_ROW_ID).maybeSingle();
+    if(data&&data.data) DB.settings={...DB.settings,...data.data};
+  }catch(e){ console.error('Settings load failed',e); }
+}
+async function _maybeOfferLocalUpload(){
+  const cloudEmpty = SS_KEYS.every(k=>!(DB[k]&&DB[k].length));
+  if(!cloudEmpty) return;
+  const raw=localStorage.getItem(STORE_KEY);
+  if(!raw) return;
+  try{
+    const local=JSON.parse(raw);
+    const hasLocalData = SS_KEYS.some(k=>local[k]&&local[k].length);
+    if(!hasLocalData) return;
+    if(confirm('This browser has quotations/materials saved locally that are not in the cloud yet. Upload them now so nothing is lost?')){
+      SS_KEYS.forEach(k=>{ if(local[k]&&local[k].length) DB[k]=local[k]; });
+      if(local.settings) DB.settings={...DB.settings,...local.settings};
+      sanitizeAllData();
+      persist();
+      alert('Uploading your existing data to the cloud now — this may take a few seconds.');
+    }
+  }catch(e){ console.error('Local upload check failed',e); }
+}
+
+/* ---- Team & Approvals ---- */
+let _teamPendingCache=[];
+async function renderTeamApprovals(){
+  const tb=document.getElementById('tb-pendingusers');
+  if(!_sb){ tb.innerHTML='<tr><td colspan="6" class="empty">Not connected.</td></tr>'; return; }
+  try{
+    const {data,error}=await _sb.from('ss_pending_users').select('*').eq('status','pending').order('requested_at',{ascending:true});
+    if(error) throw error;
+    _teamPendingCache = data||[];
+    tb.innerHTML = _teamPendingCache.length ? _teamPendingCache.map((p,i)=>`<tr>
+      <td>${escHtml(p.name||'—')}</td><td>${escHtml(p.email||'—')}</td><td>${escHtml(p.phone||'—')}</td>
+      <td><span class="tag tag-blue">${escHtml(p.requested_role)}</span></td><td>${fmtDate(p.requested_at)}</td>
+      <td class="chip-row"><button class="btn btn-sm btn-gold" onclick="approvePendingUser(${i})">Approve</button>
+      <button class="btn btn-sm btn-red" onclick="rejectPendingUser(${i})">Reject</button></td>
+    </tr>`).join('') : '<tr><td colspan="6" class="empty">No pending sign-ups.</td></tr>';
+  }catch(e){ console.error(e); tb.innerHTML='<tr><td colspan="6" class="empty">Could not load — check your connection.</td></tr>'; }
+}
+async function approvePendingUser(i){
+  const p=_teamPendingCache[i]; if(!p) return;
+  try{
+    await _sb.from('user_profiles').upsert({user_id:p.user_id,org_id:'appletree-interiors',name:p.name,email:p.email,role:p.requested_role,phone:p.phone,is_approved:true});
+    await _sb.from('ss_pending_users').update({status:'approved',decided_at:new Date().toISOString(),decided_by:_currentUser.id}).eq('id',p.id);
+    renderTeamApprovals();
+  }catch(e){ console.error(e); alert('Could not approve this user — check your connection and try again.'); }
+}
+async function rejectPendingUser(i){
+  const p=_teamPendingCache[i]; if(!p) return;
+  if(!confirm('Reject this sign-up request?')) return;
+  try{
+    await _sb.from('ss_pending_users').update({status:'rejected',decided_at:new Date().toISOString(),decided_by:_currentUser.id}).eq('id',p.id);
+    renderTeamApprovals();
+  }catch(e){ console.error(e); alert('Could not reject this user — check your connection and try again.'); }
+}
+
 /* ============================== INIT ============================== */
 document.getElementById('modal-bg').addEventListener('click',e=>{
   if(e.target.id!=='modal-bg') return;
   if(_pendingLossPrevStatus!==null) cancelLostStatus(); else closeModal();
 });
-try{
-  loadOrSeed();
-  nav('dashboard',document.querySelector('.nav-item[data-pg="dashboard"]'));
-}catch(e){
-  console.error('Fatal error loading Quotation Studio',e);
-  document.getElementById('content').innerHTML=`<div class="card">
-    <div class="card-title">Something went wrong loading your saved data</div>
-    <div class="card-sub" style="margin-top:8px;line-height:1.6">This usually happens when data saved on this computer from an older version doesn't match the latest version. Click below to reset and start fresh — this only clears data stored in this browser; any quotations you already saved to a file on your PC are not affected.</div>
-    <button class="btn btn-red" style="margin-top:14px" onclick="localStorage.removeItem('${STORE_KEY}');window.location.reload()">Reset App Data &amp; Reload</button>
-  </div>`;
+function _withTimeout(promise,ms){
+  return Promise.race([promise, new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))]);
 }
+(async function _boot(){
+  try{
+    if(!_sb){
+      console.error('Supabase JS not loaded — check vendor/supabase.js');
+      _showScreen('login');
+      return;
+    }
+    _sb.auth.onAuthStateChange((event)=>{ if(event==='SIGNED_OUT') _showScreen('login'); });
+    const {data}=await _withTimeout(_sb.auth.getSession(),8000);
+    if(data && data.session){ await _handleSession(data.session); }
+    else{ _showScreen('login'); }
+  }catch(e){
+    console.error('Fatal error during boot',e);
+    _showScreen('login');
+  }
+})();
 </script>
 </body>
 </html>
