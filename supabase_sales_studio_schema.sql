@@ -210,8 +210,8 @@ begin
     execute format('drop policy if exists %I_all on %I', t, t);
     execute format($p$
       create policy %I_all on %I for all
-        using (ss_current_role() in (''Cost Estimator'',''Admin Coordinator'',''Management'',''CEO''))
-        with check (ss_current_role() in (''Cost Estimator'',''Admin Coordinator'',''Management'',''CEO''))
+        using (ss_current_role() in ('Cost Estimator','Admin Coordinator','Management','CEO'))
+        with check (ss_current_role() in ('Cost Estimator','Admin Coordinator','Management','CEO'))
     $p$, t, t);
   end loop;
 end $$;
@@ -226,8 +226,8 @@ begin
     execute format('drop policy if exists %I_all on %I', t, t);
     execute format($p$
       create policy %I_all on %I for all
-        using (ss_current_role() in (''Cost Estimator'',''Admin Coordinator'',''Management'',''CEO''))
-        with check (ss_current_role() in (''Cost Estimator'',''Admin Coordinator'',''Management'',''CEO''))
+        using (ss_current_role() in ('Cost Estimator','Admin Coordinator','Management','CEO'))
+        with check (ss_current_role() in ('Cost Estimator','Admin Coordinator','Management','CEO'))
     $p$, t, t);
   end loop;
 end $$;
@@ -243,26 +243,26 @@ begin
     execute format('drop policy if exists %I_select on %I', t, t);
     execute format($p$
       create policy %I_select on %I for select
-        using (ss_current_role() in (''Sales Executive'',''Cost Estimator'',''Admin Coordinator'',''Management'',''CEO''))
+        using (ss_current_role() in ('Sales Executive','Cost Estimator','Admin Coordinator','Management','CEO'))
     $p$, t, t);
 
     execute format('drop policy if exists %I_insert on %I', t, t);
     execute format($p$
       create policy %I_insert on %I for insert
-        with check (ss_current_role() in (''Sales Executive'',''Admin Coordinator'',''Management'',''CEO''))
+        with check (ss_current_role() in ('Sales Executive','Admin Coordinator','Management','CEO'))
     $p$, t, t);
 
     execute format('drop policy if exists %I_update on %I', t, t);
     execute format($p$
       create policy %I_update on %I for update
-        using (ss_current_role() in (''Admin Coordinator'',''Management'',''CEO''))
-        with check (ss_current_role() in (''Admin Coordinator'',''Management'',''CEO''))
+        using (ss_current_role() in ('Admin Coordinator','Management','CEO'))
+        with check (ss_current_role() in ('Admin Coordinator','Management','CEO'))
     $p$, t, t);
 
     execute format('drop policy if exists %I_delete on %I', t, t);
     execute format($p$
       create policy %I_delete on %I for delete
-        using (ss_current_role() in (''Admin Coordinator'',''Management'',''CEO''))
+        using (ss_current_role() in ('Admin Coordinator','Management','CEO'))
     $p$, t, t);
   end loop;
 end $$;
