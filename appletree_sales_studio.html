@@ -142,6 +142,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 .etab{display:none}
 .etab.active{display:block}
 .tab-btn.active{background:var(--dark);color:#fff;border-color:var(--dark)}
+.settings-cat.active{background:var(--dark);color:#fff;border-color:var(--dark)}
 
 /* Reminders */
 .reminder-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}
@@ -925,92 +926,138 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
       <!-- SETTINGS -->
       <div id="pg-settings" class="page">
-        <div class="sec-hd"><div class="sec-title">Settings</div><span class="small">Changes here only affect new quotations — existing ones keep what was already saved.</span></div>
+        <div class="sec-hd"><div class="sec-title">Settings</div><span class="small">Changes here only affect new quotations/items — existing ones keep what was already saved.</span></div>
 
-        <div class="card">
-          <div class="card-hd"><div class="card-title">Company Profile</div></div>
-          <div class="fgrid">
-            <div class="frow"><label class="fl">Company Name</label><input class="inp" id="st-companyName" onchange="stSet('companyName',this.value)"></div>
-            <div class="frow"><label class="fl">Tagline</label><input class="inp" id="st-tagline" onchange="stSet('tagline',this.value)"></div>
-            <div class="frow"><label class="fl">Phone</label><input class="inp" id="st-phone" onchange="stSet('phone',this.value)"></div>
-            <div class="frow"><label class="fl">Email</label><input class="inp" id="st-email" onchange="stSet('email',this.value)"></div>
-            <div class="frow"><label class="fl">Website</label><input class="inp" id="st-website" onchange="stSet('website',this.value)"></div>
-            <div class="frow"><label class="fl">Authorized Signatory Title</label><input class="inp" id="st-signatory" onchange="stSet('signatoryTitle',this.value)"></div>
-            <div class="frow"><label class="fl">Default Estimate Validity (days)</label><input class="inp" type="number" min="1" id="st-validity" onchange="stSet('defaultValidityDays',num(this.value,14))"></div>
-            <div class="frow"><label class="fl">Quote Number Prefix</label><input class="inp" id="st-prefix" onchange="stSet('quotePrefix',this.value)"></div>
-            <div class="frow"><label class="fl">Next Quote Number</label><input class="inp" type="number" min="1" id="st-seq" onchange="stSet('nextQuoteSeq',num(this.value,1))"></div>
-          </div>
-          <div class="frow" style="margin-top:6px"><label class="fl">Company Profile (shown on Introduction page)</label><textarea class="inp" id="st-profile" rows="4" style="resize:vertical" onchange="stSet('companyProfile',this.value)"></textarea></div>
-          <div class="frow"><label class="fl">Default Welcome Note (pre-fills new quotations)</label><textarea class="inp" id="st-welcome" rows="3" style="resize:vertical" onchange="stSet('welcomeNote',this.value)"></textarea></div>
-        </div>
-
-        <div class="card">
-          <div class="card-hd"><div class="card-title">Default Material Specifications</div><button class="btn btn-outline btn-sm" onclick="settingsAddSpec()">+ Add Row</button></div>
-          <div class="tbl-wrap"><table>
-            <thead><tr><th style="min-width:150px">Category</th><th style="min-width:260px">Specification</th><th style="width:40px"></th></tr></thead>
-            <tbody id="st-specs-tb"></tbody>
-          </table></div>
-        </div>
-
-        <div class="card">
-          <div class="card-hd"><div class="card-title">Default Terms &amp; Conditions</div><div class="card-sub">Copied into every new quotation as an editable starting point</div></div>
-          <div class="letter-lbl"><span class="lt">A.</span>Scope of Work</div>
-          <div class="frow"><textarea class="inp" id="st-scope" rows="2" style="resize:vertical" onchange="stSetTerm('scope',this.value)"></textarea></div>
-
-          <div class="letter-lbl"><span class="lt">B.</span>Estimate Includes</div>
-          <div id="st-inclusions-list"></div>
-
-          <div class="letter-lbl"><span class="lt">C.</span>Estimate Excludes</div>
-          <div id="st-exclusions-list"></div>
-
-          <div class="letter-lbl"><span class="lt">D.</span>Payment Schedule</div>
-          <div class="tbl-wrap"><table>
-            <thead><tr><th style="min-width:120px">Milestone</th><th style="min-width:200px">Description</th><th style="width:80px">%</th><th style="width:40px"></th></tr></thead>
-            <tbody id="st-pay-tb"></tbody>
-          </table></div>
-          <div style="margin:8px 0 18px"><button class="btn btn-outline btn-sm" onclick="settingsAddPay()">+ Add Payment Line</button></div>
-
-          <div class="letter-lbl"><span class="lt">E.</span>Warranty</div>
-          <div class="frow"><textarea class="inp" id="st-warranty" rows="2" style="resize:vertical" onchange="stSetTerm('warranty',this.value)"></textarea></div>
-
-          <div class="letter-lbl"><span class="lt">F.</span>Delivery Timeline</div>
-          <div class="frow"><input class="inp" id="st-delivery" onchange="stSetTerm('deliveryTimeline',this.value)"></div>
-
-          <div class="letter-lbl"><span class="lt">G.</span>Taxes Note</div>
-          <div class="frow"><input class="inp" id="st-taxes" onchange="stSetTerm('taxesNote',this.value)"></div>
-
-          <div class="letter-lbl"><span class="lt">H.</span>Bank Account Details</div>
-          <div class="fgrid">
-            <div class="frow"><label class="fl">Account Name</label><input class="inp" id="st-bank-name" onchange="stSetBank('accName',this.value)"></div>
-            <div class="frow"><label class="fl">Account No.</label><input class="inp" id="st-bank-no" onchange="stSetBank('accNo',this.value)"></div>
-            <div class="frow"><label class="fl">IFSC</label><input class="inp" id="st-bank-ifsc" onchange="stSetBank('ifsc',this.value)"></div>
-            <div class="frow"><label class="fl">Bank &amp; Branch</label><input class="inp" id="st-bank-branch" onchange="stSetBank('bank',this.value)"></div>
-            <div class="frow"><label class="fl">Account Type</label><input class="inp" id="st-bank-type" onchange="stSetBank('type',this.value)"></div>
+        <div style="display:grid;grid-template-columns:200px 1fr;gap:18px;align-items:start">
+          <div id="settings-menu" style="display:flex;flex-direction:column;gap:8px;position:sticky;top:76px">
+            <div class="btn btn-sm settings-cat active" data-cat="general" onclick="showSettingsCat('general',this)" style="text-align:left;justify-content:flex-start">🏢 General</div>
+            <div class="btn btn-sm settings-cat" data-cat="quotation" onclick="showSettingsCat('quotation',this)" style="text-align:left;justify-content:flex-start">📋 Quotation Defaults</div>
+            <div class="btn btn-sm settings-cat" data-cat="estimation" onclick="showSettingsCat('estimation',this)" style="text-align:left;justify-content:flex-start">📐 Estimation &amp; Costing</div>
+            <div class="btn btn-sm settings-cat" data-cat="crmlists" onclick="showSettingsCat('crmlists',this)" style="text-align:left;justify-content:flex-start">🤝 CRM Lists</div>
+            <div class="btn btn-sm settings-cat" data-cat="data" onclick="showSettingsCat('data',this)" style="text-align:left;justify-content:flex-start">💾 Data &amp; Backup</div>
           </div>
 
-          <div class="letter-lbl"><span class="lt">I.</span>Acceptance Text</div>
-          <div class="frow"><textarea class="inp" id="st-acceptance" rows="3" style="resize:vertical" onchange="stSetTerm('acceptanceText',this.value)"></textarea></div>
-        </div>
+          <div>
+          <!-- GENERAL -->
+          <div id="scat-general" class="setcat">
+            <div class="card">
+              <div class="card-hd"><div class="card-title">Company Profile</div></div>
+              <div class="fgrid">
+                <div class="frow"><label class="fl">Company Name</label><input class="inp" id="st-companyName" onchange="stSet('companyName',this.value)"></div>
+                <div class="frow"><label class="fl">Tagline</label><input class="inp" id="st-tagline" onchange="stSet('tagline',this.value)"></div>
+                <div class="frow"><label class="fl">Phone</label><input class="inp" id="st-phone" onchange="stSet('phone',this.value)"></div>
+                <div class="frow"><label class="fl">Email</label><input class="inp" id="st-email" onchange="stSet('email',this.value)"></div>
+                <div class="frow"><label class="fl">Website</label><input class="inp" id="st-website" onchange="stSet('website',this.value)"></div>
+                <div class="frow"><label class="fl">Authorized Signatory Title</label><input class="inp" id="st-signatory" onchange="stSet('signatoryTitle',this.value)"></div>
+              </div>
+              <div class="frow" style="margin-top:6px"><label class="fl">Company Profile (shown on Introduction page)</label><textarea class="inp" id="st-profile" rows="4" style="resize:vertical" onchange="stSet('companyProfile',this.value)"></textarea></div>
+            </div>
+          </div>
 
-        <div class="card" style="max-width:560px">
-          <div class="card-hd"><div class="card-title">Costing Defaults</div></div>
-          <div class="fgrid">
-            <div><label class="fl">Usable Sqft per Sheet (8x4)</label><input class="inp" id="st-sheetsqft" type="number"></div>
-            <div><label class="fl">Default Wastage %</label><input class="inp" id="st-wastage" type="number"></div>
-            <div><label class="fl">Default Overhead %</label><input class="inp" id="st-overhead" type="number"></div>
-            <div><label class="fl">Default Profit %</label><input class="inp" id="st-profit" type="number"></div>
+          <!-- QUOTATION DEFAULTS -->
+          <div id="scat-quotation" class="setcat" style="display:none">
+            <div class="card">
+              <div class="card-hd"><div class="card-title">Quotation Numbering &amp; Validity</div></div>
+              <div class="fgrid">
+                <div class="frow"><label class="fl">Default Estimate Validity (days)</label><input class="inp" type="number" min="1" id="st-validity" onchange="stSet('defaultValidityDays',num(this.value,14))"></div>
+                <div class="frow"><label class="fl">Quote Number Prefix</label><input class="inp" id="st-prefix" onchange="stSet('quotePrefix',this.value)"></div>
+                <div class="frow"><label class="fl">Next Quote Number</label><input class="inp" type="number" min="1" id="st-seq" onchange="stSet('nextQuoteSeq',num(this.value,1))"></div>
+              </div>
+              <div class="frow" style="margin-top:6px"><label class="fl">Default Welcome Note (pre-fills new quotations)</label><textarea class="inp" id="st-welcome" rows="3" style="resize:vertical" onchange="stSet('welcomeNote',this.value)"></textarea></div>
+            </div>
+            <div class="card">
+              <div class="card-hd"><div class="card-title">Default Material Specifications</div><button class="btn btn-outline btn-sm" onclick="settingsAddSpec()">+ Add Row</button></div>
+              <div class="tbl-wrap"><table>
+                <thead><tr><th style="min-width:150px">Category</th><th style="min-width:260px">Specification</th><th style="width:40px"></th></tr></thead>
+                <tbody id="st-specs-tb"></tbody>
+              </table></div>
+            </div>
+            <div class="card">
+              <div class="card-hd"><div class="card-title">Default Terms &amp; Conditions</div><div class="card-sub">Copied into every new quotation as an editable starting point</div></div>
+              <div class="letter-lbl"><span class="lt">A.</span>Scope of Work</div>
+              <div class="frow"><textarea class="inp" id="st-scope" rows="2" style="resize:vertical" onchange="stSetTerm('scope',this.value)"></textarea></div>
+
+              <div class="letter-lbl"><span class="lt">B.</span>Estimate Includes</div>
+              <div id="st-inclusions-list"></div>
+
+              <div class="letter-lbl"><span class="lt">C.</span>Estimate Excludes</div>
+              <div id="st-exclusions-list"></div>
+
+              <div class="letter-lbl"><span class="lt">D.</span>Payment Schedule</div>
+              <div class="tbl-wrap"><table>
+                <thead><tr><th style="min-width:120px">Milestone</th><th style="min-width:200px">Description</th><th style="width:80px">%</th><th style="width:40px"></th></tr></thead>
+                <tbody id="st-pay-tb"></tbody>
+              </table></div>
+              <div style="margin:8px 0 18px"><button class="btn btn-outline btn-sm" onclick="settingsAddPay()">+ Add Payment Line</button></div>
+
+              <div class="letter-lbl"><span class="lt">E.</span>Warranty</div>
+              <div class="frow"><textarea class="inp" id="st-warranty" rows="2" style="resize:vertical" onchange="stSetTerm('warranty',this.value)"></textarea></div>
+
+              <div class="letter-lbl"><span class="lt">F.</span>Delivery Timeline</div>
+              <div class="frow"><input class="inp" id="st-delivery" onchange="stSetTerm('deliveryTimeline',this.value)"></div>
+
+              <div class="letter-lbl"><span class="lt">G.</span>Taxes Note</div>
+              <div class="frow"><input class="inp" id="st-taxes" onchange="stSetTerm('taxesNote',this.value)"></div>
+
+              <div class="letter-lbl"><span class="lt">H.</span>Bank Account Details</div>
+              <div class="fgrid">
+                <div class="frow"><label class="fl">Account Name</label><input class="inp" id="st-bank-name" onchange="stSetBank('accName',this.value)"></div>
+                <div class="frow"><label class="fl">Account No.</label><input class="inp" id="st-bank-no" onchange="stSetBank('accNo',this.value)"></div>
+                <div class="frow"><label class="fl">IFSC</label><input class="inp" id="st-bank-ifsc" onchange="stSetBank('ifsc',this.value)"></div>
+                <div class="frow"><label class="fl">Bank &amp; Branch</label><input class="inp" id="st-bank-branch" onchange="stSetBank('bank',this.value)"></div>
+                <div class="frow"><label class="fl">Account Type</label><input class="inp" id="st-bank-type" onchange="stSetBank('type',this.value)"></div>
+              </div>
+
+              <div class="letter-lbl"><span class="lt">I.</span>Acceptance Text</div>
+              <div class="frow"><textarea class="inp" id="st-acceptance" rows="3" style="resize:vertical" onchange="stSetTerm('acceptanceText',this.value)"></textarea></div>
+            </div>
           </div>
-          <div class="modal-ft" style="border:none;padding-top:14px"><button class="btn btn-gold" onclick="saveCostingSettings()">Save Costing Defaults</button></div>
-        </div>
-        <div class="card" style="max-width:560px">
-          <div class="card-hd"><div class="card-title">Data</div></div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button class="btn btn-outline" onclick="exportData()">⬇ Export Full Backup (JSON)</button>
-            <button class="btn btn-outline" onclick="document.getElementById('import-file').click()">⬆ Import Backup</button>
-            <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
-            <button class="btn btn-red" onclick="resetAllData()">Reset All Data</button>
+
+          <!-- ESTIMATION & COSTING -->
+          <div id="scat-estimation" class="setcat" style="display:none">
+            <div class="card" style="max-width:560px">
+              <div class="card-hd"><div class="card-title">Costing Defaults</div></div>
+              <div class="fgrid">
+                <div><label class="fl">Usable Sqft per Sheet (8x4)</label><input class="inp" id="st-sheetsqft" type="number"></div>
+                <div><label class="fl">Default Wastage %</label><input class="inp" id="st-wastage" type="number"></div>
+                <div><label class="fl">Default Overhead %</label><input class="inp" id="st-overhead" type="number"></div>
+                <div><label class="fl">Default Profit %</label><input class="inp" id="st-profit" type="number"></div>
+                <div><label class="fl">Project ID Prefix</label><input class="inp" id="st-projprefix" onchange="stSet('projectIdPrefix',this.value||'ATI')"></div>
+              </div>
+              <div class="hint">Project IDs look like <span class="mono">PREFIX-2026-0001</span> — changing the prefix only affects projects created from now on.</div>
+              <div class="modal-ft" style="border:none;padding-top:14px"><button class="btn btn-gold" onclick="saveCostingSettings()">Save Costing Defaults</button></div>
+            </div>
           </div>
-          <div class="hint">Everything is stored locally in this browser (localStorage). Export a backup regularly.</div>
+
+          <!-- CRM LISTS -->
+          <div id="scat-crmlists" class="setcat" style="display:none">
+            <div class="card">
+              <div class="card-hd"><div class="card-title">Follow-up Modes</div><button class="btn btn-outline btn-sm" onclick="settingsAddFollowupMode()">+ Add</button></div>
+              <div class="card-sub" style="margin-bottom:8px">Shown in the "Mode" dropdown when logging a follow-up</div>
+              <div id="st-followupmodes-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-hd"><div class="card-title">Loss Reasons</div><button class="btn btn-outline btn-sm" onclick="settingsAddLossReason()">+ Add</button></div>
+              <div class="card-sub" style="margin-bottom:8px">Shown as checkboxes when a quotation is marked Lost</div>
+              <div id="st-lossreasons-list"></div>
+            </div>
+            <div class="hint">Lead Sources aren't editable here — "Staff", "Architect", "Builder", and "B2B Partner" are wired directly to the Partners &amp; Staff lists, so changing them would break that link.</div>
+          </div>
+
+          <!-- DATA & BACKUP -->
+          <div id="scat-data" class="setcat" style="display:none">
+            <div class="card" style="max-width:560px">
+              <div class="card-hd"><div class="card-title">Data</div></div>
+              <div style="display:flex;gap:10px;flex-wrap:wrap">
+                <button class="btn btn-outline" onclick="exportData()">⬇ Export Full Backup (JSON)</button>
+                <button class="btn btn-outline" onclick="document.getElementById('import-file').click()">⬆ Import Backup</button>
+                <input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
+                <button class="btn btn-red" onclick="resetAllData()">Reset All Data</button>
+              </div>
+              <div class="hint">Everything is stored locally in this browser (localStorage). Export a backup regularly.</div>
+            </div>
+          </div>
+          </div>
         </div>
       </div>
 
@@ -1057,8 +1104,10 @@ function fmtDate(d){ if(!d) return '—'; const dt=new Date(d); if(isNaN(dt)) re
 /* ============================== CRM CONSTANTS ============================== */
 const LEAD_SOURCES=['Direct Client','Staff','Architect','Builder','B2B Partner','Existing Customer Referral','Website','Social Media','Walk-in','Other'];
 const LEAD_SOURCE_PARTNER_TYPE={'Staff':'staff','Architect':'architects','Builder':'builders','B2B Partner':'b2bPartners'};
-const FOLLOWUP_MODES=['Phone Call','WhatsApp','Email','Office Meeting','Site Visit','Video Meeting'];
-const LOSS_REASONS=['Price Too High','Budget Issue','Competitor Selected','Project Postponed','Project Cancelled','No Response','Builder Changed','Architect Changed','Design Issue','Material Preference','Timeline Issue','Poor Follow-up','Other'];
+const FOLLOWUP_MODES_DEFAULT=['Phone Call','WhatsApp','Email','Office Meeting','Site Visit','Video Meeting'];
+const LOSS_REASONS_DEFAULT=['Price Too High','Budget Issue','Competitor Selected','Project Postponed','Project Cancelled','No Response','Builder Changed','Architect Changed','Design Issue','Material Preference','Timeline Issue','Poor Follow-up','Other'];
+function followupModes(){ return (DB.settings.followupModes&&DB.settings.followupModes.length)?DB.settings.followupModes:FOLLOWUP_MODES_DEFAULT; }
+function lossReasons(){ return (DB.settings.lossReasons&&DB.settings.lossReasons.length)?DB.settings.lossReasons:LOSS_REASONS_DEFAULT; }
 const STATUS_GROUPS=[
   {label:'Pre-Sale',cls:'tag-grey',statuses:['Draft','Preparing','Waiting for Drawings','Site Visit Scheduled','Site Visit Completed','Design Discussion','Preparing Estimate','Internal Approval']},
   {label:'Sent & Discussion',cls:'tag-blue',statuses:['Quotation Sent','Viewed','Under Discussion','Negotiation','Material Discussion','Price Discussion']},
@@ -1136,13 +1185,15 @@ function seedSalesData(){
       {category:'Paint Finish',spec:'PU Paint Finish, spray-applied'},
       {category:'Polish Finish',spec:'Melamine / PU Polish'}
     ],
-    defaultTerms:defaultTerms()
+    defaultTerms:defaultTerms(),
+    followupModes:[...FOLLOWUP_MODES_DEFAULT],
+    lossReasons:[...LOSS_REASONS_DEFAULT]
   };
   DB.quotations=[];
   DB.staff=[]; DB.architects=[]; DB.builders=[]; DB.b2bPartners=[];
 }
 function seedCostingData(){
-  DB.settings={...DB.settings, sheetSqft:32, defaultWastage:8, defaultOverhead:10, defaultProfit:20, nextProjectSeq:1 };
+  DB.settings={...DB.settings, sheetSqft:32, defaultWastage:8, defaultOverhead:10, defaultProfit:20, nextProjectSeq:1, projectIdPrefix:'ATI' };
 
   const M=(code,category,subCategory,name,brand,thickness,finish,unit,purchaseRate,wastagePct,vendor,leadTime,remarks)=>({
     id:uid('mat'),code,category,subCategory,name,brand,thickness,finish,unit,purchaseRate,wastagePct,vendor,leadTime,lastUpdated:today(),status:'Active',remarks:remarks||''
@@ -1320,6 +1371,9 @@ function sanitizeAllData(){
   if(DB.settings.defaultOverhead==null) DB.settings.defaultOverhead=10;
   if(DB.settings.defaultProfit==null) DB.settings.defaultProfit=20;
   if(DB.settings.nextProjectSeq==null) DB.settings.nextProjectSeq=1;
+  if(!DB.settings.projectIdPrefix) DB.settings.projectIdPrefix='ATI';
+  if(!Array.isArray(DB.settings.followupModes)||!DB.settings.followupModes.length) DB.settings.followupModes=[...FOLLOWUP_MODES_DEFAULT];
+  if(!Array.isArray(DB.settings.lossReasons)||!DB.settings.lossReasons.length) DB.settings.lossReasons=[...LOSS_REASONS_DEFAULT];
   DB.quotations.forEach(sanitizeQuotation);
   DB.projects.forEach(p=>{ if(!PROJECT_STATUSES.includes(p.status)) p.status = p.status==='Sent'?'Submitted' : p.status==='Approved'?'Approved' : 'Draft'; if(!p.quotationId) p.quotationId=''; });
 }
@@ -2055,7 +2109,7 @@ function genUniqueId(){
   DB.settings.nextProjectSeq = (DB.settings.nextProjectSeq||1);
   const seq = DB.settings.nextProjectSeq;
   DB.settings.nextProjectSeq = seq+1;
-  return 'ATI-'+new Date().getFullYear()+'-'+String(seq).padStart(4,'0');
+  return (DB.settings.projectIdPrefix||'ATI')+'-'+new Date().getFullYear()+'-'+String(seq).padStart(4,'0');
 }
 function projectStatusTagClass(status){ return status==='Approved'?'tag-green':status==='Submitted'?'tag-blue':status==='Returned'?'tag-amber':'tag-grey'; }
 function renderProjects(){
@@ -3792,7 +3846,7 @@ function openLossReasonModal(prevStatus){
   openModalHtml(`
     <div class="modal-hd"><div class="modal-title">Why was this quotation lost?</div><button class="modal-close" onclick="cancelLostStatus()">✕</button></div>
     <div class="checkbox-list">
-      ${LOSS_REASONS.map(r=>`<label><input type="checkbox" value="${escHtml(r)}" ${checked.has(r)?'checked':''}> ${escHtml(r)}</label>`).join('')}
+      ${lossReasons().map(r=>`<label><input type="checkbox" value="${escHtml(r)}" ${checked.has(r)?'checked':''}> ${escHtml(r)}</label>`).join('')}
     </div>
     <div class="frow" style="margin-top:10px"><label class="fl">Remarks</label><textarea class="inp" id="loss-remarks" rows="3">${escHtml(q.lossRemarks||'')}</textarea></div>
     <div class="modal-ft">
@@ -3909,7 +3963,7 @@ function renderFollowUps(){
   const staffSel=document.getElementById('fu-staff');
   staffSel.innerHTML='<option value="">—</option>'+(DB.staff||[]).map(s=>`<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
   const modeSel=document.getElementById('fu-mode');
-  if(!modeSel.options.length) modeSel.innerHTML=FOLLOWUP_MODES.map(m=>`<option>${m}</option>`).join('');
+  if(!modeSel.options.length) modeSel.innerHTML=followupModes().map(m=>`<option>${m}</option>`).join('');
   document.getElementById('fu-date').value=new Date().toISOString().slice(0,10);
   renderFollowUpList();
 }
@@ -4212,6 +4266,22 @@ function renderSettingsPayRows(){
   </tr>`).join('') : '<tr><td colspan="4" class="empty">No rows yet.</td></tr>';
 }
 
+function showSettingsCat(cat,el){
+  document.querySelectorAll('.setcat').forEach(e=>e.style.display='none');
+  document.getElementById('scat-'+cat).style.display='';
+  document.querySelectorAll('.settings-cat').forEach(b=>b.classList.remove('active'));
+  if(el) el.classList.add('active');
+}
+function settingsAddFollowupMode(){ DB.settings.followupModes.push(''); persist(); renderSettingsFollowupModes(); }
+function settingsFollowupModeChange(i,val){ DB.settings.followupModes[i]=val; persist(); }
+function settingsRemoveFollowupMode(i){ DB.settings.followupModes.splice(i,1); persist(); renderSettingsFollowupModes(); }
+function renderSettingsFollowupModes(){ document.getElementById('st-followupmodes-list').innerHTML=bulletListHtml(DB.settings.followupModes,'settingsAddFollowupMode','settingsFollowupModeChange','settingsRemoveFollowupMode','e.g. Site Visit'); }
+
+function settingsAddLossReason(){ DB.settings.lossReasons.push(''); persist(); renderSettingsLossReasons(); }
+function settingsLossReasonChange(i,val){ DB.settings.lossReasons[i]=val; persist(); }
+function settingsRemoveLossReason(i){ DB.settings.lossReasons.splice(i,1); persist(); renderSettingsLossReasons(); }
+function renderSettingsLossReasons(){ document.getElementById('st-lossreasons-list').innerHTML=bulletListHtml(DB.settings.lossReasons,'settingsAddLossReason','settingsLossReasonChange','settingsRemoveLossReason','e.g. Price Too High'); }
+
 function renderSettings(){
   const s=DB.settings;
   document.getElementById('st-companyName').value=s.companyName||'';
@@ -4243,6 +4313,9 @@ function renderSettings(){
   document.getElementById('st-wastage').value=DB.settings.defaultWastage;
   document.getElementById('st-overhead').value=DB.settings.defaultOverhead;
   document.getElementById('st-profit').value=DB.settings.defaultProfit;
+  document.getElementById('st-projprefix').value=DB.settings.projectIdPrefix||'ATI';
+  renderSettingsFollowupModes();
+  renderSettingsLossReasons();
 }
 function saveCostingSettings(){
   const sheetSqft=num(document.getElementById('st-sheetsqft').value,32);
