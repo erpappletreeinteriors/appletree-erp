@@ -1481,6 +1481,18 @@ function sanitizeAllData(){
   if(!DB.settings.projectIdPrefix) DB.settings.projectIdPrefix='ATI';
   if(!Array.isArray(DB.settings.followupModes)||!DB.settings.followupModes.length) DB.settings.followupModes=[...FOLLOWUP_MODES_DEFAULT];
   if(!Array.isArray(DB.settings.lossReasons)||!DB.settings.lossReasons.length) DB.settings.lossReasons=[...LOSS_REASONS_DEFAULT];
+  if(!DB.settings.companyName) DB.settings.companyName='Appletree Interiors';
+  if(!DB.settings.tagline) DB.settings.tagline='Turnkey Interior Design & Execution';
+  if(!DB.settings.logo) DB.settings.logo='logo.png';
+  if(!DB.settings.phone) DB.settings.phone='+91 7592 909090';
+  if(!DB.settings.email) DB.settings.email='sales@appletreeinteriors.in';
+  if(!DB.settings.website) DB.settings.website='appletreeinteriors.in';
+  if(!DB.settings.signatoryTitle) DB.settings.signatoryTitle='Authorized Signatory';
+  if(DB.settings.defaultValidityDays==null) DB.settings.defaultValidityDays=14;
+  if(!DB.settings.quotePrefix) DB.settings.quotePrefix='AT';
+  if(DB.settings.nextQuoteSeq==null||isNaN(DB.settings.nextQuoteSeq)) DB.settings.nextQuoteSeq=1;
+  if(!DB.settings.companyProfile) DB.settings.companyProfile='Appletree Interiors is a turnkey interior design and execution studio, delivering custom furniture, lighting, and full-scope interior fit-outs for homes and commercial spaces. Our in-house design, manufacturing, and site teams manage every stage of the project — from concept to handover — so clients get one accountable partner from start to finish.';
+  if(!DB.settings.welcomeNote) DB.settings.welcomeNote='We specialize in full-service interior design, including custom furniture, lighting, and art procurement/installation. Our project portfolio spans new home construction and residential renovations of all sizes. Please find below the itemized estimate prepared for your project, based on the requirements shared with us.';
   DB.quotations.forEach(sanitizeQuotation);
   DB.projects.forEach(p=>{ if(!PROJECT_STATUSES.includes(p.status)) p.status = p.status==='Sent'?'Submitted' : p.status==='Approved'?'Approved' : 'Draft'; if(!p.quotationId) p.quotationId=''; });
 }
