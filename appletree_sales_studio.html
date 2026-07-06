@@ -4985,13 +4985,20 @@ async function _handleSession(session){
   if(!session||!session.user){ _showScreen('login'); return; }
   _showScreen('loading');
   const userId=session.user.id;
-  let profile=null;
+  let profile=null, recognizedRole=null;
   try{
-    const {data}=await _sb.from('user_profiles').select('*').eq('user_id',userId).maybeSingle();
-    profile=data;
+    const {data}=await _sb.from('ss_profiles').select('*').eq('user_id',userId).maybeSingle();
+    if(data && data.is_approved && (SS_ROLES.includes(data.role)||data.role==='CEO')){ profile=data; recognizedRole=data.role; }
   }catch(e){ console.error('Profile lookup failed',e); }
 
-  const recognizedRole = (profile && profile.is_approved && (SS_ROLES.includes(profile.role)||profile.role==='CEO')) ? profile.role : null;
+  if(!recognizedRole){
+    // Bootstrap path: recognize the main ERP's existing CEO account without a separate sign-up.
+    try{
+      const {data:erpProfile}=await _sb.from('user_profiles').select('*').eq('user_id',userId).eq('role','CEO').eq('is_approved',true).maybeSingle();
+      if(erpProfile){ profile=erpProfile; recognizedRole='CEO'; }
+    }catch(e){ console.error('ERP profile lookup failed',e); }
+  }
+
   if(!recognizedRole){ _showScreen('pending'); return; }
 
   _currentUser={id:userId,email:session.user.email,name:profile.name||session.user.email,role:recognizedRole};
@@ -5108,7 +5115,8 @@ async function renderTeamApprovals(){
 async function approvePendingUser(i){
   const p=_teamPendingCache[i]; if(!p) return;
   try{
-    await _sb.from('user_profiles').upsert({user_id:p.user_id,org_id:'appletree-interiors',name:p.name,email:p.email,role:p.requested_role,phone:p.phone,is_approved:true});
+    const {error:profErr}=await _sb.from('ss_profiles').upsert({user_id:p.user_id,name:p.name,email:p.email,role:p.requested_role,phone:p.phone,is_approved:true});
+    if(profErr) throw profErr;
     await _sb.from('ss_pending_users').update({status:'approved',decided_at:new Date().toISOString(),decided_by:_currentUser.id}).eq('id',p.id);
     renderTeamApprovals();
   }catch(e){ console.error(e); alert('Could not approve this user — check your connection and try again.'); }

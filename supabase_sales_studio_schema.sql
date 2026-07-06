@@ -149,12 +149,32 @@ create table if not exists ss_pending_users (
 );
 create index if not exists ss_pending_users_status_idx on ss_pending_users(status);
 
+-- Approved Sales Studio users and their role. Kept as its own table rather
+-- than writing into the main ERP's shared `user_profiles` table, because
+-- that table has a database check constraint limiting `role` to the ERP's
+-- own original role names (CEO, Factory Supervisor, ...) — trying to write
+-- "Admin Coordinator"/"Cost Estimator" etc. into it is rejected outright.
+-- This keeps the promise that nothing about the ERP's existing tables is
+-- ever touched. The CEO's existing ERP account still works here without a
+-- separate sign-up (see ss_current_role() below), by reading — never
+-- writing — the shared user_profiles table as a one-way bootstrap check.
+create table if not exists ss_profiles (
+  user_id uuid primary key references auth.users(id),
+  name text,
+  email text,
+  phone text,
+  role text not null,
+  is_approved boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
 -- ----------------------------------------------------------------------------
 -- 2. Role lookup helper.
---    Reads the CALLER's role from the existing, shared `user_profiles` table
---    (already created and populated by the main ERP — not modified here).
---    SECURITY DEFINER so it can read that table regardless of that table's
---    own RLS/grant setup, without this migration having to touch it at all.
+--    Checks this tool's own ss_profiles table first; falls back to
+--    recognizing the main ERP's existing CEO account (read-only lookup,
+--    never a write) so the CEO never has to sign up separately here.
+--    SECURITY DEFINER so it can read user_profiles regardless of that
+--    table's own RLS/grant setup, without ever writing to it.
 -- ----------------------------------------------------------------------------
 
 create or replace function ss_current_role() returns text
@@ -162,9 +182,10 @@ language sql
 security definer
 stable
 as $$
-  select role from user_profiles
-  where user_id = auth.uid() and is_approved = true
-  limit 1;
+  select coalesce(
+    (select role from ss_profiles where user_id = auth.uid() and is_approved = true limit 1),
+    (select 'CEO' from user_profiles where user_id = auth.uid() and role = 'CEO' and is_approved = true limit 1)
+  );
 $$;
 
 grant execute on function ss_current_role() to authenticated;
@@ -292,6 +313,18 @@ create policy ss_pending_users_select on ss_pending_users for select
 
 drop policy if exists ss_pending_users_update on ss_pending_users;
 create policy ss_pending_users_update on ss_pending_users for update
+  using (ss_current_role() in ('Admin Coordinator','Management','CEO'))
+  with check (ss_current_role() in ('Admin Coordinator','Management','CEO'));
+
+-- ---- Sales Studio profiles/roles: everyone approved can see the team; only Admin/Mgmt manage it ----
+alter table ss_profiles enable row level security;
+
+drop policy if exists ss_profiles_select on ss_profiles;
+create policy ss_profiles_select on ss_profiles for select
+  using (user_id = auth.uid() or ss_current_role() in ('Sales Executive','Cost Estimator','Admin Coordinator','Management','CEO'));
+
+drop policy if exists ss_profiles_write on ss_profiles;
+create policy ss_profiles_write on ss_profiles for all
   using (ss_current_role() in ('Admin Coordinator','Management','CEO'))
   with check (ss_current_role() in ('Admin Coordinator','Management','CEO'));
 
