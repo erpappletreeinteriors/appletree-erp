@@ -123,6 +123,11 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 .summary-line .v{font-family:'JetBrains Mono',monospace}
 .letter-lbl{font-weight:800;font-size:13.5px;margin:4px 0 8px}
 .letter-lbl .lt{color:var(--gold-dim);margin-right:5px}
+.clientgrid{border-collapse:collapse}
+.clientgrid td{border:1px solid var(--border);padding:0;vertical-align:top}
+.clientgrid input{width:100%;border:none;background:transparent;font-size:11.5px;padding:5px 7px;font-family:inherit;color:var(--text)}
+.clientgrid input:focus{outline:none;background:var(--gold-pale)}
+.clientgrid tr:first-child input{font-weight:700}
 
 #print-target{background:#DEDCD3;padding:24px 0;min-height:calc(100vh - 56px);margin:-20px -22px 0}
 .print-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
@@ -373,6 +378,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
           <button class="btn btn-sm tab-btn" data-tab="followups" onclick="showEditorTab('followups',this)">📞 Follow-ups</button>
           <button class="btn btn-sm tab-btn" data-tab="timeline" onclick="showEditorTab('timeline',this)">🕒 Timeline</button>
           <button class="btn btn-sm tab-btn" data-tab="revisions" onclick="showEditorTab('revisions',this)">📝 Revisions</button>
+          <button class="btn btn-sm tab-btn" data-tab="clientboq" onclick="showEditorTab('clientboq',this)">📎 Client BOQ</button>
         </div>
 
         <!-- TAB: QUOTATION DOCUMENT -->
@@ -401,7 +407,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
         </div>
 
         <!-- Bill of Quantities -->
-        <div class="card">
+        <div class="card" id="boq-card-wrap">
           <div class="card-hd">
             <div><div class="card-title">Bill of Quantities</div><div class="card-sub">Add unlimited sections (Foyer, Living, Kitchen…) and unlimited line items per section</div></div>
             <div class="chip-row"><span class="small">Grand Total: <span class="mono bold" id="boq-grand"></span></span><button class="btn btn-gold btn-sm" onclick="addSection()">+ Add Section</button></div>
@@ -410,12 +416,15 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
         </div>
 
         <!-- Material Specification -->
-        <div class="card">
+        <div class="card" id="matspec-card-wrap">
           <div class="card-hd"><div class="card-title">Material &amp; Specification</div><button class="btn btn-outline btn-sm" onclick="addSpec()">+ Add Row</button></div>
           <div class="tbl-wrap"><table>
             <thead><tr><th style="min-width:150px">Category</th><th style="min-width:260px">Specification</th><th style="width:40px"></th></tr></thead>
             <tbody id="specs-tb"></tbody>
           </table></div>
+        </div>
+        <div class="card" id="customboq-notice" style="display:none">
+          <div class="hint">This quotation is using a <b>Client BOQ file</b> instead of the standard Bill of Quantities — see the "Client BOQ" tab above. Amount shown in Pricing Summary below comes from the Final Quoted Amount set there.</div>
         </div>
 
         <!-- Pricing Summary -->
@@ -573,6 +582,27 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
               <thead><tr><th>Rev</th><th>Date</th><th class="right">Amount</th><th class="right">Change</th><th>Reason</th><th>Prepared By</th><th>Approval</th></tr></thead>
               <tbody id="revision-tb"></tbody>
             </table></div>
+          </div>
+        </div>
+
+        <!-- TAB: CLIENT BOQ -->
+        <div id="etab-clientboq" class="etab">
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Client's BOQ File</div><div class="card-sub">Upload the architect/client's own Excel BOQ and edit it directly here — the final PDF/Excel wraps it with our cover letter and terms, not our own line-item builder</div></div>
+            <input type="file" id="clientboq-file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleClientBoqFile(event)">
+            <div id="clientboq-upload-area"><button class="btn btn-gold" onclick="openClientBoqUploadPicker()">📎 Upload Client's Excel BOQ</button></div>
+          </div>
+          <div id="clientboq-grid-card" class="card" style="display:none">
+            <div class="card-hd">
+              <div><div class="card-title" id="clientboq-filename"></div><div class="card-sub" id="clientboq-sheetname"></div></div>
+              <div class="chip-row">
+                <button class="btn btn-sm btn-outline" onclick="addClientBoqRow()">+ Row</button>
+                <button class="btn btn-sm btn-outline" onclick="openClientBoqUploadPicker()">Replace File</button>
+                <button class="btn btn-sm btn-red" onclick="removeClientBoq()">Remove</button>
+              </div>
+            </div>
+            <div class="frow" style="max-width:320px"><label class="fl">Final Quoted Amount ₹ <span class="hint" style="margin:0">(we can't reliably auto-total every architect's layout, so enter it here)</span></label><input class="inp" type="number" min="0" id="clientboq-finalamt" onchange="setClientBoqFinalAmount(this.value)"></div>
+            <div class="tbl-wrap" id="clientboq-grid-wrap"></div>
           </div>
         </div>
 
@@ -1348,6 +1378,7 @@ function sanitizeQuotation(q){
   if(q.escalatedAt===undefined) q.escalatedAt=null;
   if(!q.costingProjectId) q.costingProjectId='';
   if(q.estimatedCost==null) q.estimatedCost=null;
+  if(q.customBoq===undefined) q.customBoq=null;
 }
 function sanitizeAllData(){
   if(!DB.settings||typeof DB.settings!=='object') DB.settings={};
@@ -1438,6 +1469,7 @@ function newQuotation(){
     remarks:'', nextFollowUpDate:'',
     followUps:[], activity:[], revisionHistory:[], lossReasons:[], lossRemarks:'',
     wonDate:'', lostDate:'', escalated:false, escalatedAt:null,
+    customBoq:null,
     createdAt:Date.now(), updatedAt:Date.now()
   };
   logActivity(q,'created','Quotation created');
@@ -1535,7 +1567,7 @@ function renderPartners(){ Object.keys(PARTNER_LISTS).forEach(renderPartnerList)
 /* ---- calculations ---- */
 function itemAmount(it){ return it.included ? 0 : (num(it.qty)*num(it.unitPrice)); }
 function sectionTotal(sec){ return sec.items.reduce((s,it)=>s+itemAmount(it),0); }
-function grandTotal(q){ return q.sections.reduce((s,sec)=>s+sectionTotal(sec),0); }
+function grandTotal(q){ if(q.customBoq&&q.customBoq.enabled) return num(q.customBoq.finalAmount); return q.sections.reduce((s,sec)=>s+sectionTotal(sec),0); }
 function discountAmount(q){ const gt=grandTotal(q); return q.discountType==='pct' ? gt*num(q.discountValue)/100 : num(q.discountValue); }
 function taxableAmount(q){ return Math.max(0, grandTotal(q)-discountAmount(q)); }
 function gstAmount(q){ return taxableAmount(q)*num(q.gstPct)/100; }
@@ -3897,6 +3929,10 @@ function renderEditor(){
   document.getElementById('ed-bank-ifsc').value=q.terms.bank.ifsc||'';
   document.getElementById('ed-bank-branch').value=q.terms.bank.bank||'';
   document.getElementById('ed-bank-type').value=q.terms.bank.type||'';
+  const customOn=!!(q.customBoq&&q.customBoq.enabled);
+  document.getElementById('boq-card-wrap').style.display=customOn?'none':'';
+  document.getElementById('matspec-card-wrap').style.display=customOn?'none':'';
+  document.getElementById('customboq-notice').style.display=customOn?'':'none';
   renderBoq();
   renderMaterialSpecs();
   renderInclusions();
@@ -3915,6 +3951,7 @@ function showEditorTab(tab,el){
   if(tab==='followups') renderFollowUps();
   if(tab==='timeline') renderTimeline();
   if(tab==='revisions') renderRevisions();
+  if(tab==='clientboq') renderClientBoqTab();
 }
 
 /* ---- Sales Tracking tab ---- */
@@ -4166,6 +4203,125 @@ function renderBoq(){
   renderSummary();
 }
 
+/* ---- Client's own-format BOQ (upload Excel, edit in place, wrap with our cover/terms) ---- */
+function clientBoqMergeInfo(merges){
+  const anchorSpan={}, covered=new Set();
+  (merges||[]).forEach(m=>{
+    const rowspan=m.e.r-m.s.r+1, colspan=m.e.c-m.s.c+1;
+    anchorSpan[m.s.r+'_'+m.s.c]={rowspan,colspan};
+    for(let r=m.s.r;r<=m.e.r;r++) for(let c=m.s.c;c<=m.e.c;c++){ if(r===m.s.r&&c===m.s.c) continue; covered.add(r+'_'+c); }
+  });
+  return {anchorSpan,covered};
+}
+function openClientBoqUploadPicker(){ document.getElementById('clientboq-file').value=''; document.getElementById('clientboq-file').click(); }
+function handleClientBoqFile(evt){
+  const file=evt.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const data=new Uint8Array(e.target.result);
+      const wb=XLSX.read(data,{type:'array'});
+      if(!wb.SheetNames.length){ alert('This file has no sheets.'); return; }
+      if(wb.SheetNames.length===1){ loadClientBoqSheet(wb,wb.SheetNames[0],file.name); return; }
+      window._pendingClientBoqWb=wb;
+      openModalHtml(`
+        <div class="modal-hd"><div class="modal-title">Which sheet is the BOQ?</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+        <div class="card-sub" style="margin-bottom:10px">${escHtml(file.name)} has ${wb.SheetNames.length} sheets — pick the one to use.</div>
+        <div class="chip-row" style="flex-wrap:wrap">
+          ${wb.SheetNames.map(n=>`<button class="btn btn-sm" onclick='loadClientBoqSheet(window._pendingClientBoqWb,${JSON.stringify(n)},${JSON.stringify(file.name)})'>${escHtml(n)}</button>`).join('')}
+        </div>`);
+    }catch(err){ console.error(err); alert('Could not read that file — is it a valid Excel/CSV file?'); }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function loadClientBoqSheet(wb,sheetName,fileName){
+  const ws=wb.Sheets[sheetName];
+  const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+  const q=curQ(); if(!q) return;
+  q.customBoq={
+    enabled:true, sourceFileName:fileName, sheetName,
+    rows: rows.length?rows:[['']],
+    merges: ws['!merges']||[],
+    colWidths: (ws['!cols']||[]).map(c=>c.wch||12),
+    finalAmount: q.customBoq?.finalAmount ?? null
+  };
+  q.updatedAt=Date.now();
+  persist(); closeModal();
+  renderClientBoqTab();
+  renderEditor();
+}
+function renderClientBoqTab(){
+  const q=curQ(); if(!q) return;
+  const cb=q.customBoq;
+  document.getElementById('clientboq-grid-card').style.display = (cb&&cb.enabled) ? '' : 'none';
+  if(!cb||!cb.enabled) return;
+  document.getElementById('clientboq-filename').textContent = cb.sourceFileName||'Client BOQ';
+  document.getElementById('clientboq-sheetname').textContent = 'Sheet: '+(cb.sheetName||'—');
+  document.getElementById('clientboq-finalamt').value = cb.finalAmount??'';
+  renderClientBoqGrid();
+}
+function renderClientBoqGrid(){
+  const q=curQ(); if(!q||!q.customBoq) return;
+  const cb=q.customBoq;
+  const rows=cb.rows;
+  const maxCols=Math.max(1,...rows.map(r=>r.length));
+  const {anchorSpan,covered}=clientBoqMergeInfo(cb.merges);
+  let html=`<table class="clientgrid"><colgroup>${Array.from({length:maxCols}).map((_,c)=>`<col style="width:${(cb.colWidths[c]||12)*7}px">`).join('')}</colgroup><tbody>`;
+  rows.forEach((row,r)=>{
+    html+='<tr>';
+    for(let c=0;c<maxCols;c++){
+      const key=r+'_'+c;
+      if(covered.has(key)) continue;
+      const span=anchorSpan[key];
+      const attrs=span?` rowspan="${span.rowspan}" colspan="${span.colspan}"`:'';
+      const val=row[c]??'';
+      html+=`<td${attrs}><input value="${escHtml(val)}" onchange="clientBoqCellChange(${r},${c},this.value)"></td>`;
+    }
+    html+='</tr>';
+  });
+  html+='</tbody></table>';
+  document.getElementById('clientboq-grid-wrap').innerHTML=html;
+}
+function clientBoqCellChange(r,c,val){
+  const q=curQ(); if(!q||!q.customBoq) return;
+  while(q.customBoq.rows.length<=r) q.customBoq.rows.push([]);
+  while(q.customBoq.rows[r].length<=c) q.customBoq.rows[r].push('');
+  q.customBoq.rows[r][c]=val;
+  q.updatedAt=Date.now();
+  persist();
+}
+function addClientBoqRow(){ const q=curQ(); if(!q||!q.customBoq) return; q.customBoq.rows.push([]); persist(); renderClientBoqGrid(); }
+function removeClientBoq(){
+  const q=curQ(); if(!q) return;
+  if(!confirm('Remove the client BOQ file? This quotation will go back to using the standard Bill of Quantities builder.')) return;
+  q.customBoq=null; q.updatedAt=Date.now(); persist();
+  renderClientBoqTab(); renderEditor();
+}
+function setClientBoqFinalAmount(val){
+  const q=curQ(); if(!q||!q.customBoq) return;
+  q.customBoq.finalAmount=num(val,0); q.updatedAt=Date.now(); persist();
+  renderSummary(); renderBoq();
+}
+function clientGridHtmlForPrint(cb){
+  const rows=cb.rows;
+  const maxCols=Math.max(1,...rows.map(r=>r.length));
+  const {anchorSpan,covered}=clientBoqMergeInfo(cb.merges);
+  let html='<table class="clientgrid">';
+  rows.forEach((row,r)=>{
+    html+='<tr>';
+    for(let c=0;c<maxCols;c++){
+      const key=r+'_'+c;
+      if(covered.has(key)) continue;
+      const span=anchorSpan[key];
+      const attrs=span?` rowspan="${span.rowspan}" colspan="${span.colspan}"`:'';
+      html+=`<td${attrs}>${escHtml(row[c]??'')}</td>`;
+    }
+    html+='</tr>';
+  });
+  html+='</table>';
+  return html;
+}
+
 /* ---- Material Specs (per quotation) ---- */
 function addSpec(){ const q=curQ(); q.materialSpecs.push({category:'',spec:''}); persist(); renderMaterialSpecs(); }
 function specChange(i,field,val){ const q=curQ(); q.materialSpecs[i][field]=val; persist(); }
@@ -4412,6 +4568,10 @@ table.boq td.muted{ color:#9D9A91; font-size:7pt; }
 .summary-box .row.final{ border-top:1.2pt solid #1C1C1A; border-bottom:none; font-weight:800; font-size:11pt; padding-top:3mm; margin-top:1mm; }
 .summary-box .row .v{ font-family:'JetBrains Mono',monospace; }
 
+table.clientgrid{ width:100%; border-collapse:collapse; font-size:7.6pt; }
+table.clientgrid td{ border:0.5pt solid #E7E4DC; padding:1.8mm 1.6mm; vertical-align:top; }
+table.clientgrid tr:first-child td{ font-weight:700; background:#F4F1DC; }
+
 table.spec{ width:100%; border-collapse:collapse; font-size:9pt; }
 table.spec th{ background:#1C1C1A; color:#EDEBE4; text-align:left; padding:2.6mm 3mm; font-size:7.5pt; text-transform:uppercase; }
 table.spec td{ padding:2.6mm 3mm; border-bottom:0.5pt solid #E7E4DC; break-inside:avoid; }
@@ -4503,10 +4663,11 @@ function buildPrintContent(q){
       <div><div class="k">Estimate Validity</div><div class="v">${num(q.validityDays)} days</div></div>
     </div>
     <div class="doc-h1"><span class="bar"></span>Bill of Quantities</div>
+    ${q.customBoq&&q.customBoq.enabled ? clientGridHtmlForPrint(q.customBoq) : `
     <table class="boq">
       <thead><tr><th>Sl.</th><th>Item Description</th><th>Finish</th><th>Material Spec.</th><th>Size</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit Price ₹</th><th class="num">Amount ₹</th></tr></thead>
       <tbody>${rows.join('')||'<tr><td colspan="9" class="muted" style="padding:8mm 0;text-align:center">No items added yet.</td></tr>'}</tbody>
-    </table>
+    </table>`}
     <div class="summary-box">
       <div class="row"><span>Grand Total</span><span class="v">${INR(gt)}</span></div>
       ${disc>0?`<div class="row"><span>Discount ${q.discountType==='pct'?'('+num(q.discountValue)+'%)':''}</span><span class="v">- ${INR(disc)}</span></div>`:''}
@@ -4515,11 +4676,12 @@ function buildPrintContent(q){
     </div>
   </div>
 
+  ${(q.customBoq&&q.customBoq.enabled) ? '' : `
   <div class="pgbreak">
     <div class="doc-h1"><span class="bar"></span>Material &amp; Specification</div>
     <table class="spec"><thead><tr><th>Category</th><th>Specification</th></tr></thead>
     <tbody>${(q.materialSpecs||[]).map(m=>`<tr><td>${escHtml(m.category)}</td><td>${escHtml(m.spec)}</td></tr>`).join('')||'<tr><td colspan="2" style="text-align:center;color:#9D9A91">No specifications added.</td></tr>'}</tbody></table>
-  </div>
+  </div>`}
 
   <div class="pgbreak">
     <div class="doc-h1"><span class="bar"></span>Terms &amp; Conditions</div>
@@ -4557,7 +4719,26 @@ function buildPrintContent(q){
 }
 
 /* ============================== EXCEL EXPORT ============================== */
+function buildTermsSheetRows(q){
+  const t=q.terms||{};
+  const bank=t.bank||{};
+  return [
+    ['Scope of Work'],[t.scope||''],[],
+    ['Estimate Includes'],...(t.inclusions||[]).filter(Boolean).map(x=>[x]),[],
+    ['Estimate Excludes'],...(t.exclusions||[]).filter(Boolean).map(x=>[x]),[],
+    ['Payment Schedule'],['Milestone','Description','%'],...(t.paymentSchedule||[]).map(p=>[p.label||'',p.note||'',num(p.pct)]),[],
+    ['Warranty'],[t.warranty||''],[],
+    ['Delivery Timeline'],[t.deliveryTimeline||''],[],
+    ['Taxes Note'],[t.taxesNote||''],[],
+    ['Bank Account Details'],
+    ['Account Name',bank.accName||''],['Account No.',bank.accNo||''],['IFSC',bank.ifsc||''],
+    ['Bank & Branch',bank.bank||''],['Account Type',bank.type||''],[],
+    ['Acceptance'],[t.acceptanceText||'']
+  ];
+}
+function sanitizeSheetName(name){ return (name||'Sheet').replace(/[:\\\/?*\[\]]/g,' ').slice(0,31)||'Sheet'; }
 function buildQuotationWorkbook(q){
+  if(q.customBoq&&q.customBoq.enabled) return buildClientBoqWorkbook(q);
   const slMap=slNoMap(q);
   const rows=[];
   rows.push(['Appletree Interiors — Quotation']);
@@ -4592,27 +4773,41 @@ function buildQuotationWorkbook(q){
   const ws2=XLSX.utils.aoa_to_sheet(specRows);
   ws2['!cols']=[{wch:22},{wch:60}];
 
-  const t=q.terms||{};
-  const bank=t.bank||{};
-  const termRows=[
-    ['Scope of Work'],[t.scope||''],[],
-    ['Estimate Includes'],...(t.inclusions||[]).filter(Boolean).map(x=>[x]),[],
-    ['Estimate Excludes'],...(t.exclusions||[]).filter(Boolean).map(x=>[x]),[],
-    ['Payment Schedule'],['Milestone','Description','%'],...(t.paymentSchedule||[]).map(p=>[p.label||'',p.note||'',num(p.pct)]),[],
-    ['Warranty'],[t.warranty||''],[],
-    ['Delivery Timeline'],[t.deliveryTimeline||''],[],
-    ['Taxes Note'],[t.taxesNote||''],[],
-    ['Bank Account Details'],
-    ['Account Name',bank.accName||''],['Account No.',bank.accNo||''],['IFSC',bank.ifsc||''],
-    ['Bank & Branch',bank.bank||''],['Account Type',bank.type||''],[],
-    ['Acceptance'],[t.acceptanceText||'']
-  ];
-  const ws3=XLSX.utils.aoa_to_sheet(termRows);
+  const ws3=XLSX.utils.aoa_to_sheet(buildTermsSheetRows(q));
   ws3['!cols']=[{wch:26},{wch:60},{wch:10}];
 
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws1,'Quotation');
   XLSX.utils.book_append_sheet(wb,ws2,'Material Spec');
+  XLSX.utils.book_append_sheet(wb,ws3,'Terms & Conditions');
+  return wb;
+}
+function buildClientBoqWorkbook(q){
+  const s=DB.settings;
+  const cb=q.customBoq;
+  const coverRows=[
+    [s.companyName||'Appletree Interiors'],[s.tagline||''],[],
+    ['Quote No.',q.quoteNo,'','Date',fmtDate(q.date)],
+    ['Client Name',q.clientName||'','','Project Name',q.projectName||''],
+    ['Project Location',q.projectLocation||'','','Prepared By',q.preparedBy||''],
+    ['Revision','Rev '+(q.revisionNo||1),'','Estimate Validity',(q.validityDays||14)+' days'],
+    [],
+    [q.includeCompanyProfile?(s.companyProfile||''):''],
+    [q.welcomeNote||s.welcomeNote||'']
+  ];
+  const wsCover=XLSX.utils.aoa_to_sheet(coverRows);
+  wsCover['!cols']=[{wch:20},{wch:24},{wch:6},{wch:18},{wch:24}];
+
+  const wsClient=XLSX.utils.aoa_to_sheet(cb.rows);
+  if(cb.merges&&cb.merges.length) wsClient['!merges']=cb.merges;
+  if(cb.colWidths&&cb.colWidths.length) wsClient['!cols']=cb.colWidths.map(w=>({wch:w}));
+
+  const ws3=XLSX.utils.aoa_to_sheet(buildTermsSheetRows(q));
+  ws3['!cols']=[{wch:26},{wch:60},{wch:10}];
+
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,wsCover,'Cover Letter');
+  XLSX.utils.book_append_sheet(wb,wsClient,sanitizeSheetName(cb.sheetName||'Client BOQ'));
   XLSX.utils.book_append_sheet(wb,ws3,'Terms & Conditions');
   return wb;
 }
