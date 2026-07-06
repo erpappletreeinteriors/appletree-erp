@@ -4,9 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Appletree Interiors — Master Costing System</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
+@font-face{
+  font-family:'Manrope'; font-style:normal; font-weight:300 800; font-display:swap;
+  src:url('fonts/manrope-variable.woff2') format('woff2');
+}
+@font-face{
+  font-family:'JetBrains Mono'; font-style:normal; font-weight:400 600; font-display:swap;
+  src:url('fonts/jetbrainsmono-variable.woff2') format('woff2');
+}
 :root{
   --gold:#C3B152; --gold-l:#D4C47A; --gold-pale:#F4F1DC; --gold-dim:#9A8A3A;
   --muted:#9D9A91; --dark:#1C1C1A; --bg:#F8F7F4;
@@ -184,14 +190,26 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
         <div class="sec-hd"><div class="sec-title">Material Master</div><button class="btn btn-gold" onclick="openMaterialModal()">+ Add Material</button></div>
         <div class="card">
           <div class="tbl-toolbar">
-            <input class="inp inp-search" id="mat-search" placeholder="Search material, code, brand…" oninput="renderMaterials()">
-            <select class="inp inp-sm" id="mat-cat-f" onchange="renderMaterials()"><option value="">All Categories</option></select>
-            <select class="inp inp-sm" id="mat-status-f" onchange="renderMaterials()"><option value="">All Status</option><option>Active</option><option>Inactive</option></select>
+            <input class="inp inp-search" id="mat-search" placeholder="Search material, code, brand…" oninput="tableState.materials.page=1;renderMaterials()">
+            <select class="inp inp-sm" id="mat-cat-f" onchange="tableState.materials.page=1;renderMaterials()"><option value="">All Categories</option></select>
+            <select class="inp inp-sm" id="mat-status-f" onchange="tableState.materials.page=1;renderMaterials()"><option value="">All Status</option><option>Active</option><option>Inactive</option></select>
           </div>
+          <div id="mat-bulkbar"></div>
           <div class="tbl-wrap"><table>
-            <thead><tr><th>Code</th><th>Category</th><th>Name</th><th>Brand</th><th>Thickness</th><th>Finish</th><th>Unit</th><th class="right">Purchase ₹</th><th class="right">Selling ₹</th><th class="right">Wastage %</th><th class="right">GST %</th><th>Vendor</th><th>Status</th><th></th></tr></thead>
+            <thead><tr>
+              <th style="width:26px"><input type="checkbox" id="mat-selectall" onchange="toggleSelectAll('materials',this.checked)"></th>
+              <th onclick="toggleSort('materials','code')" style="cursor:pointer">Code <span id="srt-materials-code"></span></th>
+              <th onclick="toggleSort('materials','category')" style="cursor:pointer">Category <span id="srt-materials-category"></span></th>
+              <th onclick="toggleSort('materials','name')" style="cursor:pointer">Name <span id="srt-materials-name"></span></th>
+              <th onclick="toggleSort('materials','brand')" style="cursor:pointer">Brand <span id="srt-materials-brand"></span></th>
+              <th>Thickness</th><th>Finish</th><th>Unit</th>
+              <th class="right" onclick="toggleSort('materials','purchaseRate')" style="cursor:pointer">Purchase ₹ <span id="srt-materials-purchaseRate"></span></th>
+              <th class="right" onclick="toggleSort('materials','wastagePct')" style="cursor:pointer">Wastage % <span id="srt-materials-wastagePct"></span></th>
+              <th>Vendor</th><th>Status</th><th></th>
+            </tr></thead>
             <tbody id="tb-materials"></tbody>
           </table></div>
+          <div id="mat-pagination"></div>
         </div>
       </div>
 
@@ -200,13 +218,23 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
         <div class="sec-hd"><div class="sec-title">Hardware Master</div><button class="btn btn-gold" onclick="openHardwareModal()">+ Add Hardware</button></div>
         <div class="card">
           <div class="tbl-toolbar">
-            <input class="inp inp-search" id="hw-search" placeholder="Search hardware, code, brand…" oninput="renderHardware()">
-            <select class="inp inp-sm" id="hw-cat-f" onchange="renderHardware()"><option value="">All Categories</option></select>
+            <input class="inp inp-search" id="hw-search" placeholder="Search hardware, code, brand…" oninput="tableState.hardware.page=1;renderHardware()">
+            <select class="inp inp-sm" id="hw-cat-f" onchange="tableState.hardware.page=1;renderHardware()"><option value="">All Categories</option></select>
           </div>
+          <div id="hw-bulkbar"></div>
           <div class="tbl-wrap"><table>
-            <thead><tr><th>Code</th><th>Category</th><th>Brand</th><th>Unit</th><th class="right">Purchase ₹</th><th class="right">Selling ₹</th><th class="right">GST %</th><th>Vendor</th><th>Status</th><th></th></tr></thead>
+            <thead><tr>
+              <th style="width:26px"><input type="checkbox" id="hw-selectall" onchange="toggleSelectAll('hardware',this.checked)"></th>
+              <th onclick="toggleSort('hardware','code')" style="cursor:pointer">Code <span id="srt-hardware-code"></span></th>
+              <th onclick="toggleSort('hardware','category')" style="cursor:pointer">Category <span id="srt-hardware-category"></span></th>
+              <th onclick="toggleSort('hardware','brand')" style="cursor:pointer">Brand <span id="srt-hardware-brand"></span></th>
+              <th>Unit</th>
+              <th class="right" onclick="toggleSort('hardware','purchaseRate')" style="cursor:pointer">Purchase ₹ <span id="srt-hardware-purchaseRate"></span></th>
+              <th>Vendor</th><th>Status</th><th></th>
+            </tr></thead>
             <tbody id="tb-hardware"></tbody>
           </table></div>
+          <div id="hw-pagination"></div>
         </div>
       </div>
 
@@ -215,13 +243,22 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
         <div class="sec-hd"><div class="sec-title">Labour Master</div><button class="btn btn-gold" onclick="openLabourModal()">+ Add Labour Rate</button></div>
         <div class="card">
           <div class="tbl-toolbar">
-            <input class="inp inp-search" id="lab-search" placeholder="Search labour…" oninput="renderLabour()">
-            <select class="inp inp-sm" id="lab-cat-f" onchange="renderLabour()"><option value="">All Categories</option></select>
+            <input class="inp inp-search" id="lab-search" placeholder="Search labour…" oninput="tableState.labour.page=1;renderLabour()">
+            <select class="inp inp-sm" id="lab-cat-f" onchange="tableState.labour.page=1;renderLabour()"><option value="">All Categories</option></select>
           </div>
+          <div id="lab-bulkbar"></div>
           <div class="tbl-wrap"><table>
-            <thead><tr><th>Code</th><th>Category</th><th>Description</th><th>Unit</th><th class="right">Rate ₹</th><th>Applicable Furniture</th><th></th></tr></thead>
+            <thead><tr>
+              <th style="width:26px"><input type="checkbox" id="lab-selectall" onchange="toggleSelectAll('labour',this.checked)"></th>
+              <th onclick="toggleSort('labour','code')" style="cursor:pointer">Code <span id="srt-labour-code"></span></th>
+              <th onclick="toggleSort('labour','category')" style="cursor:pointer">Category <span id="srt-labour-category"></span></th>
+              <th>Description</th><th>Unit</th>
+              <th class="right" onclick="toggleSort('labour','rate')" style="cursor:pointer">Rate ₹ <span id="srt-labour-rate"></span></th>
+              <th></th>
+            </tr></thead>
             <tbody id="tb-labour"></tbody>
           </table></div>
+          <div id="lab-pagination"></div>
         </div>
       </div>
 
@@ -276,6 +313,17 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
             <tbody id="tb-customitems"></tbody>
           </table></div>
         </div>
+
+        <div class="sec-hd" style="margin-top:18px">
+          <div><div class="sec-title" style="font-size:14px">📋 Simple Costing <span class="tag tag-grey">Manual Entry</span></div><div class="card-sub">No formulas — type in each material's cost and its labour cost, the sheet just totals it up. Use this whenever you've already worked the numbers out by hand.</div></div>
+          <button class="btn btn-gold" id="pd-addsimple-btn" onclick="openSimpleItemModal()">+ Add Simple Costing Item</button>
+        </div>
+        <div class="card">
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Item</th><th>Room</th><th># Lines</th><th>Qty</th><th class="right">Total Cost ₹</th><th class="right">Selling ₹</th><th class="right">Margin %</th><th>Status</th><th></th></tr></thead>
+            <tbody id="tb-simpleitems"></tbody>
+          </table></div>
+        </div>
       </div>
 
       <!-- COSTING ITEM DETAIL -->
@@ -306,17 +354,18 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
         <div id="cid-content"></div>
       </div>
 
-      <!-- PDF SHARE VIEW -->
-      <div id="pg-pdfshare" class="page">
-        <div class="sec-hd no-print">
-          <div class="sec-title">Shareable Costing PDF</div>
-          <div style="display:flex;gap:8px">
-            <button class="btn btn-outline" onclick="backFromPdfShare()">← Back</button>
-            <button class="btn btn-gold" onclick="window.print()">🖨️ Print / Save as PDF</button>
+      <!-- SIMPLE COSTING ITEM DETAIL -->
+      <div id="pg-simpleitemdetail" class="page">
+        <div class="sec-hd">
+          <div><div class="sec-title" id="sid-title">Simple Costing Item</div><div class="card-sub" id="sid-sub"></div></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-outline" onclick="backToProject()">← Back to Project</button>
+            <button class="btn btn-outline" onclick="editSimpleItem()">✏️ Edit Inputs</button>
+            <button class="btn btn-outline" onclick="shareSimpleItemPdf(currentSimpleItemId)">📄 Share PDF</button>
+            <button class="btn btn-gold" id="sid-freeze-btn" onclick="toggleFreezeSimple()">🔒 Freeze as Quotation</button>
           </div>
         </div>
-        <div class="hint no-print" style="margin-bottom:14px">In the print dialog, choose "Save as PDF" (or "Microsoft Print to PDF") as the destination to create a file you can share on WhatsApp or email.</div>
-        <div id="pdfshare-content"></div>
+        <div id="sid-content"></div>
       </div>
 
       <!-- REPORTS -->
@@ -340,7 +389,6 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
             <div><label class="fl">Default Wastage %</label><input class="inp" id="st-wastage" type="number"></div>
             <div><label class="fl">Default Overhead %</label><input class="inp" id="st-overhead" type="number"></div>
             <div><label class="fl">Default Profit %</label><input class="inp" id="st-profit" type="number"></div>
-            <div><label class="fl">Default GST %</label><input class="inp" id="st-gst" type="number"></div>
           </div>
           <div class="modal-ft" style="border:none;padding-top:14px"><button class="btn btn-gold" onclick="saveSettings()">Save Settings</button></div>
         </div>
@@ -375,16 +423,19 @@ const CONSTRUCTION_TYPES={
   flatPanel:'Flat Panel (wall panelling / partition / headboard)',
   flatTop:'Flat Top (table / counter / bench with a top surface)'
 };
-const HINGE_TIERS=[{maxH:900,qty:2},{maxH:1500,qty:2},{maxH:2000,qty:3},{maxH:99999,qty:4}];
+const HINGE_TIERS=[{maxH:900,qty:2},{maxH:1600,qty:3},{maxH:2200,qty:4},{maxH:2700,qty:5}];
 
 /* ============================== DB / PERSISTENCE ============================== */
-let DB={materials:[],hardware:[],labour:[],templates:[],projects:[],costingItems:[],customItems:[],settings:{}};
+let DB={materials:[],hardware:[],labour:[],templates:[],projects:[],costingItems:[],customItems:[],simpleItems:[],settings:{}};
 const STORE_KEY='appletree_costing_db_v1';
 
-function persist(){ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }
+function persist(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }
+  catch(e){ alert('Could not save — your browser storage is full. Export a backup from Settings, then remove some old projects before continuing.'); console.error('persist() failed',e); }
+}
 function loadOrSeed(){
   const raw=localStorage.getItem(STORE_KEY);
-  if(raw){ try{ DB=JSON.parse(raw); if(!DB.settings) DB.settings={}; if(!DB.customItems) DB.customItems=[]; return; }catch(e){ console.error('Corrupt local data, reseeding',e); } }
+  if(raw){ try{ DB=JSON.parse(raw); if(!DB.settings) DB.settings={}; if(!DB.customItems) DB.customItems=[]; if(!DB.simpleItems) DB.simpleItems=[]; return; }catch(e){ console.error('Corrupt local data, reseeding',e); } }
   seed();
   persist();
 }
@@ -397,85 +448,85 @@ function today(){ return new Date().toISOString().slice(0,10); }
 
 /* ============================== SEED DATA ============================== */
 function seed(){
-  DB.settings={ sheetSqft:32, defaultWastage:8, defaultOverhead:10, defaultProfit:20, defaultGst:18, nextProjectSeq:1 };
+  DB.settings={ sheetSqft:32, defaultWastage:8, defaultOverhead:10, defaultProfit:20, nextProjectSeq:1 };
 
-  const M=(code,category,subCategory,name,brand,thickness,finish,unit,purchaseRate,sellingRate,wastagePct,gst,vendor,leadTime,remarks)=>({
-    id:uid('mat'),code,category,subCategory,name,brand,thickness,finish,unit,purchaseRate,sellingRate:sellingRate||Math.round(purchaseRate*1.15),wastagePct,gst,vendor,leadTime,lastUpdated:today(),status:'Active',remarks:remarks||''
+  const M=(code,category,subCategory,name,brand,thickness,finish,unit,purchaseRate,wastagePct,vendor,leadTime,remarks)=>({
+    id:uid('mat'),code,category,subCategory,name,brand,thickness,finish,unit,purchaseRate,wastagePct,vendor,leadTime,lastUpdated:today(),status:'Active',remarks:remarks||''
   });
   DB.materials=[
-    M('MAT-001','Marine Ply','Structural','Marine Ply 19mm','Century','19mm','Raw','Sheet',3200,3700,8,18,'Century Distributors','5 days','8x4 ft sheet'),
-    M('MAT-002','MR Ply','Structural','MR Grade Ply 18mm','Greenply','18mm','Raw','Sheet',2100,2450,8,18,'Greenply Depot','5 days',''),
-    M('MAT-003','HDHMR','Structural','HDHMR Board 18mm','Action Tesa','18mm','Raw','Sheet',2600,3000,7,18,'Action Tesa Dist.','7 days','Moisture resistant — kitchens/wet areas'),
-    M('MAT-004','MDF','Structural','MDF Board 18mm','Century','18mm','Raw','Sheet',1750,2050,7,18,'Century Distributors','5 days',''),
-    M('MAT-005','PVC Board','Structural','PVC Foam Board 18mm','Palight','18mm','White','Sheet',2400,2800,6,18,'Palight Kerala','7 days','Fully waterproof'),
-    M('MAT-006','WPC','Structural','WPC Board 18mm','Duro','18mm','Raw','Sheet',2900,3350,6,18,'Duro Distributors','10 days',''),
-    M('MAT-007','Veneer','Finish','Teak Veneer','Greenlam','0.6mm','Natural Teak','Sqft',85,110,10,18,'Greenlam Agency','10 days',''),
-    M('MAT-008','Laminate','Finish','1mm Laminate — Suede','Merino','1mm','Suede Matt','Sqft',48,60,5,18,'Merino Distributors','5 days',''),
-    M('MAT-009','Acrylic','Finish','High Gloss Acrylic Sheet','Rehau','1mm','Gloss White','Sqft',95,120,8,18,'Rehau Dist.','10 days',''),
-    M('MAT-010','Charcoal Sheet','Finish','Charcoal Panel 8mm','Duro','8mm','Textured','Sqft',65,82,6,18,'Duro Distributors','7 days',''),
-    M('MAT-011','PU Paint','Finish','PU Paint — Matt','Asian Paints','—','Matt White','Sqft',0,0,5,18,'Asian Paints Dealer','3 days','Costed via labour rate (material bundled)'),
-    M('MAT-012','Melamine Polish','Finish','Melamine Polish','Asian Paints','—','Natural','Sqft',0,0,5,18,'Asian Paints Dealer','3 days','Costed via labour rate (material bundled)'),
-    M('MAT-013','Edge Band','Trim','PVC Edge Band 2mm','Rehau','2mm','Matching','Rmt',18,24,10,18,'Rehau Dist.','3 days',''),
-    M('MAT-014','Glass','Glazing','Toughened Glass 8mm','Saint Gobain','8mm','Clear','Sqft',140,175,3,18,'Saint Gobain Dealer','10 days',''),
-    M('MAT-015','Mirror','Glazing','Mirror 5mm','Saint Gobain','5mm','Silver','Sqft',95,120,3,18,'Saint Gobain Dealer','7 days',''),
-    M('MAT-016','Aluminium','Metal','Aluminium Profile Section','Jindal','—','Anodized','Rmt',220,270,4,18,'Jindal Aluminium','7 days',''),
-    M('MAT-017','MS Steel','Metal','MS Square Tube 25mm','Tata','1.2mm','Powder Coat','Kg',85,105,4,18,'Tata Steel Dealer','7 days',''),
-    M('MAT-018','Adhesives','Consumable','Fevicol SH','Pidilite','—','—','Kg',210,0,0,18,'Pidilite Dealer','2 days','Consumable — usually rolled into labour/overhead'),
-    M('MAT-019','Screws','Consumable','Assorted Screws (Box)','Hettich','—','—','Nos',450,0,0,18,'Hettich Dist.','2 days','Consumable'),
-    M('MAT-020','Lighting','Electrical','LED Strip Light 12V','Philips','—','Warm White','Rmt',180,230,3,18,'Philips Dealer','5 days',''),
-    M('MAT-021','Cushion','Soft Furnishing','High Density Foam 4 inch','Kurlon','4 inch','—','Sqft',95,120,5,18,'Kurlon Dealer','7 days',''),
-    M('MAT-022','Fabric','Soft Furnishing','Upholstery Fabric','D\'decor','—','Textured','Sqft',180,230,8,18,'D\'decor Showroom','10 days',''),
-    M('MAT-023','Leather','Soft Furnishing','PU Leatherette','Kunal','—','Textured','Sqft',150,190,8,18,'Kunal Leather Dist.','10 days',''),
-    M('MAT-024','Solid Wood','Structural','Teak Solid Wood','Local Timber','—','Raw','Cft',3200,3700,10,18,'Local Timber Mart','15 days',''),
+    M('MAT-001','Marine Ply','Structural','Marine Ply 19mm','Century','19mm','Raw','Sheet',3200,8,'Century Distributors','5 days','8x4 ft sheet'),
+    M('MAT-002','MR Ply','Structural','MR Grade Ply 18mm','Greenply','18mm','Raw','Sheet',2100,8,'Greenply Depot','5 days',''),
+    M('MAT-003','HDHMR','Structural','HDHMR Board 18mm','Action Tesa','18mm','Raw','Sheet',2600,7,'Action Tesa Dist.','7 days','Moisture resistant — kitchens/wet areas'),
+    M('MAT-004','MDF','Structural','MDF Board 18mm','Century','18mm','Raw','Sheet',1750,7,'Century Distributors','5 days',''),
+    M('MAT-005','PVC Board','Structural','PVC Foam Board 18mm','Palight','18mm','White','Sheet',2400,6,'Palight Kerala','7 days','Fully waterproof'),
+    M('MAT-006','WPC','Structural','WPC Board 18mm','Duro','18mm','Raw','Sheet',2900,6,'Duro Distributors','10 days',''),
+    M('MAT-007','Veneer','Finish','Teak Veneer','Greenlam','0.6mm','Natural Teak','Sqft',85,10,'Greenlam Agency','10 days',''),
+    M('MAT-008','Laminate','Finish','1mm Laminate — Suede','Merino','1mm','Suede Matt','Sqft',48,5,'Merino Distributors','5 days',''),
+    M('MAT-009','Acrylic','Finish','High Gloss Acrylic Sheet','Rehau','1mm','Gloss White','Sqft',95,8,'Rehau Dist.','10 days',''),
+    M('MAT-010','Charcoal Sheet','Finish','Charcoal Panel 8mm','Duro','8mm','Textured','Sqft',65,6,'Duro Distributors','7 days',''),
+    M('MAT-011','PU Paint','Finish','PU Paint — Matt','Asian Paints','—','Matt White','Sqft',0,5,'Asian Paints Dealer','3 days','Costed via labour rate (material bundled)'),
+    M('MAT-012','Melamine Polish','Finish','Melamine Polish','Asian Paints','—','Natural','Sqft',0,5,'Asian Paints Dealer','3 days','Costed via labour rate (material bundled)'),
+    M('MAT-013','Edge Band','Trim','PVC Edge Band 2mm','Rehau','2mm','Matching','Rmt',18,10,'Rehau Dist.','3 days',''),
+    M('MAT-014','Glass','Glazing','Toughened Glass 8mm','Saint Gobain','8mm','Clear','Sqft',140,3,'Saint Gobain Dealer','10 days',''),
+    M('MAT-015','Mirror','Glazing','Mirror 5mm','Saint Gobain','5mm','Silver','Sqft',95,3,'Saint Gobain Dealer','7 days',''),
+    M('MAT-016','Aluminium','Metal','Aluminium Profile Section','Jindal','—','Anodized','Rmt',220,4,'Jindal Aluminium','7 days',''),
+    M('MAT-017','MS Steel','Metal','MS Square Tube 25mm','Tata','1.2mm','Powder Coat','Kg',85,4,'Tata Steel Dealer','7 days',''),
+    M('MAT-018','Adhesives','Consumable','Fevicol SH','Pidilite','—','—','Kg',210,0,'Pidilite Dealer','2 days','Consumable — usually rolled into labour/overhead'),
+    M('MAT-019','Screws','Consumable','Assorted Screws (Box)','Hettich','—','—','Nos',450,0,'Hettich Dist.','2 days','Consumable'),
+    M('MAT-020','Lighting','Electrical','LED Strip Light 12V','Philips','—','Warm White','Rmt',180,3,'Philips Dealer','5 days',''),
+    M('MAT-021','Cushion','Soft Furnishing','High Density Foam 4 inch','Kurlon','4 inch','—','Sqft',95,5,'Kurlon Dealer','7 days',''),
+    M('MAT-022','Fabric','Soft Furnishing','Upholstery Fabric','D\'decor','—','Textured','Sqft',180,8,'D\'decor Showroom','10 days',''),
+    M('MAT-023','Leather','Soft Furnishing','PU Leatherette','Kunal','—','Textured','Sqft',150,8,'Kunal Leather Dist.','10 days',''),
+    M('MAT-024','Solid Wood','Structural','Teak Solid Wood','Local Timber','—','Raw','Cft',3200,10,'Local Timber Mart','15 days',''),
   ];
 
-  const H=(code,category,brand,unit,purchaseRate,gst,vendor)=>({
-    id:uid('hw'),code,category,brand,unit,purchaseRate,sellingRate:Math.round(purchaseRate*1.2),gst,vendor,lastUpdated:today(),status:'Active'
+  const H=(code,category,brand,unit,purchaseRate,vendor)=>({
+    id:uid('hw'),code,category,brand,unit,purchaseRate,vendor,lastUpdated:today(),status:'Active'
   });
   DB.hardware=[
-    H('HW-001','Hinges','Hettich','Pair',65,18,'Hettich Distributors'),
-    H('HW-002','Drawer Slides','Hettich','Pair',480,18,'Hettich Distributors'),
-    H('HW-003','Channels','Ebco','Pair',380,18,'Ebco Dealer'),
-    H('HW-004','Handles','Godrej','Nos',85,18,'Godrej Locks Dealer'),
-    H('HW-005','G Profiles','Local','Rmt',140,18,'Local Fabricator'),
-    H('HW-006','Profile Handles','Hettich','Rmt',320,18,'Hettich Distributors'),
-    H('HW-007','Lift Up Systems','Hettich','Set',2200,18,'Hettich Distributors'),
-    H('HW-008','Tandem Boxes','Hettich','Set',3400,18,'Hettich Distributors'),
-    H('HW-009','Bottle Pullouts','Hafele','Set',4200,18,'Hafele Dealer'),
-    H('HW-010','Cutlery Trays','Hafele','Nos',950,18,'Hafele Dealer'),
-    H('HW-011','Magic Corner','Hafele','Set',6800,18,'Hafele Dealer'),
-    H('HW-012','Pantry Units','Hafele','Set',9500,18,'Hafele Dealer'),
-    H('HW-013','Shoe Racks','Ebco','Set',2800,18,'Ebco Dealer'),
-    H('HW-014','Hangers','Ebco','Nos',650,18,'Ebco Dealer'),
-    H('HW-015','Locks','Godrej','Nos',320,18,'Godrej Locks Dealer'),
-    H('HW-016','Magnetic Catchers','Local','Nos',25,18,'Local Hardware Shop'),
-    H('HW-017','Soft Close Systems','Hettich','Nos',150,18,'Hettich Distributors'),
-    H('HW-018','LED Profiles','Philips','Rmt',260,18,'Philips Dealer'),
-    H('HW-019','Sliding Track','Hettich','Rmt',480,18,'Hettich Distributors'),
-    H('HW-020','Shelf Pins','Local','Nos',3,18,'Local Hardware Shop'),
+    H('HW-001','Hinges','Hettich','Pair',65,'Hettich Distributors'),
+    H('HW-002','Drawer Slides','Hettich','Pair',480,'Hettich Distributors'),
+    H('HW-003','Channels','Ebco','Pair',380,'Ebco Dealer'),
+    H('HW-004','Handles','Godrej','Nos',85,'Godrej Locks Dealer'),
+    H('HW-005','G Profiles','Local','Rmt',140,'Local Fabricator'),
+    H('HW-006','Profile Handles','Hettich','Rmt',320,'Hettich Distributors'),
+    H('HW-007','Lift Up Systems','Hettich','Set',2200,'Hettich Distributors'),
+    H('HW-008','Tandem Boxes','Hettich','Set',3400,'Hettich Distributors'),
+    H('HW-009','Bottle Pullouts','Hafele','Set',4200,'Hafele Dealer'),
+    H('HW-010','Cutlery Trays','Hafele','Nos',950,'Hafele Dealer'),
+    H('HW-011','Magic Corner','Hafele','Set',6800,'Hafele Dealer'),
+    H('HW-012','Pantry Units','Hafele','Set',9500,'Hafele Dealer'),
+    H('HW-013','Shoe Racks','Ebco','Set',2800,'Ebco Dealer'),
+    H('HW-014','Hangers','Ebco','Nos',650,'Ebco Dealer'),
+    H('HW-015','Locks','Godrej','Nos',320,'Godrej Locks Dealer'),
+    H('HW-016','Magnetic Catchers','Local','Nos',25,'Local Hardware Shop'),
+    H('HW-017','Soft Close Systems','Hettich','Nos',150,'Hettich Distributors'),
+    H('HW-018','LED Profiles','Philips','Rmt',260,'Philips Dealer'),
+    H('HW-019','Sliding Track','Hettich','Rmt',480,'Hettich Distributors'),
+    H('HW-020','Shelf Pins','Local','Nos',3,'Local Hardware Shop'),
   ];
 
-  const L=(code,category,description,unit,rate,applicableTo)=>({
-    id:uid('lab'),code,category,description,unit,rate,applicableTo:applicableTo||['All']
+  const L=(code,category,description,unit,rate)=>({
+    id:uid('lab'),code,category,description,unit,rate
   });
   DB.labour=[
-    L('LAB-001','Cutting','Panel cutting on panel saw','Sheet',180,['All']),
-    L('LAB-002','Edge Banding','Edge band pasting','Rmt',12,['All']),
-    L('LAB-003','Assembly','Carcass assembly','Sqft',35,['All']),
-    L('LAB-004','Installation','Site installation','Unit',900,['All']),
-    L('LAB-005','Lamination','Laminate pasting','Sqft',28,['All']),
-    L('LAB-006','Veneering','Veneer pasting + finishing','Sqft',55,['All']),
-    L('LAB-007','Melamine Polish','Melamine polish finishing','Sqft',65,['All']),
-    L('LAB-008','PU Painting','PU paint spray finishing','Sqft',110,['All']),
-    L('LAB-009','Spray Painting','General spray painting','Sqft',70,['All']),
-    L('LAB-010','CNC Charges','CNC routing/grooving','Sqft',45,['All']),
-    L('LAB-011','Glass Installation','Glass fixing at site','Sqft',60,['All']),
-    L('LAB-012','Metal Fabrication','MS/Aluminium fabrication labour','Sqft',80,['All']),
-    L('LAB-013','Transportation','Delivery to site','Unit',500,['All']),
-    L('LAB-014','Loading','Factory loading','Unit',150,['All']),
-    L('LAB-015','Unloading','Site unloading','Unit',150,['All']),
-    L('LAB-016','Site Labour','General site labour','Day',800,['All']),
-    L('LAB-017','Veneer Polish','Melamine/PU polish coat over veneer','Sheet',280,['All']),
+    L('LAB-001','Cutting','Panel cutting on panel saw','Sheet',180),
+    L('LAB-002','Edge Banding','Edge band pasting','Rmt',12),
+    L('LAB-003','Assembly','Carcass assembly','Sqft',35),
+    L('LAB-004','Installation','Site installation','Unit',900),
+    L('LAB-005','Lamination','Laminate pasting','Sqft',28),
+    L('LAB-006','Veneering','Veneer pasting + finishing','Sqft',55),
+    L('LAB-007','Melamine Polish','Melamine polish finishing','Sqft',65),
+    L('LAB-008','PU Painting','PU paint spray finishing','Sqft',110),
+    L('LAB-009','Spray Painting','General spray painting','Sqft',70),
+    L('LAB-010','CNC Charges','CNC routing/grooving','Sqft',45),
+    L('LAB-011','Glass Installation','Glass fixing at site','Sqft',60),
+    L('LAB-012','Metal Fabrication','MS/Aluminium fabrication labour','Sqft',80),
+    L('LAB-013','Transportation','Delivery to site','Unit',500),
+    L('LAB-014','Loading','Factory loading','Unit',150),
+    L('LAB-015','Unloading','Site unloading','Unit',150),
+    L('LAB-016','Site Labour','General site labour','Day',800),
+    L('LAB-017','Veneer Polish','Melamine/PU polish coat over veneer','Sheet',280),
   ];
 
   const T=(name,category,constructionType,opts={})=>({
@@ -484,7 +535,7 @@ function seed(){
     defaultFinishCategory:opts.finish||'Laminate',
     defaultWastagePct:opts.wastage??DB.settings.defaultWastage,
     hasDoors:opts.doors??false, hasDrawers:opts.drawers??false, hasShelves:opts.shelves??false,
-    hasBack:opts.back??true, hasLoft:opts.loft??false, hasTableTop:opts.top??false,
+    hasBack:opts.back??true, hasLoft:opts.loft??false, hasTableTop:opts.top??false, hasLiftUp:opts.liftUp??false,
     slidingShutter:opts.sliding??false, cncRequired:opts.cnc??false,
     drawerBoxFactor:2.4, handlesPerUnit:1, shelfPinsPerShelf:4,
     remarks:opts.remarks||'',
@@ -498,14 +549,14 @@ function seed(){
     T('Modular Kitchen Wall Unit','Kitchen','case',{doors:true,shelves:true,cnc:true,core:'HDHMR'}),
     T('Island Counter','Kitchen','case',{doors:true,drawers:true,cnc:true,top:true,core:'HDHMR'}),
     T('Study Table','Office','case',{drawers:true,shelves:true,top:true}),
-    T('Bed (Storage)','Bedroom','case',{doors:false,drawers:false,shelves:false,top:true,remarks:'Lift-up storage — uses Lift Up Systems hardware'}),
+    T('Bed (Storage)','Bedroom','case',{doors:false,drawers:false,shelves:false,top:true,liftUp:true,remarks:'Lift-up storage — uses Lift Up Systems hardware'}),
     T('Headboard','Bedroom','flatPanel',{finish:'Fabric',core:'MDF'}),
     T('Side Table','Living','case',{shelves:true,wastage:8}),
     T('Vanity Unit','Bedroom','case',{doors:true,drawers:true,top:true,remarks:'Mirror commonly required — set Mirror Requirement on the project item'}),
     T('Shoe Rack','Storage','case',{doors:true,shelves:true}),
     T('Crockery Unit','Living','case',{doors:true,shelves:true,remarks:'Glass shutters optional — set Glass Requirement'}),
     T('Dining Unit','Living','case',{doors:true,drawers:true,shelves:true}),
-    T('Window Seat','Living','case',{top:true,remarks:'Cushion top — add Fabric/Cushion material line manually'}),
+    T('Window Seat','Living','case',{top:true,liftUp:true,remarks:'Cushion top — add Fabric/Cushion material line manually'}),
     T('Panelling','Panelling & Partition','flatPanel',{finish:'Veneer',cnc:true}),
     T('Partition','Panelling & Partition','flatPanel',{finish:'Laminate'}),
     T('Reception Counter','Commercial','case',{doors:true,top:true,cnc:true,core:'HDHMR'}),
@@ -517,11 +568,12 @@ function seed(){
   DB.projects=[{id:uid('prj'),name:'Sample Project — Villa Interiors',client:'Demo Client',location:'Kakkanad, Kochi',architectName:'Studio Arc',architectContact:'9800000000',date:today(),status:'Draft',uniqueId:genUniqueId()}];
   DB.costingItems=[];
   DB.customItems=[];
+  DB.simpleItems=[];
 }
 
 /* ============================== NAVIGATION ============================== */
-const PAGE_TITLES={dashboard:'Dashboard',materials:'Material Master',hardware:'Hardware Master',labour:'Labour Master',templates:'Furniture Template Library',projects:'Projects',projectdetail:'Project',itemdetail:'Furniture Item',customitemdetail:'Custom Wood Item',pdfshare:'Shareable Costing PDF',reports:'Reports',settings:'Settings'};
-let currentProjectId=null, currentItemId=null, currentCustomItemId=null;
+const PAGE_TITLES={dashboard:'Dashboard',materials:'Material Master',hardware:'Hardware Master',labour:'Labour Master',templates:'Furniture Template Library',projects:'Projects',projectdetail:'Project',itemdetail:'Furniture Item',customitemdetail:'Custom Wood Item',simpleitemdetail:'Simple Costing Item',reports:'Reports',settings:'Settings'};
+let currentProjectId=null, currentItemId=null, currentCustomItemId=null, currentSimpleItemId=null;
 
 function nav(pg,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -529,8 +581,9 @@ function nav(pg,el){
   document.getElementById('pg-title').textContent=PAGE_TITLES[pg]||pg;
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   if(el) el.classList.add('active');
-  else { const match=document.querySelector(`.nav-item[data-pg="${['projectdetail','itemdetail','customitemdetail','pdfshare'].includes(pg)?'projects':pg}"]`); if(match) match.classList.add('active'); }
-  const renderers={dashboard:renderDashboard,materials:renderMaterials,hardware:renderHardware,labour:renderLabour,templates:renderTemplates,projects:renderProjects,reports:renderReportsPage,settings:renderSettings};
+  else { const match=document.querySelector(`.nav-item[data-pg="${['projectdetail','itemdetail','customitemdetail','simpleitemdetail'].includes(pg)?'projects':pg}"]`); if(match) match.classList.add('active'); }
+  const renderers={dashboard:renderDashboard,materials:renderMaterials,hardware:renderHardware,labour:renderLabour,templates:renderTemplates,projects:renderProjects,reports:renderReportsPage,settings:renderSettings,
+    projectdetail:renderProjectDetail,itemdetail:renderCostingItemDetail,customitemdetail:renderCustomItemDetail,simpleitemdetail:renderSimpleItemDetail};
   if(renderers[pg]) renderers[pg]();
 }
 
@@ -551,6 +604,134 @@ function selectMaterialOptions(category,selectedId){
   return `<option value="">— none —</option>`+list.map(m=>`<option value="${m.id}" ${m.id===selectedId?'selected':''}>${escHtml(m.code)} — ${escHtml(m.name)} (${INR(m.purchaseRate)}/${escHtml(m.unit)})</option>`).join('');
 }
 
+/* ============================== TABLE SORT / PAGINATION / BULK SELECT ============================== */
+const PAGE_SIZE=50;
+let tableState={
+  materials:{sortCol:null,sortDir:1,page:1,selected:new Set()},
+  hardware:{sortCol:null,sortDir:1,page:1,selected:new Set()},
+  labour:{sortCol:null,sortDir:1,page:1,selected:new Set()},
+};
+let lastVisibleIds={materials:[],hardware:[],labour:[]};
+const RENDER_FN={materials:()=>renderMaterials(),hardware:()=>renderHardware(),labour:()=>renderLabour()};
+
+function toggleSort(table,col){
+  const st=tableState[table];
+  if(st.sortCol===col) st.sortDir*=-1; else { st.sortCol=col; st.sortDir=1; }
+  st.page=1;
+  RENDER_FN[table]();
+}
+function sortRows(table,rows,accessors){
+  const st=tableState[table];
+  if(!st.sortCol) return rows;
+  const acc=accessors[st.sortCol]||(r=>r[st.sortCol]);
+  return [...rows].sort((a,b)=>{
+    const av=acc(a), bv=acc(b);
+    if(typeof av==='number'&&typeof bv==='number') return (av-bv)*st.sortDir;
+    return String(av??'').localeCompare(String(bv??''))*st.sortDir;
+  });
+}
+function updateSortArrows(table,cols){
+  const st=tableState[table];
+  cols.forEach(c=>{
+    const el=document.getElementById('srt-'+table+'-'+c);
+    if(el) el.textContent = st.sortCol===c ? (st.sortDir===1?'▲':'▼') : '';
+  });
+}
+function paginate(table,rows){
+  const st=tableState[table];
+  const totalPages=Math.max(1,Math.ceil(rows.length/PAGE_SIZE));
+  if(st.page>totalPages) st.page=totalPages;
+  if(st.page<1) st.page=1;
+  const start=(st.page-1)*PAGE_SIZE;
+  return {pageRows:rows.slice(start,start+PAGE_SIZE), totalPages, total:rows.length};
+}
+function renderPaginationControls(containerId,table,totalPages,total){
+  const st=tableState[table];
+  const el=document.getElementById(containerId);
+  if(!el) return;
+  if(total<=PAGE_SIZE){ el.innerHTML=''; return; }
+  el.innerHTML=`<div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;font-size:11px;color:var(--muted)">
+    <span>${total} records — page ${st.page} of ${totalPages}</span>
+    <div style="display:flex;gap:6px">
+      <button class="btn btn-sm" ${st.page<=1?'disabled':''} onclick="changePage('${table}',-1)">‹ Prev</button>
+      <button class="btn btn-sm" ${st.page>=totalPages?'disabled':''} onclick="changePage('${table}',1)">Next ›</button>
+    </div>
+  </div>`;
+}
+function changePage(table,delta){ tableState[table].page+=delta; RENDER_FN[table](); }
+
+function toggleSelectAll(table,checked){
+  const ids=lastVisibleIds[table]||[];
+  const st=tableState[table];
+  if(checked) ids.forEach(id=>st.selected.add(id)); else ids.forEach(id=>st.selected.delete(id));
+  RENDER_FN[table]();
+}
+function toggleSelectRow(table,id,checked){
+  const st=tableState[table];
+  if(checked) st.selected.add(id); else st.selected.delete(id);
+  renderBulkBar(table);
+  const prefix=table==='materials'?'mat':table==='hardware'?'hw':'lab';
+  const allBox=document.getElementById(prefix+'-selectall');
+  if(allBox){ const ids=lastVisibleIds[table]||[]; allBox.checked=ids.length>0&&ids.every(i=>st.selected.has(i)); allBox.indeterminate=!allBox.checked&&ids.some(i=>st.selected.has(i)); }
+}
+function renderBulkBar(table){
+  const st=tableState[table];
+  const prefix=table==='materials'?'mat':table==='hardware'?'hw':'lab';
+  const el=document.getElementById(prefix+'-bulkbar');
+  if(!el) return;
+  const n=st.selected.size;
+  if(n===0){ el.innerHTML=''; return; }
+  const showRateAdjust=table==='materials'||table==='hardware';
+  el.innerHTML=`<div style="display:flex;align-items:center;gap:8px;background:var(--gold-pale);border-radius:8px;padding:8px 12px;margin-bottom:10px">
+    <strong style="font-size:12px">${n} selected</strong>
+    ${showRateAdjust?`<button class="btn btn-sm btn-outline" onclick="bulkAdjustRate('${table}')">Adjust Rate %</button>`:''}
+    <button class="btn btn-sm btn-red" onclick="bulkDelete('${table}')">Delete Selected</button>
+    <button class="btn btn-sm" onclick="clearSelection('${table}')">Clear</button>
+  </div>`;
+}
+function clearSelection(table){ tableState[table].selected.clear(); RENDER_FN[table](); }
+function bulkDelete(table){
+  const st=tableState[table];
+  const ids=[...st.selected];
+  if(!ids.length) return;
+  if(!confirm(`Delete ${ids.length} selected record(s)? Any that are in use will be skipped.`)) return;
+  let deleted=0, skipped=0;
+  if(table==='materials'){
+    ids.forEach(id=>{
+      const inUse=DB.costingItems.some(ci=>[ci.materialId,ci.finishMaterialId,ci.shutterEdgeBandMaterialId,ci.carcassEdgeBandMaterialId,ci.innerLaminateMaterialId].includes(id))||DB.customItems.some(ci=>ci.woodMaterialId===id);
+      if(inUse) skipped++; else { DB.materials=DB.materials.filter(m=>m.id!==id); deleted++; }
+    });
+  } else if(table==='hardware'){
+    ids.forEach(id=>{
+      const inUse=DB.costingItems.some(ci=>(ci.hardwareOverrides||[]).some(h=>h.hardwareId===id));
+      if(inUse) skipped++; else { DB.hardware=DB.hardware.filter(h=>h.id!==id); deleted++; }
+    });
+  } else if(table==='labour'){
+    ids.forEach(id=>{ DB.labour=DB.labour.filter(l=>l.id!==id); deleted++; });
+  }
+  st.selected.clear();
+  persist();
+  if(skipped) alert(`${deleted} deleted, ${skipped} skipped because they're in use — mark those Inactive instead.`);
+  RENDER_FN[table]();
+}
+function bulkAdjustRate(table){
+  const st=tableState[table];
+  const ids=[...st.selected];
+  if(!ids.length) return;
+  const pctStr=prompt('Adjust Purchase Rate for '+ids.length+' selected record(s) by what percent? (e.g. 5 for +5%, -3 for -3%)');
+  if(pctStr===null) return;
+  const pct=parseFloat(pctStr);
+  if(isNaN(pct)){ alert('Enter a valid number.'); return; }
+  const list=table==='materials'?DB.materials:DB.hardware;
+  ids.forEach(id=>{
+    const rec=list.find(r=>r.id===id);
+    if(rec) rec.purchaseRate=Math.max(0,Math.round(rec.purchaseRate*(1+pct/100)*100)/100);
+  });
+  persist(); recalcAllLiveItems();
+  alert('Updated '+ids.length+' rate(s).');
+  RENDER_FN[table]();
+}
+
 /* ============================== MATERIAL MASTER ============================== */
 function populateMatCatFilter(){
   const sel=document.getElementById('mat-cat-f');
@@ -561,23 +742,33 @@ function renderMaterials(){
   const q=(document.getElementById('mat-search')?.value||'').toLowerCase();
   const cat=document.getElementById('mat-cat-f')?.value||'';
   const status=document.getElementById('mat-status-f')?.value||'';
-  const rows=DB.materials.filter(m=>{
+  let rows=DB.materials.filter(m=>{
     if(cat&&m.category!==cat) return false;
     if(status&&m.status!==status) return false;
     if(q&&!(`${m.code} ${m.name} ${m.brand} ${m.category}`.toLowerCase().includes(q))) return false;
     return true;
   });
-  document.getElementById('tb-materials').innerHTML=rows.length?rows.map(m=>`
+  rows=sortRows('materials',rows,{});
+  updateSortArrows('materials',['code','category','name','brand','purchaseRate','wastagePct']);
+  const {pageRows,totalPages,total}=paginate('materials',rows);
+  lastVisibleIds.materials=pageRows.map(m=>m.id);
+  const st=tableState.materials;
+  document.getElementById('tb-materials').innerHTML=pageRows.length?pageRows.map(m=>`
     <tr>
+      <td><input type="checkbox" ${st.selected.has(m.id)?'checked':''} onchange="toggleSelectRow('materials','${m.id}',this.checked)"></td>
       <td class="mono">${escHtml(m.code)}</td><td>${escHtml(m.category)}</td>
       <td><strong>${escHtml(m.name)}</strong>${m.subCategory?`<div class="small">${escHtml(m.subCategory)}</div>`:''}</td>
       <td>${escHtml(m.brand)}</td><td>${escHtml(m.thickness)}</td><td>${escHtml(m.finish)}</td><td>${escHtml(m.unit)}</td>
-      <td class="mono right">${INR(m.purchaseRate)}</td><td class="mono right">${INR(m.sellingRate)}</td>
-      <td class="mono right">${m.wastagePct}%</td><td class="mono right">${m.gst}%</td>
+      <td class="mono right">${INR(m.purchaseRate)}</td>
+      <td class="mono right">${m.wastagePct}%</td>
       <td>${escHtml(m.vendor)}</td>
       <td><span class="tag ${m.status==='Active'?'tag-green':'tag-grey'}">${m.status}</span></td>
       <td><button class="btn btn-sm" onclick="openMaterialModal('${m.id}')">Edit</button> <button class="btn btn-sm btn-red" onclick="deleteMaterial('${m.id}')">Del</button></td>
-    </tr>`).join(''):`<tr><td colspan="14" class="empty">No materials found.</td></tr>`;
+    </tr>`).join(''):`<tr><td colspan="12" class="empty">No materials found.</td></tr>`;
+  renderBulkBar('materials');
+  renderPaginationControls('mat-pagination','materials',totalPages,total);
+  const allBox=document.getElementById('mat-selectall');
+  if(allBox){ allBox.checked=pageRows.length>0 && pageRows.every(m=>st.selected.has(m.id)); allBox.indeterminate=!allBox.checked && pageRows.some(m=>st.selected.has(m.id)); }
 }
 function openMaterialModal(id){
   const m=id?DB.materials.find(x=>x.id===id):null;
@@ -594,9 +785,7 @@ function openMaterialModal(id){
       <div><label class="fl">Finish</label><input class="inp" id="mm-finish" value="${escHtml(m?.finish||'')}" style="width:100%"></div>
       <div><label class="fl req">Unit</label><select class="inp" id="mm-unit" style="width:100%">${optionsHtml(UNITS,m?.unit)}</select></div>
       <div><label class="fl req">Purchase Rate ₹</label><input class="inp" id="mm-purchase" type="number" min="0" value="${m?.purchaseRate??0}" style="width:100%"></div>
-      <div><label class="fl">Selling Rate ₹</label><input class="inp" id="mm-selling" type="number" min="0" value="${m?.sellingRate??0}" style="width:100%"></div>
-      <div><label class="fl">Wastage %</label><input class="inp" id="mm-wastage" type="number" min="0" max="100" value="${m?.wastagePct??DB.settings.defaultWastage}" style="width:100%"></div>
-      <div><label class="fl">GST %</label><input class="inp" id="mm-gst" type="number" min="0" value="${m?.gst??18}" style="width:100%"></div>
+      <div><label class="fl">Wastage % <span class="hint" style="margin:0">(used directly in costing)</span></label><input class="inp" id="mm-wastage" type="number" min="0" max="100" value="${m?.wastagePct??DB.settings.defaultWastage}" style="width:100%"></div>
       <div><label class="fl">Vendor</label><input class="inp" id="mm-vendor" value="${escHtml(m?.vendor||'')}" style="width:100%"></div>
       <div><label class="fl">Lead Time</label><input class="inp" id="mm-leadtime" value="${escHtml(m?.leadTime||'')}" style="width:100%"></div>
       <div><label class="fl">Status</label><select class="inp" id="mm-status" style="width:100%">${optionsHtml(['Active','Inactive'],m?.status||'Active')}</select></div>
@@ -614,14 +803,14 @@ function saveMaterial(){
   if(dup){ alert('A material with this code already exists: '+dup.name); return; }
   const purchaseRate=num(document.getElementById('mm-purchase').value);
   const wastagePct=num(document.getElementById('mm-wastage').value);
-  if(purchaseRate<0||wastagePct<0){ alert('Rates and wastage cannot be negative.'); return; }
+  if(purchaseRate<0){ alert('Purchase Rate cannot be negative.'); return; }
+  if(wastagePct<0||wastagePct>100){ alert('Wastage % must be between 0 and 100.'); return; }
   const rec={
     id:id||uid('mat'), code, category:document.getElementById('mm-category').value,
     subCategory:document.getElementById('mm-subcategory').value.trim(), name,
     brand:document.getElementById('mm-brand').value.trim(), thickness:document.getElementById('mm-thickness').value.trim(),
     finish:document.getElementById('mm-finish').value.trim(), unit:document.getElementById('mm-unit').value,
-    purchaseRate, sellingRate:num(document.getElementById('mm-selling').value),
-    wastagePct, gst:num(document.getElementById('mm-gst').value),
+    purchaseRate, wastagePct,
     vendor:document.getElementById('mm-vendor').value.trim(), leadTime:document.getElementById('mm-leadtime').value.trim(),
     lastUpdated:today(), status:document.getElementById('mm-status').value, remarks:document.getElementById('mm-remarks').value.trim()
   };
@@ -646,17 +835,27 @@ function renderHardware(){
   populateHwCatFilter();
   const q=(document.getElementById('hw-search')?.value||'').toLowerCase();
   const cat=document.getElementById('hw-cat-f')?.value||'';
-  const rows=DB.hardware.filter(h=>{
+  let rows=DB.hardware.filter(h=>{
     if(cat&&h.category!==cat) return false;
     if(q&&!(`${h.code} ${h.category} ${h.brand}`.toLowerCase().includes(q))) return false;
     return true;
   });
-  document.getElementById('tb-hardware').innerHTML=rows.length?rows.map(h=>`
-    <tr><td class="mono">${escHtml(h.code)}</td><td>${escHtml(h.category)}</td><td>${escHtml(h.brand)}</td><td>${escHtml(h.unit)}</td>
-    <td class="mono right">${INR(h.purchaseRate)}</td><td class="mono right">${INR(h.sellingRate)}</td><td class="mono right">${h.gst}%</td>
+  rows=sortRows('hardware',rows,{});
+  updateSortArrows('hardware',['code','category','brand','purchaseRate']);
+  const {pageRows,totalPages,total}=paginate('hardware',rows);
+  lastVisibleIds.hardware=pageRows.map(h=>h.id);
+  const st=tableState.hardware;
+  document.getElementById('tb-hardware').innerHTML=pageRows.length?pageRows.map(h=>`
+    <tr><td><input type="checkbox" ${st.selected.has(h.id)?'checked':''} onchange="toggleSelectRow('hardware','${h.id}',this.checked)"></td>
+    <td class="mono">${escHtml(h.code)}</td><td>${escHtml(h.category)}</td><td>${escHtml(h.brand)}</td><td>${escHtml(h.unit)}</td>
+    <td class="mono right">${INR(h.purchaseRate)}</td>
     <td>${escHtml(h.vendor)}</td><td><span class="tag ${h.status==='Active'?'tag-green':'tag-grey'}">${h.status}</span></td>
     <td><button class="btn btn-sm" onclick="openHardwareModal('${h.id}')">Edit</button> <button class="btn btn-sm btn-red" onclick="deleteHardware('${h.id}')">Del</button></td></tr>
-  `).join(''):`<tr><td colspan="10" class="empty">No hardware found.</td></tr>`;
+  `).join(''):`<tr><td colspan="9" class="empty">No hardware found.</td></tr>`;
+  renderBulkBar('hardware');
+  renderPaginationControls('hw-pagination','hardware',totalPages,total);
+  const allBox=document.getElementById('hw-selectall');
+  if(allBox){ allBox.checked=pageRows.length>0 && pageRows.every(h=>st.selected.has(h.id)); allBox.indeterminate=!allBox.checked && pageRows.some(h=>st.selected.has(h.id)); }
 }
 function openHardwareModal(id){
   const h=id?DB.hardware.find(x=>x.id===id):null;
@@ -669,8 +868,6 @@ function openHardwareModal(id){
       <div><label class="fl">Brand</label><input class="inp" id="hm-brand" value="${escHtml(h?.brand||'')}" style="width:100%"></div>
       <div><label class="fl req">Unit</label><select class="inp" id="hm-unit" style="width:100%">${optionsHtml(UNITS,h?.unit)}</select></div>
       <div><label class="fl req">Purchase Rate ₹</label><input class="inp" id="hm-purchase" type="number" min="0" value="${h?.purchaseRate??0}" style="width:100%"></div>
-      <div><label class="fl">Selling Rate ₹</label><input class="inp" id="hm-selling" type="number" min="0" value="${h?.sellingRate??0}" style="width:100%"></div>
-      <div><label class="fl">GST %</label><input class="inp" id="hm-gst" type="number" min="0" value="${h?.gst??18}" style="width:100%"></div>
       <div><label class="fl">Vendor</label><input class="inp" id="hm-vendor" value="${escHtml(h?.vendor||'')}" style="width:100%"></div>
       <div><label class="fl">Status</label><select class="inp" id="hm-status" style="width:100%">${optionsHtml(['Active','Inactive'],h?.status||'Active')}</select></div>
     </div>
@@ -688,8 +885,7 @@ function saveHardware(){
   const rec={
     id:id||uid('hw'), code, category:document.getElementById('hm-category').value,
     brand:document.getElementById('hm-brand').value.trim(), unit:document.getElementById('hm-unit').value,
-    purchaseRate, sellingRate:num(document.getElementById('hm-selling').value),
-    gst:num(document.getElementById('hm-gst').value), vendor:document.getElementById('hm-vendor').value.trim(),
+    purchaseRate, vendor:document.getElementById('hm-vendor').value.trim(),
     lastUpdated:today(), status:document.getElementById('hm-status').value
   };
   const idx=DB.hardware.findIndex(h=>h.id===id);
@@ -712,16 +908,26 @@ function renderLabour(){
   populateLabCatFilter();
   const q=(document.getElementById('lab-search')?.value||'').toLowerCase();
   const cat=document.getElementById('lab-cat-f')?.value||'';
-  const rows=DB.labour.filter(l=>{
+  let rows=DB.labour.filter(l=>{
     if(cat&&l.category!==cat) return false;
     if(q&&!(`${l.code} ${l.category} ${l.description}`.toLowerCase().includes(q))) return false;
     return true;
   });
-  document.getElementById('tb-labour').innerHTML=rows.length?rows.map(l=>`
-    <tr><td class="mono">${escHtml(l.code)}</td><td>${escHtml(l.category)}</td><td>${escHtml(l.description)}</td><td>${escHtml(l.unit)}</td>
-    <td class="mono right">${INR(l.rate)}</td><td>${(l.applicableTo||[]).map(a=>`<span class="tag tag-grey">${escHtml(a)}</span>`).join(' ')}</td>
+  rows=sortRows('labour',rows,{});
+  updateSortArrows('labour',['code','category','rate']);
+  const {pageRows,totalPages,total}=paginate('labour',rows);
+  lastVisibleIds.labour=pageRows.map(l=>l.id);
+  const st=tableState.labour;
+  document.getElementById('tb-labour').innerHTML=pageRows.length?pageRows.map(l=>`
+    <tr><td><input type="checkbox" ${st.selected.has(l.id)?'checked':''} onchange="toggleSelectRow('labour','${l.id}',this.checked)"></td>
+    <td class="mono">${escHtml(l.code)}</td><td>${escHtml(l.category)}</td><td>${escHtml(l.description)}</td><td>${escHtml(l.unit)}</td>
+    <td class="mono right">${INR(l.rate)}</td>
     <td><button class="btn btn-sm" onclick="openLabourModal('${l.id}')">Edit</button> <button class="btn btn-sm btn-red" onclick="deleteLabour('${l.id}')">Del</button></td></tr>
   `).join(''):`<tr><td colspan="7" class="empty">No labour rates found.</td></tr>`;
+  renderBulkBar('labour');
+  renderPaginationControls('lab-pagination','labour',totalPages,total);
+  const allBox=document.getElementById('lab-selectall');
+  if(allBox){ allBox.checked=pageRows.length>0 && pageRows.every(l=>st.selected.has(l.id)); allBox.indeterminate=!allBox.checked && pageRows.some(l=>st.selected.has(l.id)); }
 }
 function openLabourModal(id){
   const l=id?DB.labour.find(x=>x.id===id):null;
@@ -744,16 +950,24 @@ function saveLabour(){
   if(!code){ alert('Labour Code is required.'); return; }
   const dup=DB.labour.find(l=>l.code.toLowerCase()===code.toLowerCase()&&l.id!==id);
   if(dup){ alert('A labour rate with this code already exists.'); return; }
+  const category=document.getElementById('lm-category').value;
+  const dupCategory=DB.labour.find(l=>l.category===category&&l.id!==id);
+  if(dupCategory){ alert('A labour rate for "'+category+'" already exists ('+dupCategory.code+'). Only one rate per category is used in costing — edit that one instead of adding a second.'); return; }
   const rate=num(document.getElementById('lm-rate').value);
   if(rate<0){ alert('Rate cannot be negative.'); return; }
-  const rec={ id:id||uid('lab'), code, category:document.getElementById('lm-category').value,
-    description:document.getElementById('lm-desc').value.trim(), unit:document.getElementById('lm-unit').value, rate, applicableTo:['All'] };
+  const rec={ id:id||uid('lab'), code, category,
+    description:document.getElementById('lm-desc').value.trim(), unit:document.getElementById('lm-unit').value, rate };
   const idx=DB.labour.findIndex(l=>l.id===id);
   if(idx>-1) DB.labour[idx]=rec; else DB.labour.push(rec);
   persist(); closeModal(); renderLabour();
 }
 function deleteLabour(id){
-  if(!confirm('Delete this labour rate permanently?')) return;
+  const rec=DB.labour.find(l=>l.id===id);
+  const isOnlyOneInCategory=rec && DB.labour.filter(l=>l.category===rec.category).length===1;
+  const msg=isOnlyOneInCategory
+    ? `"${rec.category}" has no other rate defined. Deleting this will make ${rec.category} labour FREE (₹0) in every costing that uses it, with no warning shown elsewhere. Delete anyway?`
+    : 'Delete this labour rate permanently?';
+  if(!confirm(msg)) return;
   DB.labour=DB.labour.filter(l=>l.id!==id); persist(); renderLabour();
 }
 function labourRate(category){ const l=DB.labour.find(x=>x.category===category); return l?l.rate:0; }
@@ -766,8 +980,14 @@ function renderTemplates(){
     <td>${escHtml(t.defaultCoreCategory)}</td><td>${escHtml(t.defaultFinishCategory)}</td><td class="mono right">${t.defaultWastagePct}%</td>
     <td>${t.hasDoors?'✓':'—'} / ${t.hasDrawers?'✓':'—'} / ${t.hasShelves?'✓':'—'}</td>
     <td>${t.cncRequired?'<span class="tag tag-amber">Yes</span>':'—'}</td>
-    <td><button class="btn btn-sm" onclick="openTemplateModal('${t.id}')">Edit</button></td></tr>
+    <td><button class="btn btn-sm" onclick="openTemplateModal('${t.id}')">Edit</button> <button class="btn btn-sm btn-red" onclick="deleteTemplate('${t.id}')">Del</button></td></tr>
   `).join(''):`<tr><td colspan="9" class="empty">No templates yet.</td></tr>`;
+}
+function deleteTemplate(id){
+  const inUse=DB.costingItems.some(ci=>ci.templateId===id);
+  if(inUse){ alert('This template is used by an existing furniture item and cannot be deleted.'); return; }
+  if(!confirm('Delete this furniture template permanently?')) return;
+  DB.templates=DB.templates.filter(t=>t.id!==id); persist(); renderTemplates();
 }
 function openTemplateModal(id){
   const t=id?DB.templates.find(x=>x.id===id):null;
@@ -789,6 +1009,7 @@ function openTemplateModal(id){
       <label><input type="checkbox" id="tm-back" ${t?.hasBack!==false?'checked':''}> Has Back Panel</label>
       <label><input type="checkbox" id="tm-loft" ${t?.hasLoft?'checked':''}> Has Loft</label>
       <label><input type="checkbox" id="tm-top" ${t?.hasTableTop?'checked':''}> Has Table Top</label>
+      <label><input type="checkbox" id="tm-liftup" ${t?.hasLiftUp?'checked':''}> Has Lift-Up Storage Mechanism</label>
       <label><input type="checkbox" id="tm-sliding" ${t?.slidingShutter?'checked':''}> Sliding Shutters</label>
       <label><input type="checkbox" id="tm-cnc" ${t?.cncRequired?'checked':''}> CNC Required</label>
     </div>
@@ -808,6 +1029,7 @@ function saveTemplate(){
     hasDoors:document.getElementById('tm-doors').checked, hasDrawers:document.getElementById('tm-drawers').checked,
     hasShelves:document.getElementById('tm-shelves').checked, hasBack:document.getElementById('tm-back').checked,
     hasLoft:document.getElementById('tm-loft').checked, hasTableTop:document.getElementById('tm-top').checked,
+    hasLiftUp:document.getElementById('tm-liftup').checked,
     slidingShutter:document.getElementById('tm-sliding').checked, cncRequired:document.getElementById('tm-cnc').checked,
     drawerBoxFactor:2.4, handlesPerUnit:1, shelfPinsPerShelf:4,
     remarks:document.getElementById('tm-remarks').value.trim(), status:'Active'
@@ -838,6 +1060,10 @@ function renderProjects(){
         <span>${items.length} furniture item${items.length!==1?'s':''}</span>
         <span class="mono bold" style="color:var(--dark)">${INR(totalSell||totalCost)}</span>
       </div>
+      <div style="display:flex;gap:6px;margin-top:10px" onclick="event.stopPropagation()">
+        <button class="btn btn-sm btn-outline" onclick="duplicateProject('${p.id}')">Duplicate</button>
+        <button class="btn btn-sm btn-red" onclick="deleteProject('${p.id}')">Delete</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -853,6 +1079,7 @@ function openProjectModal(id){
       <div><label class="fl">Date</label><input class="inp" id="pm-date" type="date" value="${p?.date||today()}" style="width:100%"></div>
       <div><label class="fl">Architect Name</label><input class="inp" id="pm-architect" value="${escHtml(p?.architectName||'')}" style="width:100%"></div>
       <div><label class="fl">Architect Contact</label><input class="inp" id="pm-architect-contact" value="${escHtml(p?.architectContact||'')}" style="width:100%"></div>
+      <div><label class="fl">Status</label><select class="inp" id="pm-status" style="width:100%">${optionsHtml(['Draft','Sent','Approved'],p?.status||'Draft')}</select></div>
     </div>
     ${p?`<div class="hint">Unique ID: <span class="mono">${escHtml(p.uniqueId||'—')}</span> (fixed, cannot be changed)</div>`:''}
     <div class="modal-ft"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-gold" onclick="saveProject()">${p?'Save Changes':'Create Project'}</button></div>
@@ -870,13 +1097,49 @@ function saveProject(){
     date:document.getElementById('pm-date').value||today(),
     architectName:document.getElementById('pm-architect').value.trim(),
     architectContact:document.getElementById('pm-architect-contact').value.trim(),
-    status:existing?.status||'Draft',
+    status:document.getElementById('pm-status').value,
     uniqueId:existing?.uniqueId||genUniqueId()
   };
   const idx=DB.projects.findIndex(x=>x.id===id);
   if(idx>-1) DB.projects[idx]=rec; else DB.projects.push(rec);
   persist(); closeModal(); renderProjects();
   openProject(rec.id);
+}
+function deleteProject(id){
+  const proj=DB.projects.find(p=>p.id===id);
+  if(!proj) return;
+  const itemCount=DB.costingItems.filter(ci=>ci.projectId===id).length+DB.customItems.filter(ci=>ci.projectId===id).length+DB.simpleItems.filter(ci=>ci.projectId===id).length;
+  const msg=itemCount>0
+    ? `Delete "${proj.name}" and all ${itemCount} furniture item(s) costed under it? This cannot be undone.`
+    : `Delete "${proj.name}"? This cannot be undone.`;
+  if(!confirm(msg)) return;
+  DB.projects=DB.projects.filter(p=>p.id!==id);
+  DB.costingItems=DB.costingItems.filter(ci=>ci.projectId!==id);
+  DB.customItems=DB.customItems.filter(ci=>ci.projectId!==id);
+  DB.simpleItems=DB.simpleItems.filter(ci=>ci.projectId!==id);
+  persist(); renderProjects();
+}
+function duplicateProject(id){
+  const proj=DB.projects.find(p=>p.id===id);
+  if(!proj) return;
+  const newProj={...proj, id:uid('prj'), name:proj.name+' (Copy)', status:'Draft', uniqueId:genUniqueId()};
+  DB.projects.push(newProj);
+  DB.costingItems.filter(ci=>ci.projectId===id).forEach(ci=>{
+    const copy={...ci, id:uid('ci'), projectId:newProj.id, status:'Draft'};
+    delete copy.frozenAt;
+    DB.costingItems.push(copy);
+  });
+  DB.customItems.filter(ci=>ci.projectId===id).forEach(ci=>{
+    const copy={...ci, id:uid('cci'), projectId:newProj.id, status:'Draft', extraLines:JSON.parse(JSON.stringify(ci.extraLines||[]))};
+    delete copy.frozenAt;
+    DB.customItems.push(copy);
+  });
+  DB.simpleItems.filter(ci=>ci.projectId===id).forEach(ci=>{
+    const copy={...ci, id:uid('sci'), projectId:newProj.id, status:'Draft', lines:JSON.parse(JSON.stringify(ci.lines||[]))};
+    delete copy.frozenAt;
+    DB.simpleItems.push(copy);
+  });
+  persist(); renderProjects();
 }
 function openProject(id){
   currentProjectId=id;
@@ -890,11 +1153,13 @@ function renderProjectDetail(){
   document.getElementById('pd-sub').innerHTML=`${escHtml(p.uniqueId||'—')} · ${escHtml(p.client)}${p.location?' · '+escHtml(p.location):''} · ${fmtDate(p.date)} · Status: ${escHtml(p.status)}${p.architectName?' · Architect: '+escHtml(p.architectName):''}`;
   const items=DB.costingItems.filter(ci=>ci.projectId===p.id);
   const customItems=DB.customItems.filter(ci=>ci.projectId===p.id);
-  const totalCost=items.reduce((s,ci)=>s+(ci.snapshot?.totalCost||0),0)+customItems.reduce((s,ci)=>s+(ci.snapshot?.totalCost||0),0);
-  const totalSell=items.reduce((s,ci)=>s+(ci.snapshot?.sellingPrice||0),0)+customItems.reduce((s,ci)=>s+(ci.snapshot?.sellingPrice||0),0);
+  const simpleItems=DB.simpleItems.filter(ci=>ci.projectId===p.id);
+  const allGroups=[items,customItems,simpleItems];
+  const totalCost=allGroups.reduce((s,g)=>s+g.reduce((s2,ci)=>s2+(ci.snapshot?.totalCost||0),0),0);
+  const totalSell=allGroups.reduce((s,g)=>s+g.reduce((s2,ci)=>s2+(ci.snapshot?.sellingPrice||0),0),0);
   const margin=totalSell?Math.round((totalSell-totalCost)/totalSell*100):0;
   document.getElementById('pd-kpis').innerHTML=`
-    <div class="kpi gold"><div class="kpi-label">Furniture Items</div><div class="kpi-val">${items.length+customItems.length}</div><div class="kpi-sub">${items.length} Modular · ${customItems.length} Custom Wood</div></div>
+    <div class="kpi gold"><div class="kpi-label">Furniture Items</div><div class="kpi-val">${items.length+customItems.length+simpleItems.length}</div><div class="kpi-sub">${items.length} Modular · ${customItems.length} Custom Wood · ${simpleItems.length} Simple</div></div>
     <div class="kpi b"><div class="kpi-label">Total Cost</div><div class="kpi-val">${INR(totalCost)}</div></div>
     <div class="kpi g"><div class="kpi-label">Selling Price</div><div class="kpi-val">${INR(totalSell)}</div></div>
     <div class="kpi ${margin>=0?'g':'r'}"><div class="kpi-label">Margin %</div><div class="kpi-val">${margin}%</div></div>
@@ -924,6 +1189,18 @@ function renderProjectDetail(){
       <td onclick="event.stopPropagation()"><button class="btn btn-sm btn-red" onclick="deleteCustomItem('${ci.id}')">Del</button></td>
     </tr>`;
   }).join(''):`<tr><td colspan="9" class="empty">No custom wood items yet. Click "+ Add Custom Wood Item" to start costing.</td></tr>`;
+  document.getElementById('tb-simpleitems').innerHTML=simpleItems.length?simpleItems.map(ci=>{
+    const s=ci.snapshot||{};
+    const m=s.sellingPrice?Math.round((s.sellingPrice-s.totalCost)/s.sellingPrice*100):0;
+    return `<tr style="cursor:pointer" onclick="openSimpleItem('${ci.id}')">
+      <td><strong>${escHtml(ci.name)}</strong></td><td>${escHtml(ci.room||'—')}</td><td class="mono">${(ci.lines||[]).length}</td>
+      <td class="mono">${ci.qty}</td>
+      <td class="mono right">${INR(s.totalCost)}</td><td class="mono right">${INR(s.sellingPrice)}</td>
+      <td class="mono right" style="color:${m>=0?'var(--green)':'var(--red)'}">${m}%</td>
+      <td><span class="tag ${ci.status==='Frozen'?'tag-blue':'tag-grey'}">${ci.status}</span></td>
+      <td onclick="event.stopPropagation()"><button class="btn btn-sm btn-red" onclick="deleteSimpleItem('${ci.id}')">Del</button></td>
+    </tr>`;
+  }).join(''):`<tr><td colspan="9" class="empty">No simple costing items yet. Click "+ Add Simple Costing Item" to start.</td></tr>`;
 }
 function templateName(id){ return DB.templates.find(t=>t.id===id)?.name||'—'; }
 
@@ -949,10 +1226,9 @@ function openCostingItemModal(existingId){
       <div><label class="fl">No. of Doors</label><input class="inp" id="cm-doors" type="number" min="0" value="${ci?.doors??2}" style="width:100%"></div>
       <div><label class="fl">No. of Drawers</label><input class="inp" id="cm-drawers" type="number" min="0" value="${ci?.drawers??0}" style="width:100%"></div>
       <div><label class="fl">No. of Shelves</label><input class="inp" id="cm-shelves" type="number" min="0" value="${ci?.shelves??2}" style="width:100%"></div>
-      <div><label class="fl">Wastage %</label><input class="inp" id="cm-wastage" type="number" min="0" value="${ci?.wastagePct??DB.settings.defaultWastage}" style="width:100%"></div>
+      <div><label class="fl">Wastage % <span class="hint" style="margin:0">(fallback when a material has none set)</span></label><input class="inp" id="cm-wastage" type="number" min="0" max="100" value="${ci?.wastagePct??DB.settings.defaultWastage}" style="width:100%"></div>
       <div><label class="fl">Overhead %</label><input class="inp" id="cm-overhead" type="number" min="0" value="${ci?.overheadPct??DB.settings.defaultOverhead}" style="width:100%"></div>
       <div><label class="fl">Profit %</label><input class="inp" id="cm-profit" type="number" min="0" value="${ci?.profitPct??DB.settings.defaultProfit}" style="width:100%"></div>
-      <div><label class="fl">GST %</label><input class="inp" id="cm-gst" type="number" min="0" value="${ci?.gstPct??DB.settings.defaultGst}" style="width:100%"></div>
     </div>
     <div class="frow" style="display:flex;gap:16px;flex-wrap:wrap;margin-top:6px">
       <label><input type="checkbox" id="cm-glass" ${ci?.glassReq?'checked':''}> Glass Requirement</label>
@@ -987,9 +1263,21 @@ function openCostingItemModal(existingId){
     <div class="hint">Panel counts, sheet requirement, edge band length, hardware quantities and final price all calculate automatically once you save — the rates above default from your Labour Master but can be overridden per job.</div>
     <div class="modal-ft"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-gold" onclick="saveCostingItem()">Save & Calculate</button></div>
   `);
-  toggleInnerLamFields(); togglePuRateField();
+  toggleInnerLamFields(); togglePuRateField(); onTemplateChangeInModal();
 }
-function onTemplateChangeInModal(){ /* reserved for future live default-filling on template switch */ }
+function onTemplateChangeInModal(){
+  const tpl=DB.templates.find(t=>t.id===document.getElementById('cm-template').value);
+  if(!tpl) return;
+  const setField=(id,enabled)=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    if(!enabled){ el.value=0; el.disabled=true; el.style.background='#F0EFEA'; el.title='Not applicable to this furniture type'; }
+    else { el.disabled=false; el.style.background=''; el.title=''; }
+  };
+  setField('cm-doors', tpl.hasDoors||tpl.slidingShutter);
+  setField('cm-drawers', tpl.hasDrawers);
+  setField('cm-shelves', tpl.hasShelves);
+}
 function toggleInnerLamFields(){
   const on=!document.getElementById('cm-prelaminated').checked;
   document.getElementById('cm-innerlam-fields').style.display=on?'grid':'none';
@@ -1004,8 +1292,13 @@ function saveCostingItem(){
   const templateId=document.getElementById('cm-template').value;
   if(!name||!templateId){ alert('Item Name and Furniture Type are required.'); return; }
   const length=num(document.getElementById('cm-length').value), width=num(document.getElementById('cm-width').value), height=num(document.getElementById('cm-height').value);
-  const qty=num(document.getElementById('cm-qty').value,1);
+  const qty=num(document.getElementById('cm-qty').value,0);
   if(length<=0||width<=0||height<=0||qty<=0){ alert('Dimensions and quantity must be positive numbers.'); return; }
+  const wastagePct=num(document.getElementById('cm-wastage').value);
+  const overheadPct=num(document.getElementById('cm-overhead').value);
+  const profitPct=num(document.getElementById('cm-profit').value);
+  if(wastagePct<0||wastagePct>100){ alert('Wastage % must be between 0 and 100.'); return; }
+  if(overheadPct<0||profitPct<0){ alert('Overhead % and Profit % cannot be negative.'); return; }
   const rec={
     id:id||uid('ci'), projectId:currentProjectId, name, room:document.getElementById('cm-room').value.trim(),
     templateId, qty, length, width, height,
@@ -1014,8 +1307,7 @@ function saveCostingItem(){
     shutterEdgeBandMaterialId:document.getElementById('cm-shutteredgeband').value||null,
     carcassEdgeBandMaterialId:document.getElementById('cm-carcassedgeband').value||null,
     doors:num(document.getElementById('cm-doors').value), drawers:num(document.getElementById('cm-drawers').value), shelves:num(document.getElementById('cm-shelves').value),
-    wastagePct:num(document.getElementById('cm-wastage').value), overheadPct:num(document.getElementById('cm-overhead').value),
-    profitPct:num(document.getElementById('cm-profit').value), gstPct:num(document.getElementById('cm-gst').value),
+    wastagePct, overheadPct, profitPct,
     glassReq:document.getElementById('cm-glass').checked, mirrorReq:document.getElementById('cm-mirror').checked,
     lightingReq:document.getElementById('cm-lighting').checked, softClose:document.getElementById('cm-softclose').checked,
     cuttingRate:num(document.getElementById('cm-cuttingrate').value),
@@ -1033,9 +1325,12 @@ function saveCostingItem(){
   const idx=DB.costingItems.findIndex(c=>c.id===id);
   if(idx>-1) DB.costingItems[idx]=rec; else DB.costingItems.push(rec);
   persist(); closeModal(); renderProjectDetail();
+  if(currentItemId===rec.id && document.getElementById('pg-itemdetail').classList.contains('active')) renderCostingItemDetail();
 }
 function deleteCostingItem(id){
-  if(!confirm('Delete this furniture item and its costing?')) return;
+  const ci=DB.costingItems.find(c=>c.id===id);
+  const msg=ci?.status==='Frozen' ? 'This item is FROZEN as a sent quotation. Delete it anyway?' : 'Delete this furniture item and its costing?';
+  if(!confirm(msg)) return;
   DB.costingItems=DB.costingItems.filter(c=>c.id!==id); persist(); renderProjectDetail();
 }
 
@@ -1058,7 +1353,6 @@ function openCustomItemModal(existingId){
       <div><label class="fl">Polish Charges (₹, per piece)</label><input class="inp" id="ccm-polish" type="number" min="0" value="${ci?.polishAmount??0}" style="width:100%"></div>
       <div><label class="fl">Overhead %</label><input class="inp" id="ccm-overhead" type="number" min="0" value="${ci?.overheadPct??DB.settings.defaultOverhead}" style="width:100%"></div>
       <div><label class="fl">Profit %</label><input class="inp" id="ccm-profit" type="number" min="0" value="${ci?.profitPct??DB.settings.defaultProfit}" style="width:100%"></div>
-      <div><label class="fl">GST %</label><input class="inp" id="ccm-gst" type="number" min="0" value="${ci?.gstPct??DB.settings.defaultGst}" style="width:100%"></div>
     </div>
     <div class="card-sub" style="margin:14px 0 8px;font-weight:700;color:var(--text)">Additional Charges (per piece) — hardware, carving, finishing material, etc.</div>
     <div id="ccm-extralines"></div>
@@ -1106,22 +1400,23 @@ function calcCustomCosting(ci){
   const costWithOverhead=totalCost+overheadAmt;
   const profitAmt=costWithOverhead*(ci.profitPct||0)/100;
   const sellingPrice=costWithOverhead+profitAmt;
-  const gstAmt=sellingPrice*(ci.gstPct||0)/100;
-  const invoiceValue=sellingPrice+gstAmt;
 
   return {
     calculatedAt:new Date().toISOString(),
     materialLines, hardwareLines:[], labourLines, notes:['Custom wooden furniture: wood cost is calculated (qty × master rate); wages, polish and additional charges are entered directly per piece.'],
     materialCost, hardwareCost, labourCost, perUnitCost,
-    totalCost, overheadAmt, costWithOverhead, profitAmt, sellingPrice, gstAmt, invoiceValue
+    totalCost, overheadAmt, costWithOverhead, profitAmt, sellingPrice
   };
 }
 function saveCustomItem(){
   const id=document.getElementById('ccm-id').value;
   const name=document.getElementById('ccm-name').value.trim();
   if(!name){ alert('Item Name is required.'); return; }
-  const qty=num(document.getElementById('ccm-qty').value,1);
+  const qty=num(document.getElementById('ccm-qty').value,0);
   if(qty<=0){ alert('Quantity must be a positive number.'); return; }
+  const overheadPct=num(document.getElementById('ccm-overhead').value);
+  const profitPct=num(document.getElementById('ccm-profit').value);
+  if(overheadPct<0||profitPct<0){ alert('Overhead % and Profit % cannot be negative.'); return; }
   const existing=id?DB.customItems.find(x=>x.id===id):null;
   if(existing?.status==='Frozen'){ alert('This item is frozen as a quotation. Unfreeze it first if you need to change inputs.'); return; }
   const rec={
@@ -1131,17 +1426,19 @@ function saveCustomItem(){
     wagesAmount:num(document.getElementById('ccm-wages').value),
     polishAmount:num(document.getElementById('ccm-polish').value),
     extraLines:customExtraLinesDraft.filter(l=>l.description||l.amount),
-    overheadPct:num(document.getElementById('ccm-overhead').value), profitPct:num(document.getElementById('ccm-profit').value),
-    gstPct:num(document.getElementById('ccm-gst').value),
+    overheadPct, profitPct,
     status:existing?.status||'Draft'
   };
   rec.snapshot=calcCustomCosting(rec);
   const idx=DB.customItems.findIndex(c=>c.id===id);
   if(idx>-1) DB.customItems[idx]=rec; else DB.customItems.push(rec);
   persist(); closeModal(); renderProjectDetail();
+  if(currentCustomItemId===rec.id && document.getElementById('pg-customitemdetail').classList.contains('active')) renderCustomItemDetail();
 }
 function deleteCustomItem(id){
-  if(!confirm('Delete this custom wood item and its costing?')) return;
+  const ci=DB.customItems.find(c=>c.id===id);
+  const msg=ci?.status==='Frozen' ? 'This item is FROZEN as a sent quotation. Delete it anyway?' : 'Delete this custom wood item and its costing?';
+  if(!confirm(msg)) return;
   DB.customItems=DB.customItems.filter(c=>c.id!==id); persist(); renderProjectDetail();
 }
 function openCustomItem(id){ currentCustomItemId=id; nav('customitemdetail',null); renderCustomItemDetail(); }
@@ -1181,8 +1478,6 @@ function renderCustomItemDetail(){
         <tr><td>Cost with Overhead</td><td class="mono right">${INR(s.costWithOverhead)}</td></tr>
         <tr><td>Profit (${ci.profitPct}%)</td><td class="mono right">${INR(s.profitAmt)}</td></tr>
         <tr class="tr-sum"><td>Selling Price</td><td class="mono right">${INR(s.sellingPrice)}</td></tr>
-        <tr><td>GST (${ci.gstPct}%)</td><td class="mono right">${INR(s.gstAmt)}</td></tr>
-        <tr class="tr-sum"><td>Invoice Value</td><td class="mono right">${INR(s.invoiceValue)}</td></tr>
       </table>
       ${ci.status==='Frozen'?`<div class="hint" style="margin-top:8px">🔒 Frozen on ${fmtDate(ci.frozenAt)} — wood rate changes will no longer affect this quotation. Unfreeze to recalculate.</div>`:`<div class="hint" style="margin-top:8px">Live — wood cost recalculates automatically if the wood species rate changes in Material Master.</div>`}
     </div>
@@ -1196,10 +1491,174 @@ function toggleFreezeCustom(){
   persist(); renderCustomItemDetail(); renderProjectDetail();
 }
 
+/* ============================== SIMPLE COSTING (manual entry, no formulas) ============================== */
+let simpleLinesDraft=[];
+function openSimpleItemModal(existingId){
+  const ci=existingId?DB.simpleItems.find(x=>x.id===existingId):null;
+  simpleLinesDraft=ci?.lines?JSON.parse(JSON.stringify(ci.lines)):[{materialId:null,description:'',qty:1,rate:0,labourAmount:0}];
+  openModalHtml(`
+    <div class="modal-hd"><div class="modal-title">${ci?'Edit':'Add'} Simple Costing Item</div><button class="modal-close" onclick="closeModal()">×</button></div>
+    <input type="hidden" id="scm-id" value="${ci?.id||''}">
+    <div class="card-sub" style="margin-bottom:12px">No formulas — enter each material's own cost and its labour cost as separate lines. The sheet just adds everything up.</div>
+    <div class="fgrid">
+      <div><label class="fl req">Item Name</label><input class="inp" id="scm-name" value="${escHtml(ci?.name||'')}" style="width:100%" placeholder="e.g. Living Room TV Unit"></div>
+      <div><label class="fl">Room</label><input class="inp" id="scm-room" value="${escHtml(ci?.room||'')}" style="width:100%"></div>
+      <div><label class="fl req">Quantity</label><input class="inp" id="scm-qty" type="number" min="1" value="${ci?.qty||1}" style="width:100%"></div>
+      <div><label class="fl">Overhead %</label><input class="inp" id="scm-overhead" type="number" min="0" value="${ci?.overheadPct??DB.settings.defaultOverhead}" style="width:100%"></div>
+      <div><label class="fl">Profit %</label><input class="inp" id="scm-profit" type="number" min="0" value="${ci?.profitPct??DB.settings.defaultProfit}" style="width:100%"></div>
+    </div>
+    <div class="card-sub" style="margin:14px 0 8px;font-weight:700;color:var(--text)">Material &amp; Labour Lines</div>
+    <div id="scm-lines"></div>
+    <button class="btn btn-sm btn-outline" onclick="addSimpleLine()">+ Add Line</button>
+    <div id="scm-runningtotal" style="margin-top:12px;font-weight:700;text-align:right"></div>
+    <div class="modal-ft"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-gold" onclick="saveSimpleItem()">Save & Sum Up</button></div>
+  `);
+  renderSimpleLines();
+}
+function renderSimpleLines(){
+  const el=document.getElementById('scm-lines');
+  el.innerHTML=`<div class="tbl-wrap"><table>
+    <thead><tr><th style="min-width:170px">Material (optional pick)</th><th style="min-width:150px">Description</th><th style="width:70px">Qty</th><th style="width:90px">Rate ₹</th><th class="right" style="width:90px">Material ₹</th><th style="width:90px">Labour ₹</th><th class="right" style="width:90px">Line Total ₹</th><th></th></tr></thead>
+    <tbody>
+    ${simpleLinesDraft.map((l,i)=>{
+      const matAmt=(l.qty||0)*(l.rate||0);
+      const lineTotal=matAmt+(l.labourAmount||0);
+      return `<tr>
+        <td><select class="inp inp-sm" style="width:100%" onchange="pickMaterialForLine(${i},this.value)">${selectMaterialOptions('',l.materialId)}</select></td>
+        <td><input class="inp inp-sm" style="width:100%" value="${escHtml(l.description)}" onchange="simpleLinesDraft[${i}].description=this.value"></td>
+        <td><input class="inp inp-sm" type="number" min="0" step="0.01" value="${l.qty}" style="width:100%" onchange="simpleLinesDraft[${i}].qty=num(this.value);renderSimpleLines()"></td>
+        <td><input class="inp inp-sm" type="number" min="0" value="${l.rate}" style="width:100%" onchange="simpleLinesDraft[${i}].rate=num(this.value);renderSimpleLines()"></td>
+        <td class="mono right">${INR(matAmt)}</td>
+        <td><input class="inp inp-sm" type="number" min="0" value="${l.labourAmount}" style="width:100%" onchange="simpleLinesDraft[${i}].labourAmount=num(this.value);renderSimpleLines()"></td>
+        <td class="mono right bold">${INR(lineTotal)}</td>
+        <td><button class="btn btn-sm btn-red" onclick="removeSimpleLine(${i})">✕</button></td>
+      </tr>`;
+    }).join('')}
+    </tbody>
+  </table></div>`;
+  const grand=simpleLinesDraft.reduce((s,l)=>s+(l.qty||0)*(l.rate||0)+(l.labourAmount||0),0);
+  const rt=document.getElementById('scm-runningtotal');
+  if(rt) rt.textContent='Lines Total (per piece): '+INR(grand);
+}
+function pickMaterialForLine(i,materialId){
+  const mat=DB.materials.find(m=>m.id===materialId);
+  simpleLinesDraft[i].materialId=materialId||null;
+  if(mat){ simpleLinesDraft[i].description=mat.name; simpleLinesDraft[i].rate=mat.purchaseRate; if(!simpleLinesDraft[i].qty) simpleLinesDraft[i].qty=1; }
+  renderSimpleLines();
+}
+function addSimpleLine(){ simpleLinesDraft.push({materialId:null,description:'',qty:1,rate:0,labourAmount:0}); renderSimpleLines(); }
+function removeSimpleLine(i){ simpleLinesDraft.splice(i,1); renderSimpleLines(); }
+function calcSimpleCosting(ci){
+  const lines=ci.lines||[];
+  const materialLines=lines.map(l=>({name:l.description||'(unnamed material)', qty:l.qty||0, unit:l.materialId?(DB.materials.find(m=>m.id===l.materialId)?.unit||''):'', cost:(l.qty||0)*(l.rate||0)}));
+  const labourLines=lines.filter(l=>l.labourAmount).map(l=>({name:'Labour — '+(l.description||'material'), basis:'Entered manually', cost:l.labourAmount||0}));
+  const materialCost=materialLines.reduce((s,l)=>s+l.cost,0);
+  const labourCost=labourLines.reduce((s,l)=>s+l.cost,0);
+  const hardwareCost=0;
+
+  const perUnitCost=materialCost+labourCost+hardwareCost;
+  const totalCost=perUnitCost*(ci.qty||1);
+  const overheadAmt=totalCost*(ci.overheadPct||0)/100;
+  const costWithOverhead=totalCost+overheadAmt;
+  const profitAmt=costWithOverhead*(ci.profitPct||0)/100;
+  const sellingPrice=costWithOverhead+profitAmt;
+
+  return {
+    calculatedAt:new Date().toISOString(),
+    materialLines, hardwareLines:[], labourLines, notes:['Simple Costing: every line is entered directly — nothing here is calculated from dimensions or formulas.'],
+    materialCost, hardwareCost, labourCost, perUnitCost,
+    totalCost, overheadAmt, costWithOverhead, profitAmt, sellingPrice
+  };
+}
+function saveSimpleItem(){
+  const id=document.getElementById('scm-id').value;
+  const name=document.getElementById('scm-name').value.trim();
+  if(!name){ alert('Item Name is required.'); return; }
+  const qty=num(document.getElementById('scm-qty').value,0);
+  if(qty<=0){ alert('Quantity must be a positive number.'); return; }
+  const overheadPct=num(document.getElementById('scm-overhead').value);
+  const profitPct=num(document.getElementById('scm-profit').value);
+  if(overheadPct<0||profitPct<0){ alert('Overhead % and Profit % cannot be negative.'); return; }
+  const existing=id?DB.simpleItems.find(x=>x.id===id):null;
+  if(existing?.status==='Frozen'){ alert('This item is frozen as a quotation. Unfreeze it first if you need to change inputs.'); return; }
+  const lines=simpleLinesDraft.filter(l=>l.description||l.qty||l.rate||l.labourAmount);
+  if(!lines.length){ alert('Add at least one material or labour line.'); return; }
+  const rec={
+    id:id||uid('sci'), projectId:currentProjectId, name, room:document.getElementById('scm-room').value.trim(), qty,
+    lines, overheadPct, profitPct,
+    status:existing?.status||'Draft'
+  };
+  rec.snapshot=calcSimpleCosting(rec);
+  const idx=DB.simpleItems.findIndex(c=>c.id===id);
+  if(idx>-1) DB.simpleItems[idx]=rec; else DB.simpleItems.push(rec);
+  persist(); closeModal(); renderProjectDetail();
+  if(currentSimpleItemId===rec.id && document.getElementById('pg-simpleitemdetail').classList.contains('active')) renderSimpleItemDetail();
+}
+function deleteSimpleItem(id){
+  const ci=DB.simpleItems.find(c=>c.id===id);
+  const msg=ci?.status==='Frozen' ? 'This item is FROZEN as a sent quotation. Delete it anyway?' : 'Delete this simple costing item?';
+  if(!confirm(msg)) return;
+  DB.simpleItems=DB.simpleItems.filter(c=>c.id!==id); persist(); renderProjectDetail();
+}
+function openSimpleItem(id){ currentSimpleItemId=id; nav('simpleitemdetail',null); renderSimpleItemDetail(); }
+function editSimpleItem(){ openSimpleItemModal(currentSimpleItemId); }
+function renderSimpleItemDetail(){
+  const ci=DB.simpleItems.find(x=>x.id===currentSimpleItemId);
+  if(!ci){ nav('projects',null); return; }
+  const s=ci.snapshot||calcSimpleCosting(ci);
+  document.getElementById('sid-title').textContent=ci.name;
+  document.getElementById('sid-sub').textContent=`Simple Costing (manual entry) · Qty ${ci.qty}`;
+  document.getElementById('sid-freeze-btn').textContent = ci.status==='Frozen' ? '🔓 Unfreeze' : '🔒 Freeze as Quotation';
+  document.getElementById('sid-freeze-btn').className = 'btn ' + (ci.status==='Frozen'?'btn-outline':'btn-gold');
+  document.getElementById('sid-content').innerHTML=`
+    <div class="kpi-row c4">
+      <div class="kpi b"><div class="kpi-label">Material Cost</div><div class="kpi-val">${INR(s.materialCost*ci.qty)}</div></div>
+      <div class="kpi b"><div class="kpi-label">Labour Cost</div><div class="kpi-val">${INR(s.labourCost*ci.qty)}</div></div>
+      <div class="kpi b"><div class="kpi-label">Total Cost</div><div class="kpi-val">${INR(s.totalCost)}</div></div>
+      <div class="kpi gold"><div class="kpi-label">Selling Price</div><div class="kpi-val">${INR(s.sellingPrice)}</div></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><div class="card-title">Material &amp; Labour Lines (per piece)</div></div>
+      <div class="tbl-wrap"><table><thead><tr><th>Material</th><th class="right">Qty</th><th>Unit</th><th class="right">Material ₹</th></tr></thead><tbody>
+      ${s.materialLines.map(l=>`<tr><td>${escHtml(l.name)}</td><td class="mono right">${l.qty}</td><td>${escHtml(l.unit)}</td><td class="mono right">${INR(l.cost)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="tbl-wrap"><table><thead><tr><th>Labour</th><th>Basis</th><th class="right">Cost ₹</th></tr></thead><tbody>
+      ${s.labourLines.length?s.labourLines.map(l=>`<tr><td>${escHtml(l.name)}</td><td class="small">${escHtml(l.basis)}</td><td class="mono right">${INR(l.cost)}</td></tr>`).join(''):'<tr><td colspan="3" class="empty">No labour entered.</td></tr>'}
+      </tbody></table></div>
+      <div class="hint">${s.notes.join(' ')}</div>
+    </div>
+    <div class="card" style="max-width:480px">
+      <div class="card-hd"><div class="card-title">Final Price Build-Up</div></div>
+      <table>
+        <tr><td>Cost per piece</td><td class="mono right">${INR(s.perUnitCost)}</td></tr>
+        <tr><td>Quantity</td><td class="mono right">× ${ci.qty}</td></tr>
+        <tr><td class="bold">Total Cost</td><td class="mono right bold">${INR(s.totalCost)}</td></tr>
+        <tr><td>Overhead (${ci.overheadPct}%)</td><td class="mono right">${INR(s.overheadAmt)}</td></tr>
+        <tr><td>Cost with Overhead</td><td class="mono right">${INR(s.costWithOverhead)}</td></tr>
+        <tr><td>Profit (${ci.profitPct}%)</td><td class="mono right">${INR(s.profitAmt)}</td></tr>
+        <tr class="tr-sum"><td>Selling Price</td><td class="mono right">${INR(s.sellingPrice)}</td></tr>
+      </table>
+      ${ci.status==='Frozen'?`<div class="hint" style="margin-top:8px">🔒 Frozen on ${fmtDate(ci.frozenAt)}.</div>`:`<div class="hint" style="margin-top:8px">Nothing here recalculates on its own — every line is exactly what you typed in.</div>`}
+    </div>
+  `;
+}
+function toggleFreezeSimple(){
+  const ci=DB.simpleItems.find(x=>x.id===currentSimpleItemId);
+  if(!ci) return;
+  if(ci.status==='Frozen'){ ci.status='Draft'; ci.snapshot=calcSimpleCosting(ci); }
+  else { ci.snapshot=calcSimpleCosting(ci); ci.status='Frozen'; ci.frozenAt=today(); }
+  persist(); renderSimpleItemDetail(); renderProjectDetail();
+}
+
 /* ============================== CALCULATION ENGINE ============================== */
 function mmToFt(mm){ return mm/304.8; }
 function mmToM(mm){ return mm/1000; }
-function hingeQtyForHeight(h_mm){ const tier=HINGE_TIERS.find(t=>h_mm<=t.maxH); return tier?tier.qty:4; }
+function hingeQtyForHeight(h_mm){
+  const tier=HINGE_TIERS.find(t=>h_mm<=t.maxH);
+  if(tier) return tier.qty;
+  const last=HINGE_TIERS[HINGE_TIERS.length-1];
+  return last.qty+Math.ceil((h_mm-last.maxH)/500); // keeps adding a hinge every extra 500mm past the tallest defined tier, no artificial cap
+}
 function sheetsFromSqft(area, wastagePct, sheetSqft){ const withWaste=area*(1+wastagePct/100); return Math.ceil(withWaste/sheetSqft); }
 function materialLineCost(material, area, sheetSqft){
   if(!material) return {qty:0,unitLabel:'',cost:0};
@@ -1211,7 +1670,7 @@ function calcCosting(ci){
   const tpl=DB.templates.find(t=>t.id===ci.templateId);
   if(!tpl) return null;
   const sheetSqft=DB.settings.sheetSqft||32;
-  const wastagePct=ci.wastagePct??tpl.defaultWastagePct??DB.settings.defaultWastage;
+  const fallbackWastagePct=ci.wastagePct??tpl.defaultWastagePct??DB.settings.defaultWastage;
   const coreMat=DB.materials.find(m=>m.id===ci.materialId);
   const finishMat=DB.materials.find(m=>m.id===ci.finishMaterialId);
   const shutterEdgeMat=DB.materials.find(m=>m.id===ci.shutterEdgeBandMaterialId);
@@ -1219,7 +1678,11 @@ function calcCosting(ci){
   const innerLaminateMat=DB.materials.find(m=>m.id===ci.innerLaminateMaterialId);
   const L=ci.length, W=ci.width, H=ci.height; // mm: L=overall width/length, W=depth, H=height
   const Lf=mmToFt(L), Wf=mmToFt(W), Hf=mmToFt(H);
-  const doors=ci.doors||0, drawers=ci.drawers||0, shelves=ci.shelves||0;
+  // Zero out counts the template doesn't actually support, regardless of what's stored on the item —
+  // prevents phantom hardware/area on furniture types with no doors/drawers/shelves concept.
+  const doors=(tpl.hasDoors||tpl.slidingShutter)?(ci.doors||0):0;
+  const drawers=tpl.hasDrawers?(ci.drawers||0):0;
+  const shelves=tpl.hasShelves?(ci.shelves||0):0;
 
   let coreAreaSqft=0, shutterAreaSqft=0, shutterEdgeBandM=0, carcassEdgeBandM=0;
   const notes=[];
@@ -1230,13 +1693,13 @@ function calcCosting(ci){
     const partitions=Math.max(doors-1,0)*(Hf*Wf);
     const back=tpl.hasBack?(Lf*Hf):0;
     const shelfArea=shelves*(Lf*Wf);
-    const drawerBoxArea=drawers*tpl.drawerBoxFactor*((Lf/Math.max(doors||drawers,1))*(Hf*0.15));
+    const drawerBoxArea=drawers*tpl.drawerBoxFactor*((Lf/Math.max(drawers,1))*(Hf*0.15));
     coreAreaSqft=sides+topBottom+partitions+back+shelfArea+drawerBoxArea;
     shutterAreaSqft = tpl.hasDoors||tpl.slidingShutter ? Lf*Hf : 0;
     if(tpl.hasTableTop) coreAreaSqft += Lf*Wf;
     shutterEdgeBandM = doors>0 ? doors*(2*((Lf/doors)+Hf))*0.3048 : 0;
     carcassEdgeBandM = shelves*Lf*0.3048;
-    notes.push('Case goods: sides + top/bottom + partitions + back + shelves'+(tpl.hasTableTop?' + top':'')+', shutter face area = length × height. Shutter edge band = door perimeters; carcass edge band = shelf front edges.');
+    notes.push('Case goods: sides + top/bottom + partitions + back + shelves'+(tpl.hasTableTop?' + top':'')+', shutter face area = length × height. Shutter edge band = door perimeters; carcass edge band = shelf front edges. Drawer box width = length ÷ drawer count.');
   } else if(tpl.constructionType==='flatPanel'){
     coreAreaSqft = Lf*Hf;
     shutterAreaSqft = 0;
@@ -1250,16 +1713,26 @@ function calcCosting(ci){
     notes.push('Flat top: top surface (length × depth) + two half-height support panels, top edge charged as shutter-grade edge band.');
   }
 
-  const coreAreaWithWaste=coreAreaSqft*(1+wastagePct/100);
-  const shutterAreaWithWaste=shutterAreaSqft*(1+wastagePct/100);
-  const shutterEdgeBandWithWaste=shutterEdgeBandM*(1+wastagePct/100);
-  const carcassEdgeBandWithWaste=carcassEdgeBandM*(1+wastagePct/100);
+  // Wastage: each material line uses that specific material's own Wastage % (Material Master);
+  // falls back to the item/template/global default only when no material is selected for that line.
+  const coreWastagePct=coreMat?.wastagePct ?? fallbackWastagePct;
+  const shutterWastagePct=(finishMat||coreMat)?.wastagePct ?? fallbackWastagePct;
+  const shutterEdgeWastagePct=shutterEdgeMat?.wastagePct ?? fallbackWastagePct;
+  const carcassEdgeWastagePct=carcassEdgeMat?.wastagePct ?? fallbackWastagePct;
+  const innerLamWastagePct=innerLaminateMat?.wastagePct ?? fallbackWastagePct;
+  notes.push(`Wastage applied per selected material (falls back to ${fallbackWastagePct}% where no material is chosen for a line).`);
+
+  const coreAreaWithWaste=coreAreaSqft*(1+coreWastagePct/100);
+  const shutterAreaWithWaste=shutterAreaSqft*(1+shutterWastagePct/100);
+  const shutterEdgeBandWithWaste=shutterEdgeBandM*(1+shutterEdgeWastagePct/100);
+  const carcassEdgeBandWithWaste=carcassEdgeBandM*(1+carcassEdgeWastagePct/100);
+  const innerLaminateAreaWithWaste=coreAreaSqft*(1+innerLamWastagePct/100);
 
   const coreLine=materialLineCost(coreMat, coreAreaWithWaste, sheetSqft);
   const shutterLine = shutterAreaWithWaste>0 ? materialLineCost(finishMat||coreMat, shutterAreaWithWaste, sheetSqft) : {qty:0,unitLabel:'',cost:0};
   const shutterEdgeLine = {qty:Math.round(shutterEdgeBandWithWaste*100)/100,unitLabel:'Rmt',cost:shutterEdgeMat?shutterEdgeBandWithWaste*shutterEdgeMat.purchaseRate:0};
   const carcassEdgeLine = {qty:Math.round(carcassEdgeBandWithWaste*100)/100,unitLabel:'Rmt',cost:carcassEdgeMat?carcassEdgeBandWithWaste*carcassEdgeMat.purchaseRate:0};
-  const innerLaminateLine = !ci.corePreLaminated ? materialLineCost(innerLaminateMat, coreAreaWithWaste, sheetSqft) : {qty:0,unitLabel:'',cost:0};
+  const innerLaminateLine = !ci.corePreLaminated ? materialLineCost(innerLaminateMat, innerLaminateAreaWithWaste, sheetSqft) : {qty:0,unitLabel:'',cost:0};
 
   // Hardware
   const hwLines=[];
@@ -1281,8 +1754,8 @@ function calcCosting(ci){
   if(ci.softClose && (doors+drawers)>0){
     const sc=findHw('Soft Close Systems'); if(sc){ const qty=doors+drawers; hwLines.push({name:'Soft Close Systems',qty,unit:'Nos',rate:sc.purchaseRate,cost:qty*sc.purchaseRate}); }
   }
-  if(tpl.name.toLowerCase().includes('bed')||tpl.name.toLowerCase().includes('window seat')){
-    const lift=findHw('Lift Up Systems'); if(lift && !tpl.hasDoors){ hwLines.push({name:'Lift Up Systems',qty:1,unit:'Set',rate:lift.purchaseRate,cost:lift.purchaseRate}); }
+  if(tpl.hasLiftUp){
+    const lift=findHw('Lift Up Systems'); if(lift){ hwLines.push({name:'Lift Up Systems',qty:1,unit:'Set',rate:lift.purchaseRate,cost:lift.purchaseRate}); }
   }
   if(ci.lightingReq){
     const led=DB.hardware.find(h=>h.category==='LED Profiles'); const ledMat=DB.materials.find(m=>m.category==='Lighting');
@@ -1350,8 +1823,6 @@ function calcCosting(ci){
   const costWithOverhead=totalCost+overheadAmt;
   const profitAmt=costWithOverhead*(ci.profitPct||0)/100;
   const sellingPrice=costWithOverhead+profitAmt;
-  const gstAmt=sellingPrice*(ci.gstPct||0)/100;
-  const invoiceValue=sellingPrice+gstAmt;
 
   return {
     calculatedAt:new Date().toISOString(),
@@ -1359,13 +1830,13 @@ function calcCosting(ci){
     shutterEdgeBandM:Math.round(shutterEdgeBandWithWaste*100)/100, carcassEdgeBandM:Math.round(carcassEdgeBandWithWaste*100)/100, totalSheets,
     materialLines, hardwareLines:hwLines, labourLines, notes,
     materialCost, hardwareCost, labourCost, perUnitCost,
-    totalCost, overheadAmt, costWithOverhead, profitAmt, sellingPrice, gstAmt, invoiceValue
+    totalCost, overheadAmt, costWithOverhead, profitAmt, sellingPrice
   };
 }
 
 /* ============================== COSTING ITEM — DETAIL VIEW ============================== */
 function openCostingItem(id){ currentItemId=id; nav('itemdetail',null); renderCostingItemDetail(); }
-function backToProject(){ nav('projectdetail',null); }
+function backToProject(){ nav('projectdetail',null); renderProjectDetail(); }
 function editCostingItem(){ openCostingItemModal(currentItemId); }
 function renderCostingItemDetail(){
   const ci=DB.costingItems.find(x=>x.id===currentItemId);
@@ -1416,8 +1887,6 @@ function renderCostingItemDetail(){
         <tr><td>Cost with Overhead</td><td class="mono right">${INR(s.costWithOverhead)}</td></tr>
         <tr><td>Profit (${ci.profitPct}%)</td><td class="mono right">${INR(s.profitAmt)}</td></tr>
         <tr class="tr-sum"><td>Selling Price</td><td class="mono right">${INR(s.sellingPrice)}</td></tr>
-        <tr><td>GST (${ci.gstPct}%)</td><td class="mono right">${INR(s.gstAmt)}</td></tr>
-        <tr class="tr-sum"><td>Invoice Value</td><td class="mono right">${INR(s.invoiceValue)}</td></tr>
       </table>
       ${ci.status==='Frozen'?`<div class="hint" style="margin-top:8px">🔒 Frozen on ${fmtDate(ci.frozenAt)} — rate changes in the masters will no longer affect this quotation. Unfreeze to recalculate with current rates.</div>`:`<div class="hint" style="margin-top:8px">Live — this recalculates automatically whenever material, hardware, or labour rates change.</div>`}
     </div>
@@ -1435,6 +1904,7 @@ function toggleFreeze(){
 function recalcAllLiveItems(){
   DB.costingItems.forEach(ci=>{ if(ci.status!=='Frozen'){ const s=calcCosting(ci); if(s) ci.snapshot=s; } });
   DB.customItems.forEach(ci=>{ if(ci.status!=='Frozen'){ ci.snapshot=calcCustomCosting(ci); } });
+  DB.simpleItems.forEach(ci=>{ if(ci.status!=='Frozen'){ ci.snapshot=calcSimpleCosting(ci); } });
   persist();
 }
 ['saveMaterial','saveHardware','saveLabour','saveTemplate'].forEach(fnName=>{
@@ -1444,13 +1914,13 @@ function recalcAllLiveItems(){
 
 /* ============================== DASHBOARD ============================== */
 function renderDashboard(){
-  const items=[...DB.costingItems, ...DB.customItems];
+  const items=[...DB.costingItems, ...DB.customItems, ...DB.simpleItems];
   const totalCost=items.reduce((s,ci)=>s+(ci.snapshot?.totalCost||0),0);
   const totalSell=items.reduce((s,ci)=>s+(ci.snapshot?.sellingPrice||0),0);
   const margin=totalSell?Math.round((totalSell-totalCost)/totalSell*100):0;
   document.getElementById('dash-kpis').innerHTML=`
     <div class="kpi gold"><div class="kpi-label">Active Projects</div><div class="kpi-val">${DB.projects.length}</div></div>
-    <div class="kpi b"><div class="kpi-label">Furniture Items Costed</div><div class="kpi-val">${items.length}</div><div class="kpi-sub">${DB.costingItems.length} Modular · ${DB.customItems.length} Custom Wood</div></div>
+    <div class="kpi b"><div class="kpi-label">Furniture Items Costed</div><div class="kpi-val">${items.length}</div><div class="kpi-sub">${DB.costingItems.length} Modular · ${DB.customItems.length} Custom Wood · ${DB.simpleItems.length} Simple</div></div>
     <div class="kpi b"><div class="kpi-label">Total Cost (All)</div><div class="kpi-val">${INR(totalCost)}</div></div>
     <div class="kpi ${margin>=0?'g':'r'}"><div class="kpi-label">Avg Margin %</div><div class="kpi-val">${margin}%</div></div>
   `;
@@ -1469,19 +1939,69 @@ function renderDashboard(){
   const ranked=[...items].sort((a,b)=>(b.snapshot?.totalCost||0)-(a.snapshot?.totalCost||0)).slice(0,10);
   document.getElementById('dash-topitems').innerHTML = ranked.length ? ranked.map(ci=>{
     const proj=DB.projects.find(p=>p.id===ci.projectId);
-    const isCustom=DB.customItems.includes(ci);
+    const typeLabel=DB.customItems.includes(ci)?'🪚 Custom Wood':DB.simpleItems.includes(ci)?'📋 Simple':escHtml(templateName(ci.templateId));
     const m=ci.snapshot?.sellingPrice?Math.round((ci.snapshot.sellingPrice-ci.snapshot.totalCost)/ci.snapshot.sellingPrice*100):0;
-    return `<tr><td>${escHtml(ci.name)}</td><td>${escHtml(proj?.name||'—')}</td><td>${isCustom?'🪚 Custom Wood':escHtml(templateName(ci.templateId))}</td><td class="mono right">${INR(ci.snapshot?.totalCost)}</td><td class="mono right">${INR(ci.snapshot?.sellingPrice)}</td><td class="mono right">${m}%</td></tr>`;
+    return `<tr><td>${escHtml(ci.name)}</td><td>${escHtml(proj?.name||'—')}</td><td>${typeLabel}</td><td class="mono right">${INR(ci.snapshot?.totalCost)}</td><td class="mono right">${INR(ci.snapshot?.sellingPrice)}</td><td class="mono right">${m}%</td></tr>`;
   }).join('') : '<tr><td colspan="6" class="empty">No costed items yet.</td></tr>';
 }
 
-/* ============================== SHAREABLE COSTING PDF ============================== */
-let pdfShareReturnTo=null;
+/* ============================== SHAREABLE COSTING PDF (opens in a new tab) ============================== */
+function buildPrintDocument(title,bodyHtml){
+  const base=location.origin+'/';
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${escHtml(title)}</title>
+  <style>
+    @font-face{font-family:'Manrope';font-style:normal;font-weight:300 800;font-display:swap;src:url('${base}fonts/manrope-variable.woff2') format('woff2');}
+    @font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400 600;font-display:swap;src:url('${base}fonts/jetbrainsmono-variable.woff2') format('woff2');}
+    :root{--gold:#C3B152;--gold-l:#D4C47A;--gold-pale:#F4F1DC;--gold-dim:#9A8A3A;--muted:#9D9A91;--dark:#1C1C1A;--bg:#F8F7F4;--green:#2E7D32;--green-l:#E8F5E9;--red:#C62828;--red-l:#FDECEC;--amber:#B8860B;--amber-l:#FBF3DD;--blue:#2563EB;--blue-l:#EAF1FE;--violet:#7C4DFF;--violet-l:#F1EBFF;--border:#E7E4DC;--card:#ffffff;--text:#2B2A27;}
+    *{box-sizing:border-box}
+    body{margin:0;padding:24px;font-family:'Manrope',sans-serif;background:#fff;color:var(--text);font-size:13px}
+    .mono{font-family:'JetBrains Mono',monospace}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px}
+    .card-hd{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:10px}
+    .card-title{font-weight:700;font-size:14px}
+    .card-sub{font-size:11px;color:var(--muted);margin-top:2px}
+    .tbl-wrap{overflow-x:auto}
+    table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:10px}
+    th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+    td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+    .right{text-align:right}
+    .bold{font-weight:700}
+    .small{font-size:10.5px;color:var(--muted)}
+    .tr-sum td{border-top:2px solid var(--dark);border-bottom:none;font-weight:700}
+    .empty{text-align:center;padding:40px 20px;color:var(--muted)}
+    .hint{font-size:10.5px;color:var(--muted);margin-top:3px}
+    .tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700}
+    .tag-green{background:var(--green-l);color:var(--green)} .tag-red{background:var(--red-l);color:var(--red)}
+    .tag-amber{background:var(--amber-l);color:var(--amber)} .tag-blue{background:var(--blue-l);color:var(--blue)}
+    .tag-grey{background:#F0EFEA;color:var(--muted)}
+    .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+    .btn{border:1px solid var(--border);background:#fff;padding:8px 16px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)}
+    .btn-gold{background:var(--gold);border-color:var(--gold);color:var(--dark)}
+    @media print{ .no-print{display:none!important} body{padding:0} }
+  </style></head><body>
+    <div class="no-print" style="margin-bottom:16px;display:flex;gap:8px">
+      <button class="btn btn-gold" onclick="window.print()">🖨️ Print / Save as PDF</button>
+      <button class="btn" onclick="window.close()">Close Tab</button>
+    </div>
+    ${bodyHtml}
+  </body></html>`;
+}
+function openInNewTab(title,bodyHtml){
+  const html=buildPrintDocument(title,bodyHtml);
+  const blob=new Blob([html],{type:'text/html'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.target='_blank'; a.rel='noopener';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
 function pdfHeaderBlock(proj){
+  const logoSrc=location.origin+'/logo.png';
   return `
     <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--gold);padding-bottom:14px;margin-bottom:16px">
       <div style="display:flex;align-items:center;gap:10px">
-        <img src="logo.png" alt="Apple Tree" style="width:40px;height:auto">
+        <img src="${logoSrc}" alt="Apple Tree" style="width:40px;height:auto">
         <div>
           <div style="font-family:'Manrope';font-weight:800;color:var(--gold-dim);letter-spacing:.06em;font-size:16px;text-transform:uppercase">Apple Tree Interiors</div>
           <div class="small">Costing Summary — for internal circulation / quotation preparation</div>
@@ -1523,8 +2043,6 @@ function itemBreakdownHtml(ci){
         <tr><td class="bold">Total Cost</td><td class="mono right bold">${INR(s.totalCost)}</td></tr>
         <tr><td>Overhead (${ci.overheadPct}%) + Profit (${ci.profitPct}%)</td><td class="mono right">${INR(s.overheadAmt+s.profitAmt)}</td></tr>
         <tr class="tr-sum"><td>Selling Price</td><td class="mono right">${INR(s.sellingPrice)}</td></tr>
-        <tr><td>GST (${ci.gstPct}%)</td><td class="mono right">${INR(s.gstAmt)}</td></tr>
-        <tr class="tr-sum"><td>Invoice Value</td><td class="mono right">${INR(s.invoiceValue)}</td></tr>
         <tr><td>Margin</td><td class="mono right" style="color:${m>=0?'var(--green)':'var(--red)'}">${m}%</td></tr>
       </table>
     </div>`;
@@ -1547,8 +2065,28 @@ function customItemBreakdownHtml(ci){
         <tr><td class="bold">Total Cost</td><td class="mono right bold">${INR(s.totalCost)}</td></tr>
         <tr><td>Overhead (${ci.overheadPct}%) + Profit (${ci.profitPct}%)</td><td class="mono right">${INR(s.overheadAmt+s.profitAmt)}</td></tr>
         <tr class="tr-sum"><td>Selling Price</td><td class="mono right">${INR(s.sellingPrice)}</td></tr>
-        <tr><td>GST (${ci.gstPct}%)</td><td class="mono right">${INR(s.gstAmt)}</td></tr>
-        <tr class="tr-sum"><td>Invoice Value</td><td class="mono right">${INR(s.invoiceValue)}</td></tr>
+        <tr><td>Margin</td><td class="mono right" style="color:${m>=0?'var(--green)':'var(--red)'}">${m}%</td></tr>
+      </table>
+    </div>`;
+}
+function simpleItemBreakdownHtml(ci){
+  const s=ci.snapshot||calcSimpleCosting(ci);
+  const m=s.sellingPrice?Math.round((s.sellingPrice-s.totalCost)/s.sellingPrice*100):0;
+  return `
+    <div class="card">
+      <div class="card-hd"><div><div class="card-title">${escHtml(ci.name)} <span class="tag tag-grey">Simple Costing</span></div><div class="card-sub">${escHtml(ci.room||'—')} · Qty ${ci.qty}${ci.status==='Frozen'?' · 🔒 Frozen':''}</div></div></div>
+      <div class="tbl-wrap"><table><thead><tr><th>Material</th><th class="right">Qty</th><th>Unit</th><th class="right">Cost ₹</th></tr></thead><tbody>
+      ${s.materialLines.map(l=>`<tr><td>${escHtml(l.name)}</td><td class="mono right">${l.qty}</td><td>${escHtml(l.unit)}</td><td class="mono right">${INR(l.cost)}</td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="tbl-wrap"><table><thead><tr><th>Labour</th><th>Basis</th><th class="right">Cost ₹</th></tr></thead><tbody>
+      ${s.labourLines.length?s.labourLines.map(l=>`<tr><td>${escHtml(l.name)}</td><td class="small">${escHtml(l.basis)}</td><td class="mono right">${INR(l.cost)}</td></tr>`).join(''):'<tr><td colspan="3" class="empty">None</td></tr>'}
+      </tbody></table></div>
+      <table style="max-width:420px">
+        <tr><td>Cost per piece</td><td class="mono right">${INR(s.perUnitCost)}</td></tr>
+        <tr><td>Qty</td><td class="mono right">× ${ci.qty}</td></tr>
+        <tr><td class="bold">Total Cost</td><td class="mono right bold">${INR(s.totalCost)}</td></tr>
+        <tr><td>Overhead (${ci.overheadPct}%) + Profit (${ci.profitPct}%)</td><td class="mono right">${INR(s.overheadAmt+s.profitAmt)}</td></tr>
+        <tr class="tr-sum"><td>Selling Price</td><td class="mono right">${INR(s.sellingPrice)}</td></tr>
         <tr><td>Margin</td><td class="mono right" style="color:${m>=0?'var(--green)':'var(--red)'}">${m}%</td></tr>
       </table>
     </div>`;
@@ -1557,47 +2095,47 @@ function shareProjectPdf(projectId){
   const proj=DB.projects.find(p=>p.id===projectId);
   const items=DB.costingItems.filter(ci=>ci.projectId===projectId);
   const customItems=DB.customItems.filter(ci=>ci.projectId===projectId);
+  const simpleItems=DB.simpleItems.filter(ci=>ci.projectId===projectId);
   if(!proj) return;
-  pdfShareReturnTo={pg:'projectdetail'};
   let html=pdfHeaderBlock(proj);
-  if(!items.length && !customItems.length){
+  const allCount=items.length+customItems.length+simpleItems.length;
+  if(!allCount){
     html+='<div class="empty">No furniture items costed yet for this project.</div>';
   } else {
-    const totalCost=items.reduce((s,ci)=>s+(ci.snapshot?.totalCost||0),0)+customItems.reduce((s,ci)=>s+(ci.snapshot?.totalCost||0),0);
-    const totalSell=items.reduce((s,ci)=>s+(ci.snapshot?.sellingPrice||0),0)+customItems.reduce((s,ci)=>s+(ci.snapshot?.sellingPrice||0),0);
-    html+=`<div class="card"><div class="card-hd"><div class="card-title">Summary — ${items.length+customItems.length} Furniture Item${(items.length+customItems.length)!==1?'s':''}</div></div>
+    const allGroups=[items,customItems,simpleItems];
+    const totalCost=allGroups.reduce((s,g)=>s+g.reduce((s2,ci)=>s2+(ci.snapshot?.totalCost||0),0),0);
+    const totalSell=allGroups.reduce((s,g)=>s+g.reduce((s2,ci)=>s2+(ci.snapshot?.sellingPrice||0),0),0);
+    html+=`<div class="card"><div class="card-hd"><div class="card-title">Summary — ${allCount} Furniture Item${allCount!==1?'s':''}</div></div>
       <div class="tbl-wrap"><table><thead><tr><th>Item</th><th>Room</th><th>Dept.</th><th>Type</th><th>Qty</th><th class="right">Cost ₹</th><th class="right">Selling ₹</th></tr></thead><tbody>
       ${items.map(ci=>`<tr><td>${escHtml(ci.name)}</td><td>${escHtml(ci.room||'—')}</td><td>Modular</td><td>${escHtml(templateName(ci.templateId))}</td><td class="mono">${ci.qty}</td><td class="mono right">${INR(ci.snapshot?.totalCost)}</td><td class="mono right">${INR(ci.snapshot?.sellingPrice)}</td></tr>`).join('')}
       ${customItems.map(ci=>`<tr><td>${escHtml(ci.name)}</td><td>${escHtml(ci.room||'—')}</td><td>Custom Wood</td><td>—</td><td class="mono">${ci.qty}</td><td class="mono right">${INR(ci.snapshot?.totalCost)}</td><td class="mono right">${INR(ci.snapshot?.sellingPrice)}</td></tr>`).join('')}
+      ${simpleItems.map(ci=>`<tr><td>${escHtml(ci.name)}</td><td>${escHtml(ci.room||'—')}</td><td>Simple</td><td>—</td><td class="mono">${ci.qty}</td><td class="mono right">${INR(ci.snapshot?.totalCost)}</td><td class="mono right">${INR(ci.snapshot?.sellingPrice)}</td></tr>`).join('')}
       <tr class="tr-sum"><td colspan="5">Grand Total</td><td class="mono right">${INR(totalCost)}</td><td class="mono right">${INR(totalSell)}</td></tr>
       </tbody></table></div>
     </div>`;
     html+=items.map(itemBreakdownHtml).join('');
     html+=customItems.map(customItemBreakdownHtml).join('');
+    html+=simpleItems.map(simpleItemBreakdownHtml).join('');
   }
-  document.getElementById('pdfshare-content').innerHTML=html;
-  nav('pdfshare',null);
+  openInNewTab(proj.name+' — Costing Summary',html);
 }
 function shareItemPdf(itemId){
   const ci=DB.costingItems.find(x=>x.id===itemId);
   if(!ci) return;
   const proj=DB.projects.find(p=>p.id===ci.projectId);
-  pdfShareReturnTo={pg:'itemdetail'};
-  document.getElementById('pdfshare-content').innerHTML=pdfHeaderBlock(proj)+itemBreakdownHtml(ci);
-  nav('pdfshare',null);
+  openInNewTab(ci.name+' — Costing',pdfHeaderBlock(proj)+itemBreakdownHtml(ci));
 }
 function shareCustomItemPdf(itemId){
   const ci=DB.customItems.find(x=>x.id===itemId);
   if(!ci) return;
   const proj=DB.projects.find(p=>p.id===ci.projectId);
-  pdfShareReturnTo={pg:'customitemdetail'};
-  document.getElementById('pdfshare-content').innerHTML=pdfHeaderBlock(proj)+customItemBreakdownHtml(ci);
-  nav('pdfshare',null);
+  openInNewTab(ci.name+' — Costing',pdfHeaderBlock(proj)+customItemBreakdownHtml(ci));
 }
-function backFromPdfShare(){
-  if(pdfShareReturnTo?.pg==='itemdetail') nav('itemdetail',null);
-  else if(pdfShareReturnTo?.pg==='customitemdetail') nav('customitemdetail',null);
-  else nav('projectdetail',null);
+function shareSimpleItemPdf(itemId){
+  const ci=DB.simpleItems.find(x=>x.id===itemId);
+  if(!ci) return;
+  const proj=DB.projects.find(p=>p.id===ci.projectId);
+  openInNewTab(ci.name+' — Costing',pdfHeaderBlock(proj)+simpleItemBreakdownHtml(ci));
 }
 
 /* ============================== REPORTS ============================== */
@@ -1616,7 +2154,8 @@ function generateReport(key){
   const proj=DB.projects.find(p=>p.id===projId);
   const items=DB.costingItems.filter(ci=>ci.projectId===projId);
   const customItems=DB.customItems.filter(ci=>ci.projectId===projId);
-  const allItems=[...items.map(ci=>({ci,type:'Modular',typeLabel:templateName(ci.templateId)})), ...customItems.map(ci=>({ci,type:'Custom Wood',typeLabel:'Custom Wood'}))];
+  const simpleItems=DB.simpleItems.filter(ci=>ci.projectId===projId);
+  const allItems=[...items.map(ci=>({ci,type:'Modular',typeLabel:templateName(ci.templateId)})), ...customItems.map(ci=>({ci,type:'Custom Wood',typeLabel:'Custom Wood'})), ...simpleItems.map(ci=>({ci,type:'Simple',typeLabel:'Simple Costing'}))];
   const out=document.getElementById('rep-output');
   if(!proj){ out.innerHTML='<div class="empty">Select a project first.</div>'; return; }
   if(!allItems.length){ out.innerHTML='<div class="empty">This project has no costed furniture items yet.</div>'; return; }
@@ -1633,11 +2172,10 @@ function generateReport(key){
   }
   else if(key==='purchase'){
     const agg={};
-    items.forEach(ci=>{ (ci.snapshot?.materialLines||[]).forEach(l=>{ const k=l.name; if(!agg[k]) agg[k]={qty:0,unit:l.unit,cost:0}; agg[k].qty+=l.qty*ci.qty; agg[k].cost+=l.cost*ci.qty; }); });
-    customItems.forEach(ci=>{ (ci.snapshot?.materialLines||[]).forEach(l=>{ const k=l.name; if(!agg[k]) agg[k]={qty:0,unit:l.unit,cost:0}; agg[k].qty+=l.qty*ci.qty; agg[k].cost+=l.cost*ci.qty; }); });
+    [...items,...customItems,...simpleItems].forEach(ci=>{ (ci.snapshot?.materialLines||[]).forEach(l=>{ const k=l.name; if(!agg[k]) agg[k]={qty:0,unit:l.unit,cost:0}; agg[k].qty+=l.qty*ci.qty; agg[k].cost+=l.cost*ci.qty; }); });
     html+=`<div class="tbl-wrap"><table><thead><tr><th>Material</th><th class="right">Total Qty</th><th>Unit</th><th class="right">Est. Cost ₹</th></tr></thead><tbody>`;
     Object.entries(agg).forEach(([k,v])=>{ html+=`<tr><td>${escHtml(k)}</td><td class="mono right">${Math.round(v.qty*100)/100}</td><td>${escHtml(v.unit)}</td><td class="mono right">${INR(v.cost)}</td></tr>`; });
-    html+='</tbody></table></div><div class="hint">Includes wood requirement from Custom Wood items.</div>';
+    html+='</tbody></table></div><div class="hint">Includes materials from Custom Wood and Simple Costing items too.</div>';
   }
   else if(key==='cutting'||key==='hardware'){
     const agg={};
@@ -1648,7 +2186,7 @@ function generateReport(key){
     });
     html+=`<div class="tbl-wrap"><table><thead><tr><th>${key==='hardware'?'Hardware':'Material'}</th><th class="right">Total Qty</th><th>Unit</th><th class="right">Est. Cost ₹</th></tr></thead><tbody>`;
     Object.entries(agg).forEach(([k,v])=>{ html+=`<tr><td>${escHtml(k)}</td><td class="mono right">${Math.round(v.qty*100)/100}</td><td>${escHtml(v.unit)}</td><td class="mono right">${INR(v.cost)}</td></tr>`; });
-    html+='</tbody></table></div><div class="hint">Modular Furniture department only — Custom Wood items don\'t use a panel cutting list or the Hardware Master.</div>';
+    html+='</tbody></table></div><div class="hint">Modular Furniture department only — Custom Wood and Simple Costing items don\'t use a panel cutting list or the Hardware Master.</div>';
   }
   else if(key==='labour'){
     const agg={};
@@ -1681,16 +2219,16 @@ function renderSettings(){
   document.getElementById('st-wastage').value=DB.settings.defaultWastage;
   document.getElementById('st-overhead').value=DB.settings.defaultOverhead;
   document.getElementById('st-profit').value=DB.settings.defaultProfit;
-  document.getElementById('st-gst').value=DB.settings.defaultGst;
 }
 function saveSettings(){
-  DB.settings={
-    sheetSqft:num(document.getElementById('st-sheetsqft').value,32),
-    defaultWastage:num(document.getElementById('st-wastage').value,8),
-    defaultOverhead:num(document.getElementById('st-overhead').value,10),
-    defaultProfit:num(document.getElementById('st-profit').value,20),
-    defaultGst:num(document.getElementById('st-gst').value,18),
-  };
+  const sheetSqft=num(document.getElementById('st-sheetsqft').value,32);
+  const defaultWastage=num(document.getElementById('st-wastage').value,8);
+  const defaultOverhead=num(document.getElementById('st-overhead').value,10);
+  const defaultProfit=num(document.getElementById('st-profit').value,20);
+  if(sheetSqft<=0){ alert('Usable Sqft per Sheet must be greater than 0.'); return; }
+  if(defaultWastage<0||defaultWastage>100){ alert('Default Wastage % must be between 0 and 100.'); return; }
+  if(defaultOverhead<0||defaultProfit<0){ alert('Default Overhead % and Profit % cannot be negative.'); return; }
+  DB.settings={ ...DB.settings, sheetSqft, defaultWastage, defaultOverhead, defaultProfit };
   persist(); recalcAllLiveItems(); alert('Settings saved.');
 }
 function exportData(){
@@ -1701,16 +2239,27 @@ function importData(evt){
   const file=evt.target.files[0]; if(!file) return;
   const reader=new FileReader();
   reader.onload=e=>{
-    try{ const parsed=JSON.parse(e.target.result);
-      if(!parsed.materials||!parsed.templates){ alert('This file does not look like a valid backup.'); return; }
+    try{
+      const parsed=JSON.parse(e.target.result);
+      const requiredArrays=['materials','hardware','labour','templates','projects','costingItems','customItems'];
+      const missing=requiredArrays.filter(k=>!Array.isArray(parsed[k]));
+      if(missing.length){ alert('This file does not look like a valid backup — missing: '+missing.join(', ')+'.'); return; }
+      if(typeof parsed.settings!=='object'||!parsed.settings){ alert('This file does not look like a valid backup — missing settings.'); return; }
       if(!confirm('This will replace all current data with the imported backup. Continue?')) return;
-      DB=parsed; persist(); location.reload();
+      DB=parsed;
+      if(DB.settings.sheetSqft==null) DB.settings.sheetSqft=32;
+      if(DB.settings.defaultWastage==null) DB.settings.defaultWastage=8;
+      if(DB.settings.defaultOverhead==null) DB.settings.defaultOverhead=10;
+      if(DB.settings.defaultProfit==null) DB.settings.defaultProfit=20;
+      if(DB.settings.nextProjectSeq==null) DB.settings.nextProjectSeq=DB.projects.length+1;
+      persist(); location.reload();
     }catch(err){ alert('Could not read this file — it may be corrupted.'); }
   };
   reader.readAsText(file);
 }
 function resetAllData(){
-  if(!confirm('This will erase ALL data (materials, hardware, labour, templates, projects, costings) and reseed the demo dataset. Continue?')) return;
+  const typed=prompt('This permanently erases ALL data — every material, hardware item, labour rate, template, project, and costing — and reseeds the demo dataset. This cannot be undone.\n\nType RESET to confirm:');
+  if(typed!=='RESET'){ if(typed!==null) alert('Not confirmed — nothing was deleted.'); return; }
   localStorage.removeItem(STORE_KEY); seed(); persist(); location.reload();
 }
 

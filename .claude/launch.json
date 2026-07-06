@@ -4,8 +4,9 @@
     {
       "name": "appletree-erp",
       "runtimeExecutable": "powershell",
-      "runtimeArgs": ["-ExecutionPolicy", "Bypass", "-File", "serve.ps1", "-Port", "3333"],
-      "port": 3333
+      "runtimeArgs": ["-ExecutionPolicy", "Bypass", "-File", "serve.ps1"],
+      "port": 3333,
+      "autoPort": true
     }
   ]
 }

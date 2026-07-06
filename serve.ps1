@@ -1,4 +1,5 @@
 param([int]$Port = 3333)
+if ($env:PORT) { $Port = [int]$env:PORT }
 Set-Location $PSScriptRoot
 $listener = New-Object System.Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$Port/")
@@ -33,7 +34,7 @@ while ($listener.IsListening) {
   if (Test-Path $filePath -PathType Leaf) {
     $bytes = [System.IO.File]::ReadAllBytes($filePath)
     $ext = [System.IO.Path]::GetExtension($filePath)
-    $ctype = switch ($ext) { ".html" {"text/html"} ".js" {"application/javascript"} ".css" {"text/css"} ".json" {"application/json"} ".png" {"image/png"} default {"application/octet-stream"} }
+    $ctype = switch ($ext) { ".html" {"text/html"} ".js" {"application/javascript"} ".css" {"text/css"} ".json" {"application/json"} ".png" {"image/png"} ".woff2" {"font/woff2"} default {"application/octet-stream"} }
     $ctx.Response.ContentType = $ctype
     $ctx.Response.ContentLength64 = $bytes.Length
     $ctx.Response.OutputStream.Write($bytes,0,$bytes.Length)

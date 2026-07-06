@@ -1,0 +1,2324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Appletree Interiors — Quotation Studio</title>
+<style>
+@font-face{
+  font-family:'Manrope'; font-style:normal; font-weight:300 800; font-display:swap;
+  src:url('fonts/manrope-variable.woff2') format('woff2');
+}
+@font-face{
+  font-family:'JetBrains Mono'; font-style:normal; font-weight:400 600; font-display:swap;
+  src:url('fonts/jetbrainsmono-variable.woff2') format('woff2');
+}
+:root{
+  --gold:#C3B152; --gold-l:#D4C47A; --gold-pale:#F4F1DC; --gold-dim:#9A8A3A;
+  --muted:#9D9A91; --dark:#1C1C1A; --bg:#F8F7F4;
+  --green:#2E7D32; --green-l:#E8F5E9; --red:#C62828; --red-l:#FDECEC; --amber:#B8860B; --amber-l:#FBF3DD;
+  --blue:#2563EB; --blue-l:#EAF1FE; --violet:#7C4DFF; --violet-l:#F1EBFF;
+  --border:#E7E4DC; --card:#ffffff; --text:#2B2A27;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Manrope',sans-serif;background:var(--bg);color:var(--text);font-size:13px}
+.mono{font-family:'JetBrains Mono',monospace}
+#app{display:flex;min-height:100vh}
+
+/* Sidebar */
+#sidebar{width:230px;background:var(--dark);color:#EDEBE4;flex-shrink:0;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto}
+.brand{padding:20px 18px 14px;border-bottom:1px solid rgba(255,255,255,.08)}
+.brand-mark{font-family:'Manrope';font-weight:800;color:var(--gold);letter-spacing:.06em;font-size:15px}
+.brand-sub{font-size:10px;color:var(--muted);margin-top:3px;letter-spacing:.03em}
+.nav-group{padding:10px 0}
+.nav-label{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);padding:10px 18px 4px}
+.nav-item{padding:9px 18px;font-size:12.5px;cursor:pointer;border-left:2px solid transparent;display:flex;align-items:center;gap:9px;color:#D9D6CC}
+.nav-item:hover{background:rgba(255,255,255,.05)}
+.nav-item.active{border-left:2px solid var(--gold);color:var(--gold);font-weight:600;background:rgba(195,177,81,.08)}
+.ni{font-size:14px;width:16px;text-align:center}
+
+/* Main */
+#main{flex:1;min-width:0;display:flex;flex-direction:column}
+#topbar{height:56px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 22px;background:#fff;position:sticky;top:0;z-index:5}
+.page-title{font-weight:700;font-size:16px}
+#content{padding:20px 22px 60px;flex:1}
+.page{display:none}
+.page.active{display:block}
+
+/* Cards / sections */
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px}
+.card-hd{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;gap:10px;flex-wrap:wrap}
+.card-title{font-weight:700;font-size:14px}
+.card-sub{font-size:11px;color:var(--muted);margin-top:2px}
+.sec-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;flex-wrap:wrap}
+.sec-title{font-weight:800;font-size:17px}
+
+/* Buttons */
+.btn{border:1px solid var(--border);background:#fff;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)}
+.btn:hover{border-color:var(--gold)}
+.btn-gold{background:var(--gold);border-color:var(--gold);color:var(--dark)}
+.btn-gold:hover{background:var(--gold-l)}
+.btn-outline{background:#fff}
+.btn-red{color:var(--red);border-color:var(--red-l)}
+.btn-sm{padding:4px 9px;font-size:11px}
+
+/* Tables */
+.tbl-toolbar{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+tr:hover td{background:#FCFBF8}
+.right{text-align:right}
+.bold{font-weight:700}
+.small{font-size:10.5px;color:var(--muted)}
+.tr-sum td{border-top:2px solid var(--dark);border-bottom:none;font-weight:700}
+
+/* Inputs */
+.inp{border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:12px;font-family:inherit;background:#fff;color:var(--text);width:100%}
+.inp:focus{outline:none;border-color:var(--gold)}
+.inp:disabled{background:#F4F3EF;color:var(--muted)}
+.inp-sm{padding:5px 8px;font-size:11.5px}
+.inp-search{width:200px}
+label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4px}
+.frow{margin-bottom:12px}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.req:after{content:" *";color:var(--red)}
+
+/* Tags */
+.tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;font-weight:700}
+.tag-green{background:var(--green-l);color:var(--green)}
+.tag-red{background:var(--red-l);color:var(--red)}
+.tag-amber{background:var(--amber-l);color:var(--amber)}
+.tag-blue{background:var(--blue-l);color:var(--blue)}
+.tag-violet{background:var(--violet-l);color:var(--violet)}
+.tag-grey{background:#F0EFEA;color:var(--muted)}
+
+/* KPI */
+.kpi-row{display:grid;gap:14px;margin-bottom:18px}
+.kpi-row.c4{grid-template-columns:repeat(4,1fr)}
+.kpi-row.c5{grid-template-columns:repeat(5,1fr)}
+.kpi{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.kpi.g{border-top:3px solid var(--green)} .kpi.r{border-top:3px solid var(--red)} .kpi.b{border-top:3px solid var(--blue)} .kpi.gold{border-top:3px solid var(--gold)}
+.kpi-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin-bottom:6px}
+.kpi-val{font-size:22px;font-weight:800;font-family:'JetBrains Mono'}
+.kpi-sub{font-size:10.5px;color:var(--muted);margin-top:4px}
+
+.empty{text-align:center;padding:40px 20px;color:var(--muted)}
+.hint{font-size:10.5px;color:var(--muted);margin-top:3px}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+
+/* App-specific */
+.boq-card{margin-bottom:14px}
+.list-line{display:flex;gap:6px;margin-bottom:6px}
+.list-line .inp{flex:1}
+.summary-line{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+.summary-line.final{border-top:2px solid var(--dark);border-bottom:none;font-weight:800;font-size:15px;padding-top:12px;margin-top:2px}
+.summary-line .v{font-family:'JetBrains Mono',monospace}
+.letter-lbl{font-weight:800;font-size:13.5px;margin:4px 0 8px}
+.letter-lbl .lt{color:var(--gold-dim);margin-right:5px}
+
+#print-target{background:#DEDCD3;padding:24px 0;min-height:calc(100vh - 56px);margin:-20px -22px 0}
+.print-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+
+/* Modal */
+.modal-bg{position:fixed;inset:0;background:rgba(28,28,26,.45);display:none;align-items:flex-start;justify-content:center;z-index:100;padding:40px 16px;overflow-y:auto}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border-radius:12px;width:100%;max-width:520px;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.modal-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.modal-title{font-weight:800;font-size:15px}
+.modal-close{cursor:pointer;font-size:20px;color:var(--muted);border:none;background:none}
+.modal-ft{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;border-top:1px solid var(--border);padding-top:14px}
+.checkbox-list label{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px}
+
+/* Editor tabs */
+.etab{display:none}
+.etab.active{display:block}
+.tab-btn.active{background:var(--dark);color:#fff;border-color:var(--dark)}
+
+/* Reminders */
+.reminder-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}
+.reminder-row:last-child{border-bottom:none}
+
+/* Funnel */
+.funnel-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.funnel-label{width:150px;font-size:12px;flex-shrink:0}
+.funnel-bar-track{flex:1;background:#F0EFEA;border-radius:4px;height:22px;overflow:hidden}
+.funnel-bar-fill{height:100%;border-radius:4px}
+.funnel-count{width:150px;text-align:right;font-size:11.5px;font-family:'JetBrains Mono',monospace;flex-shrink:0}
+
+/* Kanban */
+#kanban-board{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;align-items:start;overflow-x:auto}
+.kanban-col{background:#F4F3EF;border-radius:10px;padding:10px;min-height:160px;min-width:190px}
+.kanban-col.dragover{background:#EDE4C8}
+.kanban-col-hd{font-weight:800;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);margin-bottom:8px;display:flex;flex-direction:column;gap:2px}
+.kanban-card{background:#fff;border:1px solid var(--border);border-radius:8px;padding:9px 10px;margin-bottom:8px;cursor:grab;font-size:11.5px}
+.kanban-card:active{cursor:grabbing}
+.kanban-card.dragging{opacity:.4}
+.kanban-card-title{font-weight:700;margin-bottom:3px}
+.kanban-card-meta{color:var(--muted);font-size:10.5px;display:flex;justify-content:space-between;margin-top:5px;align-items:center}
+
+/* Calendar */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.cal-dow{font-size:10px;text-transform:uppercase;color:var(--muted);text-align:center;padding:4px 0}
+.cal-day{border:1px solid var(--border);border-radius:8px;min-height:70px;padding:6px;font-size:11px;cursor:pointer}
+.cal-day.empty{background:#FAFAF8;border-color:transparent;cursor:default}
+.cal-day.today{border-color:var(--gold);border-width:2px}
+.cal-day:hover:not(.empty){border-color:var(--gold)}
+.cal-day-num{font-weight:700;margin-bottom:4px}
+.cal-day-count{display:inline-block;background:var(--gold-pale);color:var(--gold-dim);border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700}
+
+@media print{
+  #sidebar,#topbar,.no-print{display:none!important}
+  body{margin:0;background:#fff}
+  #content{padding:0!important;margin:0!important}
+  #print-target{background:#fff!important;padding:0!important;margin:0!important}
+}
+@page{ margin:0; size:A4; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <div class="brand" style="display:flex;align-items:center;gap:10px">
+      <img src="logo.png" alt="Apple Tree" style="width:34px;height:auto;flex-shrink:0">
+      <div>
+        <div class="brand-mark" style="font-size:13px;text-transform:uppercase;line-height:1.1">Apple Tree</div>
+        <div class="brand-sub">Quotation Studio</div>
+      </div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">Overview</div>
+      <div class="nav-item" data-pg="dashboard" onclick="nav('dashboard',this)"><span class="ni">📊</span> Dashboard</div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">Quotations</div>
+      <div class="nav-item" data-pg="quotations" onclick="nav('quotations',this)"><span class="ni">📋</span> All Quotations</div>
+      <div class="nav-item" data-pg="kanban" onclick="nav('kanban',this)"><span class="ni">🗂️</span> Kanban Board</div>
+      <div class="nav-item" data-pg="calendar" onclick="nav('calendar',this)"><span class="ni">📅</span> Calendar</div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">CRM</div>
+      <div class="nav-item" data-pg="partners" onclick="nav('partners',this)"><span class="ni">🤝</span> Partners &amp; Staff</div>
+      <div class="nav-item" data-pg="analytics" onclick="nav('analytics',this)"><span class="ni">📈</span> Analytics</div>
+    </div>
+    <div class="nav-group">
+      <div class="nav-label">System</div>
+      <div class="nav-item" data-pg="settings" onclick="nav('settings',this)"><span class="ni">⚙️</span> Settings</div>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="topbar">
+      <div class="page-title" id="pg-title">Dashboard</div>
+      <div style="font-size:11px;color:var(--muted)">Standalone build — works fully offline · not yet linked to the main ERP</div>
+    </div>
+    <div id="content">
+
+      <!-- DASHBOARD -->
+      <div id="pg-dashboard" class="page">
+        <div class="kpi-row c4" id="dash-kpis"></div>
+        <div class="kpi-row c4" id="dash-kpis2" style="margin-top:-4px"></div>
+
+        <div class="card" id="dash-escalations-card" style="display:none">
+          <div class="card-hd"><div class="card-title">⚠️ Needs Escalation</div><div class="card-sub">No follow-up in 15+ days and not yet escalated</div></div>
+          <div id="dash-escalations"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Follow-up Reminders</div><div class="card-sub">Based on the reminder date of each quotation's latest follow-up</div></div>
+          <div id="dash-reminders"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Quotation Aging</div><div class="card-sub">Active quotations with no follow-up recorded for at least…</div></div>
+          <div class="kpi-row c5" id="dash-aging" style="margin-bottom:0"></div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div class="card">
+            <div class="card-hd"><div class="card-title">This Month</div></div>
+            <div id="dash-month"></div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Top Performers</div><div class="card-sub">Ranked by won value, all-time</div></div>
+            <div id="dash-top"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Recent Activity</div><div class="card-sub">Across all quotations, most recent first</div></div>
+          <div id="dash-activity"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd">
+            <div><div class="card-title">Recent Quotations</div><div class="card-sub">Last updated first</div></div>
+            <button class="btn btn-gold" onclick="createQuotation()">+ New Quotation</button>
+          </div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Quote No.</th><th>Client</th><th>Project</th><th>Date</th><th>Status</th><th class="right">Final Payable</th><th></th></tr></thead>
+            <tbody id="dash-recent"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- QUOTATIONS LIST -->
+      <div id="pg-quotations" class="page">
+        <div class="sec-hd"><div class="sec-title">Quotations</div><div class="chip-row"><button class="btn btn-outline" onclick="loadQuoteFromFile()">📂 Load from File</button><button class="btn btn-gold" onclick="createQuotation()">+ New Quotation</button></div></div>
+        <div class="card">
+          <div class="tbl-toolbar">
+            <input class="inp inp-search" id="q-search" placeholder="Search client, project, quote no…" oninput="renderQuotations()">
+            <select class="inp inp-sm" id="q-status-f" onchange="renderQuotations()">
+              <option value="">All Status</option>
+            </select>
+            <button class="btn btn-sm btn-outline" onclick="toggleAdvancedFilters()">🔍 Advanced Filters</button>
+            <span style="flex:1"></span>
+            <button class="btn btn-sm btn-outline" onclick="exportQuotationsList('xlsx')">📊 Export Excel</button>
+            <button class="btn btn-sm btn-outline" onclick="exportQuotationsList('csv')">📄 Export CSV</button>
+          </div>
+          <div id="adv-filters" style="display:none;background:#FBFAF7;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px">
+            <div class="fgrid">
+              <div class="frow"><label class="fl">Lead Source</label><select class="inp inp-sm" id="af-leadsource" onchange="renderQuotations()"></select></div>
+              <div class="frow"><label class="fl">Priority</label><select class="inp inp-sm" id="af-priority" onchange="renderQuotations()"><option value="">Any</option><option>High</option><option>Medium</option><option>Low</option></select></div>
+              <div class="frow"><label class="fl">Sales Executive</label><input class="inp inp-sm" id="af-salesexec" placeholder="Contains…" oninput="renderQuotations()"></div>
+              <div class="frow"><label class="fl">Date From</label><input class="inp inp-sm" type="date" id="af-datefrom" onchange="renderQuotations()"></div>
+              <div class="frow"><label class="fl">Date To</label><input class="inp inp-sm" type="date" id="af-dateto" onchange="renderQuotations()"></div>
+              <div class="frow"><label class="fl">Min Amount ₹</label><input class="inp inp-sm" type="number" min="0" id="af-minamt" onchange="renderQuotations()"></div>
+              <div class="frow"><label class="fl">Max Amount ₹</label><input class="inp inp-sm" type="number" min="0" id="af-maxamt" onchange="renderQuotations()"></div>
+            </div>
+            <button class="btn btn-sm btn-outline" onclick="clearAdvancedFilters()">✕ Clear Filters</button>
+          </div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Quote No.</th><th>Client</th><th>Project</th><th>Date</th><th>Status</th><th>Priority</th><th>Next Follow-up</th><th class="right">Grand Total</th><th class="right">Final Payable</th><th></th></tr></thead>
+            <tbody id="tb-quotations"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- KANBAN BOARD -->
+      <div id="pg-kanban" class="page">
+        <div class="sec-hd"><div class="sec-title">Kanban Board</div><div class="card-sub">Drag a card to a different column to change its status</div></div>
+        <div id="kanban-board"></div>
+      </div>
+
+      <!-- CALENDAR -->
+      <div id="pg-calendar" class="page">
+        <div class="sec-hd">
+          <div class="sec-title">Follow-up Calendar</div>
+          <div class="chip-row">
+            <button class="btn btn-outline btn-sm" onclick="calNavigate(-1)">← Prev</button>
+            <span class="bold" id="cal-month-label" style="min-width:140px;text-align:center"></span>
+            <button class="btn btn-outline btn-sm" onclick="calNavigate(1)">Next →</button>
+            <button class="btn btn-outline btn-sm" onclick="calNavigate(0)">Today</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="cal-grid" id="cal-dow-row"></div>
+          <div class="cal-grid" id="cal-grid" style="margin-top:6px"></div>
+        </div>
+        <div class="card" id="cal-day-detail" style="display:none">
+          <div class="card-hd"><div class="card-title" id="cal-day-title"></div></div>
+          <div id="cal-day-list"></div>
+        </div>
+      </div>
+
+      <!-- QUOTATION EDITOR -->
+      <div id="pg-editor" class="page">
+        <div class="sec-hd">
+          <div>
+            <div class="sec-title" id="ed-title">Quotation</div>
+            <div class="card-sub" id="ed-sub"></div>
+          </div>
+          <div class="chip-row">
+            <button class="btn btn-outline" onclick="nav('quotations',null)">← All Quotations</button>
+            <button class="btn btn-outline" onclick="saveQuoteToFile()">💾 Save to File</button>
+            <button class="btn btn-outline" onclick="duplicateQuotation(currentEditId)">⧉ Duplicate</button>
+            <button class="btn btn-red" onclick="deleteQuotation(currentEditId,true)">🗑 Delete</button>
+            <button class="btn btn-outline" onclick="exportExcel()">📊 Export Excel</button>
+            <button class="btn btn-gold" onclick="openPrint(currentEditId)">🖨️ Preview &amp; Print PDF</button>
+          </div>
+        </div>
+
+        <div class="chip-row" id="editor-tabs" style="margin:14px 0 16px;border-bottom:1px solid var(--border);padding-bottom:12px">
+          <button class="btn btn-sm tab-btn active" data-tab="doc" onclick="showEditorTab('doc',this)">📄 Quotation</button>
+          <button class="btn btn-sm tab-btn" data-tab="sales" onclick="showEditorTab('sales',this)">📈 Sales Tracking</button>
+          <button class="btn btn-sm tab-btn" data-tab="followups" onclick="showEditorTab('followups',this)">📞 Follow-ups</button>
+          <button class="btn btn-sm tab-btn" data-tab="timeline" onclick="showEditorTab('timeline',this)">🕒 Timeline</button>
+          <button class="btn btn-sm tab-btn" data-tab="revisions" onclick="showEditorTab('revisions',this)">📝 Revisions</button>
+        </div>
+
+        <!-- TAB: QUOTATION DOCUMENT -->
+        <div id="etab-doc" class="etab active">
+
+        <!-- Header details -->
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Quotation Details</div><span class="small">Quote No. <span class="mono bold" id="ed-quoteno"></span> — changes save automatically</span></div>
+          <div class="fgrid">
+            <div class="frow"><label class="fl req">Client Name</label><input class="inp" id="ed-client" onchange="qSet('clientName',this.value)"></div>
+            <div class="frow"><label class="fl">Project Name</label><input class="inp" id="ed-project" onchange="qSet('projectName',this.value)"></div>
+            <div class="frow"><label class="fl">Project Location</label><input class="inp" id="ed-location" onchange="qSet('projectLocation',this.value)"></div>
+            <div class="frow"><label class="fl">Client Reference No.</label><input class="inp" id="ed-refno" onchange="qSet('clientRefNo',this.value)"></div>
+            <div class="frow"><label class="fl">Date</label><input class="inp" type="date" id="ed-date" onchange="qSet('date',this.value)"></div>
+            <div class="frow"><label class="fl">Revision No.</label><input class="inp" type="number" min="1" id="ed-rev" onchange="qSet('revisionNo',num(this.value,1))"></div>
+            <div class="frow"><label class="fl">Prepared By</label><input class="inp" id="ed-preparedby" onchange="qSet('preparedBy',this.value)"></div>
+            <div class="frow"><label class="fl">Estimate Validity (days)</label><input class="inp" type="number" min="1" id="ed-validity" onchange="qSet('validityDays',num(this.value,14))"></div>
+          </div>
+        </div>
+
+        <!-- Introduction -->
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Introduction</div><div class="card-sub">Shown on the Introduction page of the printed quotation</div></div>
+          <div class="frow"><label class="fl"><input type="checkbox" id="ed-inclprofile" onchange="qSet('includeCompanyProfile',this.checked)"> Include company profile (set in Settings)</label></div>
+          <div class="frow"><label class="fl">Welcome Note (this project)</label><textarea class="inp" id="ed-welcome" rows="4" style="resize:vertical" onchange="qSet('welcomeNote',this.value)"></textarea></div>
+        </div>
+
+        <!-- Bill of Quantities -->
+        <div class="card">
+          <div class="card-hd">
+            <div><div class="card-title">Bill of Quantities</div><div class="card-sub">Add unlimited sections (Foyer, Living, Kitchen…) and unlimited line items per section</div></div>
+            <div class="chip-row"><span class="small">Grand Total: <span class="mono bold" id="boq-grand"></span></span><button class="btn btn-gold btn-sm" onclick="addSection()">+ Add Section</button></div>
+          </div>
+          <div id="boq-sections"></div>
+        </div>
+
+        <!-- Material Specification -->
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Material &amp; Specification</div><button class="btn btn-outline btn-sm" onclick="addSpec()">+ Add Row</button></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th style="min-width:150px">Category</th><th style="min-width:260px">Specification</th><th style="width:40px"></th></tr></thead>
+            <tbody id="specs-tb"></tbody>
+          </table></div>
+        </div>
+
+        <!-- Pricing Summary -->
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Pricing Summary</div></div>
+          <div class="fgrid" style="margin-bottom:14px">
+            <div class="frow"><label class="fl">Discount Type</label>
+              <select class="inp" id="ed-disctype" onchange="qSet('discountType',this.value);renderSummary()">
+                <option value="flat">Flat ₹</option><option value="pct">Percent %</option>
+              </select>
+            </div>
+            <div class="frow"><label class="fl">Discount Value</label><input class="inp" type="number" min="0" id="ed-discval" onchange="qSet('discountValue',num(this.value));renderSummary()"></div>
+            <div class="frow"><label class="fl">GST %</label><input class="inp" type="number" min="0" id="ed-gst" onchange="qSet('gstPct',num(this.value));renderSummary()"></div>
+          </div>
+          <div style="max-width:340px;margin-left:auto">
+            <div class="summary-line"><span>Grand Total</span><span class="v" id="sum-grand"></span></div>
+            <div class="summary-line"><span>Discount</span><span class="v" id="sum-disc"></span></div>
+            <div class="summary-line"><span>Taxable Amount</span><span class="v" id="sum-taxable"></span></div>
+            <div class="summary-line"><span>GST</span><span class="v" id="sum-gst"></span></div>
+            <div class="summary-line final"><span>Final Amount Payable</span><span class="v" id="sum-final"></span></div>
+          </div>
+        </div>
+
+        <!-- Terms & Conditions -->
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Terms &amp; Conditions</div></div>
+          <div class="letter-lbl"><span class="lt">A.</span>Scope of Work</div>
+          <div class="frow"><textarea class="inp" id="ed-scope" rows="2" style="resize:vertical" onchange="qSetTerm('scope',this.value)"></textarea></div>
+
+          <div class="letter-lbl"><span class="lt">B.</span>Estimate Includes</div>
+          <div id="inclusions-list"></div>
+
+          <div class="letter-lbl"><span class="lt">C.</span>Estimate Excludes</div>
+          <div id="exclusions-list"></div>
+
+          <div class="letter-lbl"><span class="lt">D.</span>Payment Schedule <span class="small">(should total 100%: <span id="pay-sum" class="tag tag-grey">0%</span>)</span></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th style="min-width:120px">Milestone</th><th style="min-width:200px">Description</th><th style="width:80px">%</th><th style="width:40px"></th></tr></thead>
+            <tbody id="pay-tb"></tbody>
+          </table></div>
+          <div style="margin:8px 0 18px"><button class="btn btn-outline btn-sm" onclick="addPay()">+ Add Payment Line</button></div>
+
+          <div class="letter-lbl"><span class="lt">E.</span>Warranty</div>
+          <div class="frow"><textarea class="inp" id="ed-warranty" rows="2" style="resize:vertical" onchange="qSetTerm('warranty',this.value)"></textarea></div>
+
+          <div class="letter-lbl"><span class="lt">F.</span>Delivery Timeline</div>
+          <div class="frow"><input class="inp" id="ed-delivery" onchange="qSetTerm('deliveryTimeline',this.value)"></div>
+
+          <div class="letter-lbl"><span class="lt">G.</span>Validity &amp; Taxes</div>
+          <div class="frow"><label class="fl">Taxes Note</label><input class="inp" id="ed-taxes" onchange="qSetTerm('taxesNote',this.value)"></div>
+
+          <div class="letter-lbl"><span class="lt">H.</span>Bank Account Details</div>
+          <div class="fgrid">
+            <div class="frow"><label class="fl">Account Name</label><input class="inp" id="ed-bank-name" onchange="qSetBank('accName',this.value)"></div>
+            <div class="frow"><label class="fl">Account No.</label><input class="inp" id="ed-bank-no" onchange="qSetBank('accNo',this.value)"></div>
+            <div class="frow"><label class="fl">IFSC</label><input class="inp" id="ed-bank-ifsc" onchange="qSetBank('ifsc',this.value)"></div>
+            <div class="frow"><label class="fl">Bank &amp; Branch</label><input class="inp" id="ed-bank-branch" onchange="qSetBank('bank',this.value)"></div>
+            <div class="frow"><label class="fl">Account Type</label><input class="inp" id="ed-bank-type" onchange="qSetBank('type',this.value)"></div>
+          </div>
+        </div>
+
+        <!-- Signature / Acceptance -->
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Acceptance</div></div>
+          <div class="frow"><label class="fl">Acceptance Text</label><textarea class="inp" id="ed-acceptance" rows="3" style="resize:vertical" onchange="qSetTerm('acceptanceText',this.value)"></textarea></div>
+          <div class="hint">Signature blocks (Company / Client) are generated automatically on the printed PDF, using the Client Name above and the Authorized Signatory title set in Settings.</div>
+        </div>
+
+        </div>
+        <!-- /TAB: QUOTATION DOCUMENT -->
+
+        <!-- TAB: SALES TRACKING -->
+        <div id="etab-sales" class="etab">
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Lead Source</div><div class="card-sub">Where this enquiry came from</div></div>
+            <div class="fgrid">
+              <div class="frow"><label class="fl">Lead Source</label>
+                <select class="inp" id="ed-leadsource" onchange="onLeadSourceChange(this.value)"></select>
+              </div>
+              <div class="frow" id="ed-leadref-wrap" style="display:none">
+                <label class="fl" id="ed-leadref-label">Partner</label>
+                <select class="inp" id="ed-leadref" onchange="qSet('leadSourceRefId',this.value)"></select>
+              </div>
+            </div>
+            <div class="hint">Staff / Architect / Builder / B2B Partner records are managed under "Partners &amp; Staff" in the sidebar.</div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Assignment &amp; Priority</div></div>
+            <div class="fgrid">
+              <div class="frow"><label class="fl">Designer</label><input class="inp" id="ed-designer" onchange="qSet('designer',this.value)"></div>
+              <div class="frow"><label class="fl">Estimator</label><input class="inp" id="ed-estimator" onchange="qSet('estimator',this.value)"></div>
+              <div class="frow"><label class="fl">Sales Executive</label><input class="inp" id="ed-salesexec" onchange="qSet('salesExecutive',this.value)"></div>
+              <div class="frow"><label class="fl">Priority</label>
+                <select class="inp" id="ed-priority" onchange="qSet('priority',this.value)"><option>High</option><option>Medium</option><option>Low</option></select>
+              </div>
+              <div class="frow"><label class="fl">Win Probability (%)</label><input class="inp" type="number" min="0" max="100" id="ed-winprob" onchange="qSet('winProbability',num(this.value,50))"></div>
+              <div class="frow"><label class="fl">Project Type</label><input class="inp" id="ed-projtype" placeholder="Residential / Commercial / Renovation…" onchange="qSet('projectType',this.value)"></div>
+              <div class="frow"><label class="fl">Expected Closing Date</label><input class="inp" type="date" id="ed-closedate" onchange="qSet('expectedClosingDate',this.value)"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Status</div></div>
+            <div class="frow"><label class="fl">Current Status</label><select class="inp" id="ed-status" onchange="changeStatus(this.value)"></select></div>
+            <div class="frow"><label class="fl">Remarks</label><textarea class="inp" id="ed-remarks" rows="2" style="resize:vertical" onchange="qSet('remarks',this.value)"></textarea></div>
+            <div class="hint">Every status change is logged automatically — see the Timeline tab for the full history.</div>
+          </div>
+        </div>
+
+        <!-- TAB: FOLLOW-UPS -->
+        <div id="etab-followups" class="etab">
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Add Follow-up</div></div>
+            <div class="fgrid">
+              <div class="frow"><label class="fl">Date</label><input class="inp" type="date" id="fu-date"></div>
+              <div class="frow"><label class="fl">Time</label><input class="inp" type="time" id="fu-time"></div>
+              <div class="frow"><label class="fl">Staff Member</label><select class="inp" id="fu-staff"></select></div>
+              <div class="frow"><label class="fl">Department</label><input class="inp" id="fu-dept" placeholder="Sales / Design / Site"></div>
+              <div class="frow"><label class="fl">Mode</label><select class="inp" id="fu-mode"></select></div>
+              <div class="frow"><label class="fl">Client Interest Level</label><select class="inp" id="fu-interest"><option>Hot</option><option>Warm</option><option>Cold</option></select></div>
+              <div class="frow"><label class="fl">Reminder Date</label><input class="inp" type="date" id="fu-remdate"></div>
+              <div class="frow"><label class="fl">Reminder Time</label><input class="inp" type="time" id="fu-remtime"></div>
+              <div class="frow"><label class="fl">Expected Decision Date</label><input class="inp" type="date" id="fu-decdate"></div>
+            </div>
+            <div class="frow"><label class="fl">Discussion Summary</label><textarea class="inp" id="fu-summary" rows="2" style="resize:vertical"></textarea></div>
+            <div class="frow"><label class="fl">Client Response</label><textarea class="inp" id="fu-response" rows="2" style="resize:vertical"></textarea></div>
+            <div class="frow"><label class="fl">Objections</label><input class="inp" id="fu-objections"></div>
+            <div class="frow"><label class="fl">Next Action</label><input class="inp" id="fu-nextaction"></div>
+            <div class="frow"><label class="fl">Outcome / Notes</label><textarea class="inp" id="fu-outcome" rows="2" style="resize:vertical"></textarea></div>
+            <button class="btn btn-gold" onclick="addFollowUp()">+ Save Follow-up</button>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Follow-up History</div><div class="card-sub">Most recent first</div></div>
+            <div id="followup-list"></div>
+          </div>
+        </div>
+
+        <!-- TAB: TIMELINE -->
+        <div id="etab-timeline" class="etab">
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Activity Timeline</div><div class="card-sub">Most recent first — every status change, follow-up, and revision is logged automatically</div></div>
+            <div id="timeline-list"></div>
+          </div>
+        </div>
+
+        <!-- TAB: REVISIONS -->
+        <div id="etab-revisions" class="etab">
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Revision History</div><button class="btn btn-gold btn-sm" onclick="saveNewRevision()">+ Save New Revision</button></div>
+            <div class="card-sub" style="margin-bottom:10px">Snapshots the current amount whenever you send an updated quotation — previous revisions are never overwritten.</div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Rev</th><th>Date</th><th class="right">Amount</th><th class="right">Change</th><th>Reason</th><th>Prepared By</th><th>Approval</th></tr></thead>
+              <tbody id="revision-tb"></tbody>
+            </table></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- PRINT / PDF VIEW -->
+      <div id="pg-print" class="page">
+        <div class="print-toolbar no-print">
+          <button class="btn btn-outline" onclick="nav('editor',null)">← Back to Editor</button>
+          <button class="btn btn-gold" onclick="window.print()">🖨️ Print / Save as PDF</button>
+        </div>
+        <div id="print-target"></div>
+      </div>
+
+      <!-- PARTNERS & STAFF -->
+      <div id="pg-partners" class="page">
+        <div class="sec-hd"><div class="sec-title">Partners &amp; Staff</div><div class="card-sub">Used for Lead Source tracking on quotations</div></div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Staff</div><button class="btn btn-outline btn-sm" onclick="addPartner('staff')">+ Add Staff</button></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th style="min-width:150px">Name</th><th style="min-width:150px">Role / Designation</th><th style="min-width:120px">Phone</th><th style="min-width:170px">Email</th><th style="min-width:150px">Notes</th><th style="width:40px"></th></tr></thead>
+            <tbody id="partner-tb-staff"></tbody>
+          </table></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Architects</div><button class="btn btn-outline btn-sm" onclick="addPartner('architects')">+ Add Architect</button></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th style="min-width:150px">Name</th><th style="min-width:150px">Company</th><th style="min-width:120px">Phone</th><th style="min-width:170px">Email</th><th style="min-width:150px">Notes</th><th style="width:40px"></th></tr></thead>
+            <tbody id="partner-tb-architects"></tbody>
+          </table></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Builders</div><button class="btn btn-outline btn-sm" onclick="addPartner('builders')">+ Add Builder</button></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th style="min-width:150px">Name</th><th style="min-width:150px">Company</th><th style="min-width:120px">Phone</th><th style="min-width:170px">Email</th><th style="min-width:150px">Notes</th><th style="width:40px"></th></tr></thead>
+            <tbody id="partner-tb-builders"></tbody>
+          </table></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title">B2B Partners</div><button class="btn btn-outline btn-sm" onclick="addPartner('b2bPartners')">+ Add B2B Partner</button></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th style="min-width:150px">Name</th><th style="min-width:150px">Company</th><th style="min-width:120px">Phone</th><th style="min-width:170px">Email</th><th style="min-width:150px">Notes</th><th style="width:40px"></th></tr></thead>
+            <tbody id="partner-tb-b2bPartners"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- ANALYTICS -->
+      <div id="pg-analytics" class="page">
+        <div class="sec-hd"><div class="sec-title">Analytics</div><div class="card-sub">All figures are computed live from your quotations</div></div>
+        <div class="chip-row" id="analytics-tabs" style="margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:12px">
+          <button class="btn btn-sm tab-btn active" data-tab="funnel" onclick="showAnalyticsTab('funnel',this)">🔀 Funnel &amp; Aging</button>
+          <button class="btn btn-sm tab-btn" data-tab="leadsource" onclick="showAnalyticsTab('leadsource',this)">📍 Lead Sources</button>
+          <button class="btn btn-sm tab-btn" data-tab="staff" onclick="showAnalyticsTab('staff',this)">👤 Staff</button>
+          <button class="btn btn-sm tab-btn" data-tab="partners" onclick="showAnalyticsTab('partners',this)">🤝 Partners</button>
+          <button class="btn btn-sm tab-btn" data-tab="customers" onclick="showAnalyticsTab('customers',this)">🧑‍💼 Customers</button>
+        </div>
+
+        <div id="atab-funnel" class="etab active">
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Sales Funnel</div><div class="card-sub">Current pipeline — how many quotations are at each stage right now</div></div>
+            <div id="funnel-chart"></div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Quotation Aging</div><div class="card-sub">Active quotations grouped by age since creation</div></div>
+            <div class="tbl-wrap"><table><thead><tr><th>Age Bracket</th><th class="right">Count</th><th class="right">Value</th></tr></thead><tbody id="aging-report-tb"></tbody></table></div>
+          </div>
+        </div>
+
+        <div id="atab-leadsource" class="etab">
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Lead Source Performance</div></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Source</th><th class="right">Quotations</th><th class="right">Quotation Value</th><th class="right">Won</th><th class="right">Lost</th><th class="right">Pending</th><th class="right">Conversion %</th><th class="right">Revenue</th><th class="right">Avg Value</th></tr></thead>
+              <tbody id="leadsource-tb"></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <div id="atab-staff" class="etab">
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Staff Performance</div><div class="card-sub">Grouped by Sales Executive (falls back to Prepared By if blank)</div></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Staff</th><th class="right">Quotations</th><th class="right">Won</th><th class="right">Lost</th><th class="right">Pending</th><th class="right">Conversion %</th><th class="right">Revenue</th><th class="right">Avg Closing (days)</th><th class="right">Follow-ups</th><th class="right">Revisions</th></tr></thead>
+              <tbody id="staff-analytics-tb"></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <div id="atab-partners" class="etab">
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Architects</div></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Architect</th><th class="right">Referred</th><th class="right">Won</th><th class="right">Lost</th><th class="right">Pending</th><th class="right">Conversion %</th><th class="right">Revenue</th><th class="right">Avg Value</th></tr></thead>
+              <tbody id="architects-analytics-tb"></tbody>
+            </table></div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Builders</div></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Builder</th><th class="right">Referred</th><th class="right">Won</th><th class="right">Lost</th><th class="right">Pending</th><th class="right">Conversion %</th><th class="right">Revenue</th><th class="right">Avg Value</th></tr></thead>
+              <tbody id="builders-analytics-tb"></tbody>
+            </table></div>
+          </div>
+          <div class="card">
+            <div class="card-hd"><div class="card-title">B2B Partners</div></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Partner</th><th class="right">Referred</th><th class="right">Won</th><th class="right">Lost</th><th class="right">Pending</th><th class="right">Conversion %</th><th class="right">Revenue</th><th class="right">Avg Value</th></tr></thead>
+              <tbody id="b2b-analytics-tb"></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <div id="atab-customers" class="etab">
+          <div class="card">
+            <div class="card-hd"><div class="card-title">Customer Analytics</div><div class="card-sub">Grouped by client name</div></div>
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Client</th><th class="right">Quotations</th><th class="right">Won</th><th class="right">Lifetime Revenue</th><th class="right">Avg Project Value</th><th>Repeat?</th><th>Last Interaction</th></tr></thead>
+              <tbody id="customers-analytics-tb"></tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div id="pg-settings" class="page">
+        <div class="sec-hd"><div class="sec-title">Settings</div><span class="small">Changes here only affect new quotations — existing ones keep what was already saved.</span></div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Company Profile</div></div>
+          <div class="fgrid">
+            <div class="frow"><label class="fl">Company Name</label><input class="inp" id="st-companyName" onchange="stSet('companyName',this.value)"></div>
+            <div class="frow"><label class="fl">Tagline</label><input class="inp" id="st-tagline" onchange="stSet('tagline',this.value)"></div>
+            <div class="frow"><label class="fl">Phone</label><input class="inp" id="st-phone" onchange="stSet('phone',this.value)"></div>
+            <div class="frow"><label class="fl">Email</label><input class="inp" id="st-email" onchange="stSet('email',this.value)"></div>
+            <div class="frow"><label class="fl">Website</label><input class="inp" id="st-website" onchange="stSet('website',this.value)"></div>
+            <div class="frow"><label class="fl">Authorized Signatory Title</label><input class="inp" id="st-signatory" onchange="stSet('signatoryTitle',this.value)"></div>
+            <div class="frow"><label class="fl">Default Estimate Validity (days)</label><input class="inp" type="number" min="1" id="st-validity" onchange="stSet('defaultValidityDays',num(this.value,14))"></div>
+            <div class="frow"><label class="fl">Quote Number Prefix</label><input class="inp" id="st-prefix" onchange="stSet('quotePrefix',this.value)"></div>
+            <div class="frow"><label class="fl">Next Quote Number</label><input class="inp" type="number" min="1" id="st-seq" onchange="stSet('nextQuoteSeq',num(this.value,1))"></div>
+          </div>
+          <div class="frow" style="margin-top:6px"><label class="fl">Company Profile (shown on Introduction page)</label><textarea class="inp" id="st-profile" rows="4" style="resize:vertical" onchange="stSet('companyProfile',this.value)"></textarea></div>
+          <div class="frow"><label class="fl">Default Welcome Note (pre-fills new quotations)</label><textarea class="inp" id="st-welcome" rows="3" style="resize:vertical" onchange="stSet('welcomeNote',this.value)"></textarea></div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Default Material Specifications</div><button class="btn btn-outline btn-sm" onclick="settingsAddSpec()">+ Add Row</button></div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th style="min-width:150px">Category</th><th style="min-width:260px">Specification</th><th style="width:40px"></th></tr></thead>
+            <tbody id="st-specs-tb"></tbody>
+          </table></div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Default Terms &amp; Conditions</div><div class="card-sub">Copied into every new quotation as an editable starting point</div></div>
+          <div class="letter-lbl"><span class="lt">A.</span>Scope of Work</div>
+          <div class="frow"><textarea class="inp" id="st-scope" rows="2" style="resize:vertical" onchange="stSetTerm('scope',this.value)"></textarea></div>
+
+          <div class="letter-lbl"><span class="lt">B.</span>Estimate Includes</div>
+          <div id="st-inclusions-list"></div>
+
+          <div class="letter-lbl"><span class="lt">C.</span>Estimate Excludes</div>
+          <div id="st-exclusions-list"></div>
+
+          <div class="letter-lbl"><span class="lt">D.</span>Payment Schedule</div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th style="min-width:120px">Milestone</th><th style="min-width:200px">Description</th><th style="width:80px">%</th><th style="width:40px"></th></tr></thead>
+            <tbody id="st-pay-tb"></tbody>
+          </table></div>
+          <div style="margin:8px 0 18px"><button class="btn btn-outline btn-sm" onclick="settingsAddPay()">+ Add Payment Line</button></div>
+
+          <div class="letter-lbl"><span class="lt">E.</span>Warranty</div>
+          <div class="frow"><textarea class="inp" id="st-warranty" rows="2" style="resize:vertical" onchange="stSetTerm('warranty',this.value)"></textarea></div>
+
+          <div class="letter-lbl"><span class="lt">F.</span>Delivery Timeline</div>
+          <div class="frow"><input class="inp" id="st-delivery" onchange="stSetTerm('deliveryTimeline',this.value)"></div>
+
+          <div class="letter-lbl"><span class="lt">G.</span>Taxes Note</div>
+          <div class="frow"><input class="inp" id="st-taxes" onchange="stSetTerm('taxesNote',this.value)"></div>
+
+          <div class="letter-lbl"><span class="lt">H.</span>Bank Account Details</div>
+          <div class="fgrid">
+            <div class="frow"><label class="fl">Account Name</label><input class="inp" id="st-bank-name" onchange="stSetBank('accName',this.value)"></div>
+            <div class="frow"><label class="fl">Account No.</label><input class="inp" id="st-bank-no" onchange="stSetBank('accNo',this.value)"></div>
+            <div class="frow"><label class="fl">IFSC</label><input class="inp" id="st-bank-ifsc" onchange="stSetBank('ifsc',this.value)"></div>
+            <div class="frow"><label class="fl">Bank &amp; Branch</label><input class="inp" id="st-bank-branch" onchange="stSetBank('bank',this.value)"></div>
+            <div class="frow"><label class="fl">Account Type</label><input class="inp" id="st-bank-type" onchange="stSetBank('type',this.value)"></div>
+          </div>
+
+          <div class="letter-lbl"><span class="lt">I.</span>Acceptance Text</div>
+          <div class="frow"><textarea class="inp" id="st-acceptance" rows="3" style="resize:vertical" onchange="stSetTerm('acceptanceText',this.value)"></textarea></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-bg"><div class="modal" id="modal-box"></div></div>
+
+<script>window.PagedConfig = { auto:false };</script>
+<script src="vendor/paged.polyfill.js"></script>
+<script src="vendor/xlsx.full.min.js"></script>
+<script>
+/* ============================== CONSTANTS ============================== */
+const STORE_KEY='appletree_quotation_db_v1';
+let DB={settings:{},quotations:[]};
+let currentEditId=null;
+
+/* ============================== HELPERS ============================== */
+function uid(prefix){ return prefix+'_'+Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-4); }
+function escHtml(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function nl2br(s){ return escHtml(s).replace(/\n/g,'<br>'); }
+function INR(n){ n=Number(n)||0; return '₹'+n.toLocaleString('en-IN',{maximumFractionDigits:0}); }
+function num(v,d=0){ const n=parseFloat(v); return isNaN(n)?d:n; }
+function fmtDate(d){ if(!d) return '—'; const dt=new Date(d); if(isNaN(dt)) return d; return dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}); }
+/* ============================== CRM CONSTANTS ============================== */
+const LEAD_SOURCES=['Direct Client','Staff','Architect','Builder','B2B Partner','Existing Customer Referral','Website','Social Media','Walk-in','Other'];
+const LEAD_SOURCE_PARTNER_TYPE={'Staff':'staff','Architect':'architects','Builder':'builders','B2B Partner':'b2bPartners'};
+const FOLLOWUP_MODES=['Phone Call','WhatsApp','Email','Office Meeting','Site Visit','Video Meeting'];
+const LOSS_REASONS=['Price Too High','Budget Issue','Competitor Selected','Project Postponed','Project Cancelled','No Response','Builder Changed','Architect Changed','Design Issue','Material Preference','Timeline Issue','Poor Follow-up','Other'];
+const STATUS_GROUPS=[
+  {label:'Pre-Sale',cls:'tag-grey',statuses:['Draft','Preparing','Waiting for Drawings','Site Visit Scheduled','Site Visit Completed','Design Discussion','Preparing Estimate','Internal Approval']},
+  {label:'Sent & Discussion',cls:'tag-blue',statuses:['Quotation Sent','Viewed','Under Discussion','Negotiation','Material Discussion','Price Discussion']},
+  {label:'Revision',cls:'tag-amber',statuses:['Revision Requested','Revision Under Preparation','Revised Quotation Sent']},
+  {label:'Closing',cls:'tag-violet',statuses:['Waiting for Decision','Follow-up Pending','Meeting Scheduled','Almost Confirmed','Verbal Approval','Advance Awaiting','Advance Received']},
+  {label:'Post-Sale',cls:'tag-green',statuses:['Project Confirmed','Production','Execution','Completed']},
+  {label:'Closed / Inactive',cls:'tag-red',statuses:['On Hold','Dormant','Lost','Cancelled']}
+];
+const ALL_STATUSES=STATUS_GROUPS.flatMap(g=>g.statuses);
+const STATUS_COLOR_MAP={};
+STATUS_GROUPS.forEach(g=>g.statuses.forEach(s=>STATUS_COLOR_MAP[s]=g.cls));
+const STATUS_MIGRATE={'Sent':'Quotation Sent','Approved':'Project Confirmed'};
+const WON_STATUSES=STATUS_GROUPS.find(g=>g.label==='Post-Sale').statuses;
+const CLOSED_LOST_STATUSES=['Lost','Cancelled'];
+const ACTIVITY_ICONS={created:'✨',status:'🔄',followup:'📞',revision:'📝'};
+
+function statusTag(s){ return `<span class="tag ${STATUS_COLOR_MAP[s]||'tag-grey'}">${escHtml(s||'Draft')}</span>`; }
+
+/* ============================== PERSISTENCE ============================== */
+function persist(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }
+  catch(e){ alert('Could not save — your browser storage is full.'); console.error('persist() failed',e); }
+}
+function defaultTerms(){
+  return {
+    scope:'Supply and execution of complete carpentry, joinery, and turnkey interior works as detailed in the Bill of Quantities below.',
+    inclusions:['Dedicated site supervisor.','Completion within 90–120 days, based on the size of the project.'],
+    exclusions:[
+      'Kitchen accessories and appliances, electrical, plumbing, sanitaries, CP fittings, locks & handles, demolishing, sink, tap, wash basin, anti-termite treatment, etc., unless clearly mentioned in the estimate.',
+      'Trade union charges above ₹2,500.',
+      'Any other item which is not shown in this estimate.',
+      'Mattress, decor items, wall frames, rugs.',
+      'Curtains and blinds.',
+      'The client shall provide water and electricity at site free of cost.'
+    ],
+    paymentSchedule:[
+      {label:'Advance',note:'Work will get started on receipt of advance',pct:60},
+      {label:'Part Payment (i)',note:'On 50% of work completion',pct:30},
+      {label:'Part Payment (ii)',note:'On 75% of work completion',pct:5},
+      {label:'Part Payment (iii)',note:'Rest on completion',pct:5}
+    ],
+    warranty:'12 months warranty against manufacturing defects in carcass, hardware, and finish, from the date of handover.',
+    deliveryTimeline:'90–120 days from advance payment and drawing approval, based on the size of the project.',
+    taxesNote:'GST is extra, as applicable.',
+    bank:{accName:'Appletree Interiors',accNo:'',ifsc:'',bank:'',type:'Current Account'},
+    acceptanceText:'All costs included in this proposal are according to the details mentioned; any changes or additional work may vary the amount. Any changes to the budget and pricing structure will be submitted in written/email form and approved prior to execution. New fee estimates reflecting changes in scope or schedule will be issued when appropriate.'
+  };
+}
+function seed(){
+  DB.settings={
+    companyName:'Appletree Interiors',
+    tagline:'Turnkey Interior Design & Execution',
+    logo:'logo.png',
+    phone:'+91 7592 909090',
+    email:'sales@appletreeinteriors.in',
+    website:'appletreeinteriors.in',
+    signatoryTitle:'Authorized Signatory',
+    defaultValidityDays:14,
+    quotePrefix:'AT',
+    nextQuoteSeq:1,
+    companyProfile:'Appletree Interiors is a turnkey interior design and execution studio, delivering custom furniture, lighting, and full-scope interior fit-outs for homes and commercial spaces. Our in-house design, manufacturing, and site teams manage every stage of the project — from concept to handover — so clients get one accountable partner from start to finish.',
+    welcomeNote:'We specialize in full-service interior design, including custom furniture, lighting, and art procurement/installation. Our project portfolio spans new home construction and residential renovations of all sizes. Please find below the itemized estimate prepared for your project, based on the requirements shared with us.',
+    defaultMaterialSpecs:[
+      {category:'Plywood',spec:'Century Club Prime / Greenply / Trojan Classic'},
+      {category:'Marine Ply',spec:'IS 710 Grade — Century / Greenply'},
+      {category:'Laminate',spec:'1 mm thick laminate for finish, 0.8 mm laminate for carcass inside'},
+      {category:'Veneer',spec:'Natural veneer, base price as per species selected'},
+      {category:'PVC',spec:'0.7 Density — Trojan / Century Cenwood'},
+      {category:'Glass',spec:'Toughened glass, 6–8 mm as per application'},
+      {category:'Hardware',spec:'Hettich / Hafele'},
+      {category:'Hinges',spec:'Hettich / Hafele — soft-close'},
+      {category:'Sliders',spec:'Hettich / Hafele — telescopic / tandem'},
+      {category:'Handles',spec:'Hettich / Hafele / Godrej'},
+      {category:'Channels',spec:'Hettich / Hafele'},
+      {category:'Paint Finish',spec:'PU Paint Finish, spray-applied'},
+      {category:'Polish Finish',spec:'Melamine / PU Polish'}
+    ],
+    defaultTerms:defaultTerms()
+  };
+  DB.quotations=[];
+  DB.staff=[]; DB.architects=[]; DB.builders=[]; DB.b2bPartners=[];
+}
+function sanitizeQuotation(q){
+  if(!q||typeof q!=='object') return;
+  if(!Array.isArray(q.sections)) q.sections=[];
+  q.sections.forEach(sec=>{ if(sec && !Array.isArray(sec.items)) sec.items=[]; });
+  if(!Array.isArray(q.materialSpecs)) q.materialSpecs=[];
+  if(!q.terms||typeof q.terms!=='object') q.terms=defaultTerms();
+  if(!Array.isArray(q.terms.inclusions)) q.terms.inclusions=[];
+  if(!Array.isArray(q.terms.exclusions)) q.terms.exclusions=[];
+  if(!Array.isArray(q.terms.paymentSchedule)) q.terms.paymentSchedule=[];
+  if(!q.terms.bank||typeof q.terms.bank!=='object') q.terms.bank={accName:'',accNo:'',ifsc:'',bank:'',type:''};
+  if(STATUS_MIGRATE[q.status]) q.status=STATUS_MIGRATE[q.status];
+  if(!q.status||!ALL_STATUSES.includes(q.status)) q.status='Draft';
+  if(!q.quoteNo) q.quoteNo='AT00000';
+  if(!q.updatedAt) q.updatedAt=Date.now();
+  if(!q.leadSource) q.leadSource='';
+  if(!q.leadSourceRefId) q.leadSourceRefId='';
+  if(!q.priority) q.priority='Medium';
+  if(q.winProbability==null||isNaN(q.winProbability)) q.winProbability=50;
+  if(!Array.isArray(q.followUps)) q.followUps=[];
+  if(!Array.isArray(q.activity)) q.activity=[];
+  if(!Array.isArray(q.revisionHistory)) q.revisionHistory=[];
+  if(!Array.isArray(q.lossReasons)) q.lossReasons=[];
+  if(!q.wonDate) q.wonDate='';
+  if(!q.lostDate) q.lostDate='';
+  if(typeof q.escalated!=='boolean') q.escalated=false;
+  if(q.escalatedAt===undefined) q.escalatedAt=null;
+}
+function loadOrSeed(){
+  const raw=localStorage.getItem(STORE_KEY);
+  if(raw){
+    try{
+      const parsed=JSON.parse(raw);
+      if(!parsed||typeof parsed!=='object') throw new Error('Saved data is not a valid object');
+      DB=parsed;
+      if(!DB.settings||typeof DB.settings!=='object') DB.settings={};
+      if(!DB.settings.defaultTerms) DB.settings.defaultTerms=defaultTerms();
+      if(!Array.isArray(DB.settings.defaultMaterialSpecs)) DB.settings.defaultMaterialSpecs=[];
+      if(!Array.isArray(DB.quotations)) DB.quotations=[];
+      if(!Array.isArray(DB.staff)) DB.staff=[];
+      if(!Array.isArray(DB.architects)) DB.architects=[];
+      if(!Array.isArray(DB.builders)) DB.builders=[];
+      if(!Array.isArray(DB.b2bPartners)) DB.b2bPartners=[];
+      DB.quotations.forEach(sanitizeQuotation);
+      return;
+    }catch(e){ console.error('Corrupt local data, reseeding',e); }
+  }
+  seed();
+  persist();
+}
+
+/* ============================== QUOTATION MODEL ============================== */
+function curQ(){ return DB.quotations.find(x=>x.id===currentEditId); }
+function logActivity(q,type,text){
+  if(!Array.isArray(q.activity)) q.activity=[];
+  q.activity.push({id:uid('ACT'),ts:Date.now(),type,text});
+}
+function newQuotation(){
+  const s=DB.settings;
+  const seq=s.nextQuoteSeq++;
+  const q={
+    id:uid('Q'),
+    quoteNo:(s.quotePrefix||'AT')+String(seq).padStart(5,'0'),
+    revisionNo:1,
+    status:'Draft',
+    clientName:'', projectName:'', projectLocation:'', clientRefNo:'',
+    date:new Date().toISOString().slice(0,10),
+    preparedBy:'', validityDays:s.defaultValidityDays||14,
+    welcomeNote:s.welcomeNote||'', includeCompanyProfile:true,
+    sections:[],
+    materialSpecs:JSON.parse(JSON.stringify(s.defaultMaterialSpecs||[])),
+    terms:JSON.parse(JSON.stringify(s.defaultTerms||defaultTerms())),
+    discountType:'flat', discountValue:0, gstPct:0,
+    leadSource:'', leadSourceRefId:'',
+    designer:'', estimator:'', salesExecutive:'',
+    priority:'Medium', winProbability:50, projectType:'', expectedClosingDate:'',
+    remarks:'', nextFollowUpDate:'',
+    followUps:[], activity:[], revisionHistory:[], lossReasons:[], lossRemarks:'',
+    wonDate:'', lostDate:'', escalated:false, escalatedAt:null,
+    createdAt:Date.now(), updatedAt:Date.now()
+  };
+  logActivity(q,'created','Quotation created');
+  DB.quotations.push(q);
+  persist();
+  return q;
+}
+function duplicateQuotation(id){
+  const src=DB.quotations.find(x=>x.id===id); if(!src) return;
+  const copy=JSON.parse(JSON.stringify(src));
+  copy.id=uid('Q');
+  const seq=DB.settings.nextQuoteSeq++;
+  copy.quoteNo=(DB.settings.quotePrefix||'AT')+String(seq).padStart(5,'0');
+  copy.revisionNo=1;
+  copy.status='Draft';
+  copy.createdAt=Date.now(); copy.updatedAt=Date.now();
+  DB.quotations.push(copy);
+  persist();
+  renderQuotations(); renderDashboard();
+  openEditor(copy.id);
+}
+function deleteQuotation(id,fromEditor){
+  if(!confirm('Delete this quotation permanently? This cannot be undone.')) return;
+  DB.quotations=DB.quotations.filter(x=>x.id!==id);
+  persist();
+  if(fromEditor) nav('quotations',null); else { renderQuotations(); renderDashboard(); }
+}
+
+/* ---- save / load quotation file (File System Access API, falls back to plain download) ---- */
+function safeFileBase(q){ return (q.quoteNo||'Quotation')+'_'+(q.clientName||'Quotation').replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,''); }
+async function saveBlobToDisk(blob,filename,mime,typeDesc,exts){
+  if(window.showSaveFilePicker){
+    try{
+      const handle=await window.showSaveFilePicker({ suggestedName:filename, types:[{description:typeDesc,accept:{[mime]:exts}}] });
+      const writable=await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return true;
+    }catch(e){ if(e.name==='AbortError') return false; console.error('Save failed',e); alert('Could not save the file.'); return false; }
+  }
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=filename; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),4000);
+  return true;
+}
+async function saveQuoteToFile(){
+  const q=curQ(); if(!q) return;
+  const blob=new Blob([JSON.stringify(q,null,2)],{type:'application/json'});
+  const ok=await saveBlobToDisk(blob, safeFileBase(q)+'.json', 'application/json', 'Quotation File', ['.json']);
+  if(ok) alert('Quotation saved.');
+}
+function loadQuoteFromFile(){
+  const input=document.createElement('input');
+  input.type='file'; input.accept='.json,application/json';
+  input.onchange=async(e)=>{
+    const file=e.target.files[0]; if(!file) return;
+    try{
+      const data=JSON.parse(await file.text());
+      if(!data.sections || !data.terms) throw new Error('Not a quotation file');
+      data.id=uid('Q');
+      if(!data.quoteNo || DB.quotations.some(x=>x.quoteNo===data.quoteNo)){
+        const seq=DB.settings.nextQuoteSeq++;
+        data.quoteNo=(DB.settings.quotePrefix||'AT')+String(seq).padStart(5,'0');
+      }
+      data.updatedAt=Date.now();
+      DB.quotations.push(data);
+      persist();
+      renderQuotations(); renderDashboard();
+      openEditor(data.id);
+    }catch(err){ console.error(err); alert('Could not read that file — is it a valid saved quotation (.json)?'); }
+  };
+  input.click();
+}
+
+/* ============================== PARTNERS & STAFF ============================== */
+const PARTNER_LISTS={staff:'Staff',architects:'Architects',builders:'Builders',b2bPartners:'B2B Partners'};
+function addPartner(listKey){ DB[listKey].push({id:uid('P'),name:'',company:'',phone:'',email:'',notes:'',createdAt:Date.now()}); persist(); renderPartnerList(listKey); }
+function partnerChange(listKey,i,field,val){ DB[listKey][i][field]=val; persist(); }
+function removePartner(listKey,i){ if(!confirm('Remove this record?')) return; DB[listKey].splice(i,1); persist(); renderPartnerList(listKey); }
+function renderPartnerList(listKey){
+  const arr=DB[listKey]||[];
+  const tb=document.getElementById('partner-tb-'+listKey);
+  if(!tb) return;
+  tb.innerHTML = arr.length ? arr.map((p,i)=>`<tr>
+    <td><input class="inp inp-sm" value="${escHtml(p.name)}" onchange="partnerChange('${listKey}',${i},'name',this.value)"></td>
+    <td><input class="inp inp-sm" value="${escHtml(p.company)}" onchange="partnerChange('${listKey}',${i},'company',this.value)"></td>
+    <td><input class="inp inp-sm" value="${escHtml(p.phone)}" onchange="partnerChange('${listKey}',${i},'phone',this.value)"></td>
+    <td><input class="inp inp-sm" value="${escHtml(p.email)}" onchange="partnerChange('${listKey}',${i},'email',this.value)"></td>
+    <td><input class="inp inp-sm" value="${escHtml(p.notes)}" onchange="partnerChange('${listKey}',${i},'notes',this.value)"></td>
+    <td><button class="btn btn-sm btn-red" onclick="removePartner('${listKey}',${i})">✕</button></td>
+  </tr>`).join('') : `<tr><td colspan="6" class="empty">No ${PARTNER_LISTS[listKey].toLowerCase()} added yet.</td></tr>`;
+}
+function renderPartners(){ Object.keys(PARTNER_LISTS).forEach(renderPartnerList); }
+
+/* ---- calculations ---- */
+function itemAmount(it){ return it.included ? 0 : (num(it.qty)*num(it.unitPrice)); }
+function sectionTotal(sec){ return sec.items.reduce((s,it)=>s+itemAmount(it),0); }
+function grandTotal(q){ return q.sections.reduce((s,sec)=>s+sectionTotal(sec),0); }
+function discountAmount(q){ const gt=grandTotal(q); return q.discountType==='pct' ? gt*num(q.discountValue)/100 : num(q.discountValue); }
+function taxableAmount(q){ return Math.max(0, grandTotal(q)-discountAmount(q)); }
+function gstAmount(q){ return taxableAmount(q)*num(q.gstPct)/100; }
+function finalPayable(q){ return taxableAmount(q)+gstAmount(q); }
+function slNoMap(q){ let n=0; const map={}; q.sections.forEach(sec=>sec.items.forEach(it=>{ n++; map[it.id]=n; })); return map; }
+
+/* ============================== ANALYTICS ============================== */
+function showAnalyticsTab(tab,el){
+  document.querySelectorAll('#pg-analytics .etab').forEach(e=>e.classList.remove('active'));
+  document.getElementById('atab-'+tab).classList.add('active');
+  document.querySelectorAll('#analytics-tabs .tab-btn').forEach(b=>b.classList.remove('active'));
+  if(el) el.classList.add('active');
+}
+function computeGroupStats(list){
+  const wonList=list.filter(q=>WON_STATUSES.includes(q.status));
+  const lostList=list.filter(q=>q.status==='Lost');
+  const pendingList=list.filter(isActiveQuotation);
+  const quotationValue=list.reduce((s,q)=>s+grandTotal(q),0);
+  const wonValue=wonList.reduce((s,q)=>s+finalPayable(q),0);
+  const closedCount=wonList.length+lostList.length;
+  const conversionPct = closedCount>0 ? (wonList.length/closedCount*100) : null;
+  const avgValue = list.length ? quotationValue/list.length : 0;
+  const closingDays=wonList.map(q=>{
+    const start=new Date(q.date).getTime(), end=new Date(q.wonDate).getTime();
+    if(isNaN(start)||isNaN(end)) return null;
+    return Math.max(0,Math.round((end-start)/86400000));
+  }).filter(d=>d!==null);
+  const avgClosingDays = closingDays.length ? (closingDays.reduce((a,b)=>a+b,0)/closingDays.length) : null;
+  return { count:list.length, wonCount:wonList.length, lostCount:lostList.length, pendingCount:pendingList.length, quotationValue, wonValue, conversionPct, avgValue, avgClosingDays };
+}
+const FUNNEL_COLORS={'tag-grey':'#9D9A91','tag-blue':'#2563EB','tag-amber':'#B8860B','tag-violet':'#7C4DFF','tag-green':'#2E7D32','tag-red':'#C62828'};
+function computeFunnel(){
+  return STATUS_GROUPS.map(g=>{
+    const list=DB.quotations.filter(q=>g.statuses.includes(q.status));
+    return {label:g.label, count:list.length, value:list.reduce((s,q)=>s+grandTotal(q),0), cls:g.cls};
+  });
+}
+function renderFunnelHtml(){
+  const stages=computeFunnel();
+  const maxCount=Math.max(1,...stages.map(s=>s.count));
+  document.getElementById('funnel-chart').innerHTML = stages.map(s=>`<div class="funnel-row">
+    <div class="funnel-label">${escHtml(s.label)}</div>
+    <div class="funnel-bar-track"><div class="funnel-bar-fill" style="width:${(s.count/maxCount*100).toFixed(0)}%;background:${FUNNEL_COLORS[s.cls]||'var(--gold)'}"></div></div>
+    <div class="funnel-count">${s.count} · ${INR(s.value)}</div>
+  </div>`).join('');
+}
+const AGE_BRACKETS=[{label:'0–7 days',min:0,max:7},{label:'8–15 days',min:8,max:15},{label:'16–30 days',min:16,max:30},{label:'31–60 days',min:31,max:60},{label:'61–90 days',min:61,max:90},{label:'90+ days',min:91,max:Infinity}];
+function quotationAgeDays(q){
+  const start=new Date(q.date||new Date(q.createdAt||Date.now()).toISOString().slice(0,10)).getTime();
+  if(isNaN(start)) return 0;
+  return Math.max(0,Math.floor((Date.now()-start)/86400000));
+}
+function renderAgingReport(){
+  const active=DB.quotations.filter(isActiveQuotation);
+  document.getElementById('aging-report-tb').innerHTML = AGE_BRACKETS.map(b=>{
+    const list=active.filter(q=>{ const d=quotationAgeDays(q); return d>=b.min && d<=b.max; });
+    return `<tr class="${b.min>=61?'bold':''}"><td>${b.label}</td><td class="right">${list.length}</td><td class="right mono">${INR(list.reduce((s,q)=>s+grandTotal(q),0))}</td></tr>`;
+  }).join('');
+}
+function renderLeadSourceAnalytics(){
+  const rows=LEAD_SOURCES.map(src=>{
+    const list=DB.quotations.filter(q=>q.leadSource===src);
+    return {name:src, ...computeGroupStats(list)};
+  }).sort((a,b)=>b.wonValue-a.wonValue);
+  document.getElementById('leadsource-tb').innerHTML=rows.map(r=>`<tr>
+    <td class="bold">${escHtml(r.name)}</td><td class="right">${r.count}</td><td class="right mono">${INR(r.quotationValue)}</td>
+    <td class="right">${r.wonCount}</td><td class="right">${r.lostCount}</td><td class="right">${r.pendingCount}</td>
+    <td class="right">${r.conversionPct==null?'—':r.conversionPct.toFixed(0)+'%'}</td>
+    <td class="right mono bold">${INR(r.wonValue)}</td><td class="right mono">${INR(r.avgValue)}</td>
+  </tr>`).join('');
+}
+function ownerOf(q){ return q.salesExecutive || q.preparedBy || 'Unassigned'; }
+function renderStaffAnalytics(){
+  const names=[...new Set(DB.quotations.map(ownerOf))];
+  const rows=names.map(name=>{
+    const list=DB.quotations.filter(q=>ownerOf(q)===name);
+    const s=computeGroupStats(list);
+    const followUpCount=list.reduce((sum,q)=>sum+(q.followUps||[]).length,0);
+    const revisionCount=list.reduce((sum,q)=>sum+(q.revisionHistory||[]).length,0);
+    return {name, ...s, followUpCount, revisionCount};
+  }).sort((a,b)=>b.wonValue-a.wonValue);
+  document.getElementById('staff-analytics-tb').innerHTML = rows.length ? rows.map(r=>`<tr>
+    <td class="bold" style="${r.name==='Unassigned'?'color:var(--muted)':''}">${escHtml(r.name)}</td>
+    <td class="right">${r.count}</td><td class="right">${r.wonCount}</td><td class="right">${r.lostCount}</td><td class="right">${r.pendingCount}</td>
+    <td class="right">${r.conversionPct==null?'—':r.conversionPct.toFixed(0)+'%'}</td>
+    <td class="right mono bold">${INR(r.wonValue)}</td>
+    <td class="right">${r.avgClosingDays==null?'—':r.avgClosingDays.toFixed(0)}</td>
+    <td class="right">${r.followUpCount}</td><td class="right">${r.revisionCount}</td>
+  </tr>`).join('') : '<tr><td colspan="10" class="empty">No quotations yet.</td></tr>';
+}
+function renderPartnerAnalyticsFor(listKey,leadSourceLabel,tbodyId){
+  const partners=DB[listKey]||[];
+  const rows=partners.map(p=>{
+    const list=DB.quotations.filter(q=>q.leadSource===leadSourceLabel && q.leadSourceRefId===p.id);
+    return {name:p.name||'(unnamed)', ...computeGroupStats(list)};
+  }).filter(r=>r.count>0).sort((a,b)=>b.wonValue-a.wonValue);
+  document.getElementById(tbodyId).innerHTML = rows.length ? rows.map(r=>`<tr>
+    <td class="bold">${escHtml(r.name)}</td><td class="right">${r.count}</td><td class="right">${r.wonCount}</td><td class="right">${r.lostCount}</td><td class="right">${r.pendingCount}</td>
+    <td class="right">${r.conversionPct==null?'—':r.conversionPct.toFixed(0)+'%'}</td>
+    <td class="right mono bold">${INR(r.wonValue)}</td><td class="right mono">${INR(r.avgValue)}</td>
+  </tr>`).join('') : '<tr><td colspan="8" class="empty">No referrals yet.</td></tr>';
+}
+function renderPartnerAnalytics(){
+  renderPartnerAnalyticsFor('architects','Architect','architects-analytics-tb');
+  renderPartnerAnalyticsFor('builders','Builder','builders-analytics-tb');
+  renderPartnerAnalyticsFor('b2bPartners','B2B Partner','b2b-analytics-tb');
+}
+function renderCustomerAnalytics(){
+  const names=[...new Set(DB.quotations.map(q=>q.clientName).filter(Boolean))];
+  const rows=names.map(name=>{
+    const list=DB.quotations.filter(q=>q.clientName===name);
+    const wonList=list.filter(q=>WON_STATUSES.includes(q.status));
+    const lifetimeRevenue=wonList.reduce((s,q)=>s+finalPayable(q),0);
+    const avgValue=list.length? list.reduce((s,q)=>s+grandTotal(q),0)/list.length : 0;
+    const lastInteraction=Math.max(...list.map(q=>q.updatedAt||0));
+    return {name, count:list.length, wonCount:wonList.length, lifetimeRevenue, avgValue, repeat:list.length>1, lastInteraction};
+  }).sort((a,b)=>b.lifetimeRevenue-a.lifetimeRevenue);
+  document.getElementById('customers-analytics-tb').innerHTML = rows.length ? rows.map(r=>`<tr>
+    <td class="bold">${escHtml(r.name)}</td><td class="right">${r.count}</td><td class="right">${r.wonCount}</td>
+    <td class="right mono bold">${INR(r.lifetimeRevenue)}</td><td class="right mono">${INR(r.avgValue)}</td>
+    <td>${r.repeat?'<span class="tag tag-green">Repeat</span>':'—'}</td>
+    <td>${r.lastInteraction?new Date(r.lastInteraction).toLocaleDateString('en-IN'):'—'}</td>
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">No customers yet.</td></tr>';
+}
+function renderAnalytics(){
+  renderFunnelHtml();
+  renderAgingReport();
+  renderLeadSourceAnalytics();
+  renderStaffAnalytics();
+  renderPartnerAnalytics();
+  renderCustomerAnalytics();
+}
+
+/* ============================== NAV ============================== */
+const PAGE_TITLES={dashboard:'Dashboard',quotations:'Quotations',editor:'Quotation Editor',print:'Preview & Print',settings:'Settings',partners:'Partners & Staff',analytics:'Analytics',kanban:'Kanban Board',calendar:'Follow-up Calendar'};
+function nav(pg,el){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('pg-'+pg).classList.add('active');
+  document.getElementById('pg-title').textContent=PAGE_TITLES[pg]||pg;
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  if(el) el.classList.add('active');
+  else { const match=document.querySelector(`.nav-item[data-pg="${['editor','print'].includes(pg)?'quotations':pg}"]`); if(match) match.classList.add('active'); }
+  const renderers={dashboard:renderDashboard,quotations:renderQuotations,editor:renderEditor,settings:renderSettings,partners:renderPartners,analytics:renderAnalytics,kanban:renderKanban,calendar:renderCalendar};
+  if(renderers[pg]) renderers[pg]();
+}
+function createQuotation(){ const q=newQuotation(); openEditor(q.id); }
+function openEditor(id){
+  currentEditId=id;
+  nav('editor',null);
+  showEditorTab('doc',document.querySelector('#editor-tabs .tab-btn[data-tab="doc"]'));
+}
+function openPrint(id){ currentEditId=id; nav('print',null); renderPrintPreview(); }
+
+/* ============================== DASHBOARD ============================== */
+const AGING_THRESHOLDS=[3,7,15,30,60];
+const ESCALATION_THRESHOLD_DAYS=15;
+function isActiveQuotation(q){ return !CLOSED_LOST_STATUSES.includes(q.status) && !WON_STATUSES.includes(q.status); }
+function daysSinceLastContact(q){
+  const lastFu=(q.followUps||[]).length ? [...q.followUps].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.createdAt-a.createdAt)[0] : null;
+  const refDateStr = lastFu && lastFu.date ? lastFu.date : (q.date || new Date(q.createdAt||Date.now()).toISOString().slice(0,10));
+  const refMs=new Date(refDateStr).getTime();
+  if(isNaN(refMs)) return 0;
+  return Math.max(0, Math.floor((Date.now()-refMs)/86400000));
+}
+function computeReminders(){
+  const today=new Date().toISOString().slice(0,10);
+  const tomorrow=new Date(Date.now()+86400000).toISOString().slice(0,10);
+  const active=DB.quotations.filter(q=>q.nextFollowUpDate && isActiveQuotation(q));
+  return {
+    overdue: active.filter(q=>q.nextFollowUpDate<today).sort((a,b)=>a.nextFollowUpDate.localeCompare(b.nextFollowUpDate)),
+    today: active.filter(q=>q.nextFollowUpDate===today),
+    tomorrow: active.filter(q=>q.nextFollowUpDate===tomorrow)
+  };
+}
+function reminderRowsHtml(list,label,emptyText,urgent){
+  if(!list.length) return `<div class="reminder-row"><span>${label}</span><span class="small">${emptyText}</span></div>`;
+  return `<div class="reminder-row" style="border-bottom:none;padding-bottom:2px"><span class="bold">${label} (${list.length})</span></div>`+
+    list.map(q=>`<div class="reminder-row">
+      <span>${urgent?'<span class="tag tag-red">Overdue</span> ':''}${escHtml(q.clientName)||'—'} · <span class="mono">${escHtml(q.quoteNo)}</span> — ${fmtDate(q.nextFollowUpDate)}</span>
+      <button class="btn btn-sm" onclick="openEditor('${q.id}')">Open</button>
+    </div>`).join('');
+}
+function computeAgingCounts(){
+  const active=DB.quotations.filter(isActiveQuotation);
+  const counts={};
+  AGING_THRESHOLDS.forEach(t=>{ counts[t]=active.filter(q=>daysSinceLastContact(q)>=t).length; });
+  return counts;
+}
+function renderAgingHtml(){
+  const counts=computeAgingCounts();
+  return AGING_THRESHOLDS.map(t=>`<div class="kpi ${t>=30?'r':''}"><div class="kpi-label">${t}+ Days</div><div class="kpi-val">${counts[t]}</div></div>`).join('');
+}
+function computeEscalationCandidates(){
+  return DB.quotations.filter(q=>isActiveQuotation(q) && !q.escalated && daysSinceLastContact(q)>=ESCALATION_THRESHOLD_DAYS)
+    .sort((a,b)=>daysSinceLastContact(b)-daysSinceLastContact(a));
+}
+function escalateQuotation(id){
+  const q=DB.quotations.find(x=>x.id===id); if(!q) return;
+  q.escalated=true; q.escalatedAt=Date.now();
+  if(q.priority!=='High') q.priority='High';
+  q.updatedAt=Date.now();
+  logActivity(q,'status',`Escalated — no follow-up for ${daysSinceLastContact(q)} days`);
+  persist();
+  renderDashboard();
+}
+function escalationRowsHtml(list){
+  if(!list.length) return '<div class="empty">Nothing needs escalation right now.</div>';
+  return list.map(q=>`<div class="reminder-row">
+    <span><span class="tag tag-red">${daysSinceLastContact(q)}d</span> ${escHtml(q.clientName)||'—'} · <span class="mono">${escHtml(q.quoteNo)}</span> — ${statusTag(q.status)}</span>
+    <span class="chip-row">
+      <button class="btn btn-sm" onclick="openEditor('${q.id}')">Open</button>
+      <button class="btn btn-sm btn-red" onclick="escalateQuotation('${q.id}')">🚩 Escalate</button>
+    </span>
+  </div>`).join('');
+}
+function computeTodayActivity(){
+  const today=new Date().toISOString().slice(0,10);
+  const allFu=DB.quotations.flatMap(q=>(q.followUps||[]));
+  const todays=allFu.filter(f=>f.date===today);
+  return {
+    meetings: todays.filter(f=>f.mode==='Office Meeting'||f.mode==='Video Meeting').length,
+    siteVisits: todays.filter(f=>f.mode==='Site Visit').length,
+    quotationsCreatedToday: DB.quotations.filter(q=>q.date===today).length
+  };
+}
+function computePendingRevisions(){
+  return DB.quotations.reduce((s,q)=>s+(q.revisionHistory||[]).filter(r=>r.approvalStatus==='Pending').length,0);
+}
+function computeMonthStats(){
+  const ym=new Date().toISOString().slice(0,7);
+  const list=DB.quotations;
+  const createdThisMonth=list.filter(q=>q.date&&q.date.slice(0,7)===ym);
+  const wonThisMonth=list.filter(q=>q.wonDate&&q.wonDate.slice(0,7)===ym);
+  const lostThisMonth=list.filter(q=>q.lostDate&&q.lostDate.slice(0,7)===ym);
+  const quotationValue=createdThisMonth.reduce((s,q)=>s+grandTotal(q),0);
+  const wonValue=wonThisMonth.reduce((s,q)=>s+finalPayable(q),0);
+  const wonCount=wonThisMonth.length, lostCount=lostThisMonth.length;
+  const conv=(wonCount+lostCount)>0 ? (wonCount/(wonCount+lostCount)*100) : null;
+  return {quotationValue,wonValue,wonCount,lostCount,conv,createdCount:createdThisMonth.length};
+}
+function monthStatsHtml(){
+  const m=computeMonthStats();
+  return `
+  <div class="summary-line"><span>Quotations Created</span><span class="v">${m.createdCount}</span></div>
+  <div class="summary-line"><span>Quotation Value</span><span class="v">${INR(m.quotationValue)}</span></div>
+  <div class="summary-line"><span>Won</span><span class="v">${m.wonCount} · ${INR(m.wonValue)}</span></div>
+  <div class="summary-line"><span>Lost</span><span class="v">${m.lostCount}</span></div>
+  <div class="summary-line final"><span>Conversion Rate</span><span class="v">${m.conv==null?'—':m.conv.toFixed(0)+'%'}</span></div>`;
+}
+function computeTopPerformers(){
+  const won=DB.quotations.filter(q=>WON_STATUSES.includes(q.status));
+  function topBy(keyFn,nameFn){
+    const map={};
+    won.forEach(q=>{ const key=keyFn(q); if(!key) return; map[key]=(map[key]||0)+finalPayable(q); });
+    const entries=Object.entries(map).sort((a,b)=>b[1]-a[1]);
+    if(!entries.length) return null;
+    return {name:nameFn?nameFn(entries[0][0]):entries[0][0], value:entries[0][1]};
+  }
+  return {
+    topLeadSource: topBy(q=>q.leadSource),
+    topArchitect: topBy(q=>q.leadSource==='Architect'?q.leadSourceRefId:null, id=>(DB.architects.find(a=>a.id===id)||{}).name||'—'),
+    topBuilder: topBy(q=>q.leadSource==='Builder'?q.leadSourceRefId:null, id=>(DB.builders.find(a=>a.id===id)||{}).name||'—'),
+    topB2B: topBy(q=>q.leadSource==='B2B Partner'?q.leadSourceRefId:null, id=>(DB.b2bPartners.find(a=>a.id===id)||{}).name||'—')
+  };
+}
+function topPerformersHtml(){
+  const t=computeTopPerformers();
+  const row=(label,entry)=>`<div class="summary-line"><span>${label}</span><span class="v">${entry?escHtml(entry.name)+' · '+INR(entry.value):'—'}</span></div>`;
+  return row('Top Lead Source',t.topLeadSource)+row('Top Architect',t.topArchitect)+row('Top Builder',t.topBuilder)+row('Top B2B Partner',t.topB2B);
+}
+function computeRecentActivityFeed(limit){
+  const all=DB.quotations.flatMap(q=>(q.activity||[]).map(a=>({...a,quoteNo:q.quoteNo,clientName:q.clientName,qid:q.id})));
+  return all.sort((a,b)=>b.ts-a.ts).slice(0,limit||10);
+}
+function recentActivityHtml(){
+  const feed=computeRecentActivityFeed(10);
+  if(!feed.length) return '<div class="empty">No activity yet.</div>';
+  return feed.map(a=>`<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+    <div style="font-size:16px">${ACTIVITY_ICONS[a.type]||'•'}</div>
+    <div style="flex:1"><div>${escHtml(a.clientName)||'—'} · <span class="mono">${escHtml(a.quoteNo)}</span> — ${escHtml(a.text)}</div><div class="small">${new Date(a.ts).toLocaleString('en-IN')}</div></div>
+    <button class="btn btn-sm" onclick="openEditor('${a.qid}')">Open</button>
+  </div>`).join('');
+}
+function renderDashboard(){
+  const list=DB.quotations;
+  const draft=list.filter(q=>q.status==='Draft').length;
+  const wonVal=list.filter(q=>WON_STATUSES.includes(q.status)).reduce((s,q)=>s+finalPayable(q),0);
+  const thisMonth=list.filter(q=>q.date && q.date.slice(0,7)===new Date().toISOString().slice(0,7)).length;
+  document.getElementById('dash-kpis').innerHTML=`
+    <div class="kpi gold"><div class="kpi-label">Total Quotations</div><div class="kpi-val">${list.length}</div></div>
+    <div class="kpi b"><div class="kpi-label">Draft</div><div class="kpi-val">${draft}</div></div>
+    <div class="kpi g"><div class="kpi-label">Won Value</div><div class="kpi-val" style="font-size:16px">${INR(wonVal)}</div></div>
+    <div class="kpi"><div class="kpi-label">Created This Month</div><div class="kpi-val">${thisMonth}</div></div>`;
+
+  const t=computeTodayActivity();
+  const pendingRev=computePendingRevisions();
+  document.getElementById('dash-kpis2').innerHTML=`
+    <div class="kpi"><div class="kpi-label">Quotations Today</div><div class="kpi-val">${t.quotationsCreatedToday}</div></div>
+    <div class="kpi"><div class="kpi-label">Meetings Today</div><div class="kpi-val">${t.meetings}</div></div>
+    <div class="kpi"><div class="kpi-label">Site Visits Today</div><div class="kpi-val">${t.siteVisits}</div></div>
+    <div class="kpi ${pendingRev?'r':''}"><div class="kpi-label">Pending Revisions</div><div class="kpi-val">${pendingRev}</div></div>`;
+
+  const esc=computeEscalationCandidates();
+  document.getElementById('dash-escalations-card').style.display = esc.length ? '' : 'none';
+  document.getElementById('dash-escalations').innerHTML = escalationRowsHtml(esc);
+
+  const rem=computeReminders();
+  document.getElementById('dash-reminders').innerHTML =
+    reminderRowsHtml(rem.overdue,'Overdue Follow-ups','None — nothing overdue.',true)+
+    reminderRowsHtml(rem.today,"Today's Follow-ups",'Nothing scheduled for today.')+
+    reminderRowsHtml(rem.tomorrow,"Tomorrow's Follow-ups",'Nothing scheduled for tomorrow.');
+
+  document.getElementById('dash-aging').innerHTML = renderAgingHtml();
+  document.getElementById('dash-month').innerHTML = monthStatsHtml();
+  document.getElementById('dash-top').innerHTML = topPerformersHtml();
+  document.getElementById('dash-activity').innerHTML = recentActivityHtml();
+
+  const recent=[...list].sort((a,b)=>b.updatedAt-a.updatedAt).slice(0,8);
+  document.getElementById('dash-recent').innerHTML = recent.length ? recent.map(q=>`<tr>
+     <td class="mono">${escHtml(q.quoteNo)}</td><td>${escHtml(q.clientName)||'—'}</td><td>${escHtml(q.projectName)||'—'}</td><td>${fmtDate(q.date)}</td><td>${statusTag(q.status)}</td>
+     <td class="right mono">${INR(finalPayable(q))}</td>
+     <td><button class="btn btn-sm" onclick="openEditor('${q.id}')">Open</button></td>
+  </tr>`).join('') : '<tr><td colspan="7" class="empty">No quotations yet. Click "+ New Quotation" to create your first one.</td></tr>';
+}
+
+/* ============================== QUOTATIONS LIST ============================== */
+function populateStatusFilter(){
+  const sel=document.getElementById('q-status-f');
+  if(sel.options.length>1) return;
+  sel.innerHTML='<option value="">All Status</option>'+STATUS_GROUPS.map(g=>`<optgroup label="${escHtml(g.label)}">${g.statuses.map(s=>`<option>${s}</option>`).join('')}</optgroup>`).join('');
+}
+function populateAdvFilterOptions(){
+  const sel=document.getElementById('af-leadsource');
+  if(sel.options.length>1) return;
+  sel.innerHTML='<option value="">Any</option>'+LEAD_SOURCES.map(s=>`<option>${s}</option>`).join('');
+}
+function toggleAdvancedFilters(){
+  const el=document.getElementById('adv-filters');
+  el.style.display = el.style.display==='none' ? '' : 'none';
+}
+function clearAdvancedFilters(){
+  ['af-leadsource','af-priority','af-salesexec','af-datefrom','af-dateto','af-minamt','af-maxamt'].forEach(id=>document.getElementById(id).value='');
+  renderQuotations();
+}
+function getFilteredQuotations(){
+  populateStatusFilter();
+  populateAdvFilterOptions();
+  const search=(document.getElementById('q-search')?.value||'').toLowerCase();
+  const statusF=document.getElementById('q-status-f')?.value||'';
+  const leadSourceF=document.getElementById('af-leadsource')?.value||'';
+  const priorityF=document.getElementById('af-priority')?.value||'';
+  const salesExecF=(document.getElementById('af-salesexec')?.value||'').toLowerCase();
+  const dateFrom=document.getElementById('af-datefrom')?.value||'';
+  const dateTo=document.getElementById('af-dateto')?.value||'';
+  const minAmt=num(document.getElementById('af-minamt')?.value,null);
+  const maxAmt=num(document.getElementById('af-maxamt')?.value,null);
+  return DB.quotations.filter(q=>{
+    if(statusF && q.status!==statusF) return false;
+    if(search && !((q.clientName||'')+(q.projectName||'')+(q.quoteNo||'')).toLowerCase().includes(search)) return false;
+    if(leadSourceF && q.leadSource!==leadSourceF) return false;
+    if(priorityF && q.priority!==priorityF) return false;
+    if(salesExecF && !(q.salesExecutive||'').toLowerCase().includes(salesExecF)) return false;
+    if(dateFrom && (!q.date || q.date<dateFrom)) return false;
+    if(dateTo && (!q.date || q.date>dateTo)) return false;
+    const amt=finalPayable(q);
+    if(minAmt!=null && document.getElementById('af-minamt').value!=='' && amt<minAmt) return false;
+    if(maxAmt!=null && document.getElementById('af-maxamt').value!=='' && amt>maxAmt) return false;
+    return true;
+  }).sort((a,b)=>b.updatedAt-a.updatedAt);
+}
+function renderQuotations(){
+  const tb=document.getElementById('tb-quotations');
+  const today=new Date().toISOString().slice(0,10);
+  const list=getFilteredQuotations();
+  if(!list.length){ tb.innerHTML='<tr><td colspan="10" class="empty">No quotations found.</td></tr>'; return; }
+  tb.innerHTML=list.map(q=>`<tr>
+    <td class="mono">${escHtml(q.quoteNo)}</td>
+    <td>${escHtml(q.clientName)||'—'}</td>
+    <td>${escHtml(q.projectName)||'—'}</td>
+    <td>${fmtDate(q.date)}</td>
+    <td>${statusTag(q.status)}</td>
+    <td><span class="tag ${q.priority==='High'?'tag-red':q.priority==='Low'?'tag-grey':'tag-amber'}">${escHtml(q.priority||'Medium')}</span></td>
+    <td>${q.nextFollowUpDate?`<span class="${q.nextFollowUpDate<today?'tag tag-red':''}">${fmtDate(q.nextFollowUpDate)}</span>`:'—'}</td>
+    <td class="right mono">${INR(grandTotal(q))}</td>
+    <td class="right mono bold">${INR(finalPayable(q))}</td>
+    <td>
+      <button class="btn btn-sm" onclick="openEditor('${q.id}')">Open</button>
+      <button class="btn btn-sm btn-outline" onclick="duplicateQuotation('${q.id}')">Duplicate</button>
+      <button class="btn btn-sm btn-red" onclick="deleteQuotation('${q.id}')">Delete</button>
+    </td>
+  </tr>`).join('');
+}
+async function exportQuotationsList(format){
+  const list=getFilteredQuotations();
+  if(!list.length){ alert('No quotations match the current filters.'); return; }
+  const header=['Quote No.','Client','Project','Location','Date','Status','Lead Source','Sales Executive','Priority','Next Follow-up','Grand Total','Final Payable'];
+  const rows=list.map(q=>[q.quoteNo,q.clientName||'',q.projectName||'',q.projectLocation||'',q.date||'',q.status||'',q.leadSource||'',q.salesExecutive||'',q.priority||'',q.nextFollowUpDate||'',grandTotal(q),finalPayable(q)]);
+  if(format==='csv'){
+    const csvEscape=v=>{ const s=String(v??''); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+    const csv=[header,...rows].map(r=>r.map(csvEscape).join(',')).join('\r\n');
+    const blob=new Blob([csv],{type:'text/csv'});
+    await saveBlobToDisk(blob,'Quotations_Report.csv','text/csv','CSV File',['.csv']);
+  } else {
+    const ws=XLSX.utils.aoa_to_sheet([header,...rows]);
+    ws['!cols']=[{wch:12},{wch:22},{wch:22},{wch:20},{wch:12},{wch:20},{wch:16},{wch:16},{wch:10},{wch:14},{wch:14},{wch:14}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,'Quotations');
+    const out=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+    const blob=new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    await saveBlobToDisk(blob,'Quotations_Report.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Excel Workbook',['.xlsx']);
+  }
+}
+
+/* ============================== KANBAN BOARD ============================== */
+function renderKanban(){
+  const board=document.getElementById('kanban-board');
+  board.innerHTML=STATUS_GROUPS.map(g=>{
+    const list=DB.quotations.filter(q=>g.statuses.includes(q.status)).sort((a,b)=>b.updatedAt-a.updatedAt);
+    const value=list.reduce((s,q)=>s+grandTotal(q),0);
+    return `<div class="kanban-col" data-group="${escHtml(g.label)}" ondragover="kanbanDragOver(event)" ondragleave="kanbanDragLeave(event)" ondrop="kanbanDrop(event,'${g.label}')">
+      <div class="kanban-col-hd"><span>${escHtml(g.label)} (${list.length})</span><span>${INR(value)}</span></div>
+      ${list.length?list.map(q=>`<div class="kanban-card" draggable="true" ondragstart="kanbanDragStart(event,'${q.id}')" ondragend="kanbanDragEnd(event)" onclick="openEditor('${q.id}')">
+        <div class="kanban-card-title">${escHtml(q.clientName)||'—'}</div>
+        <div class="small">${escHtml(q.quoteNo)}</div>
+        <div class="small">${statusTag(q.status)}</div>
+        <div class="kanban-card-meta"><span class="mono">${INR(finalPayable(q))}</span><span class="tag ${q.priority==='High'?'tag-red':q.priority==='Low'?'tag-grey':'tag-amber'}">${escHtml(q.priority||'Medium')}</span></div>
+      </div>`).join(''):'<div class="small" style="text-align:center;padding:14px 0">No quotations</div>'}
+    </div>`;
+  }).join('');
+}
+let _kanbanDragId=null;
+function kanbanDragStart(e,id){ _kanbanDragId=id; e.target.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; }
+function kanbanDragEnd(e){ e.target.classList.remove('dragging'); }
+function kanbanDragOver(e){ e.preventDefault(); e.currentTarget.classList.add('dragover'); }
+function kanbanDragLeave(e){ e.currentTarget.classList.remove('dragover'); }
+function kanbanDrop(e,groupLabel){
+  e.preventDefault();
+  e.currentTarget.classList.remove('dragover');
+  const id=_kanbanDragId; _kanbanDragId=null;
+  if(!id) return;
+  const q=DB.quotations.find(x=>x.id===id); if(!q) return;
+  const group=STATUS_GROUPS.find(g=>g.label===groupLabel);
+  if(group.statuses.includes(q.status)) return;
+  openStatusPickerModal(id,group);
+}
+function openStatusPickerModal(id,group){
+  const q=DB.quotations.find(x=>x.id===id); if(!q) return;
+  openModalHtml(`
+    <div class="modal-hd"><div class="modal-title">Move "${escHtml(q.clientName)||q.quoteNo}" to ${escHtml(group.label)}</div><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="card-sub" style="margin-bottom:10px">Pick the exact status</div>
+    <div class="chip-row" style="flex-wrap:wrap">
+      ${group.statuses.map(s=>`<button class="btn btn-sm" onclick="kanbanPickStatus('${id}','${s}')">${s}</button>`).join('')}
+    </div>
+  `);
+}
+function kanbanPickStatus(id,status){
+  currentEditId=id;
+  closeModal();
+  changeStatus(status);
+}
+
+/* ============================== CALENDAR ============================== */
+let _calYear=new Date().getFullYear(), _calMonth=new Date().getMonth();
+function calNavigate(dir){
+  if(dir===0){ _calYear=new Date().getFullYear(); _calMonth=new Date().getMonth(); }
+  else { _calMonth+=dir; if(_calMonth<0){_calMonth=11;_calYear--;} if(_calMonth>11){_calMonth=0;_calYear++;} }
+  document.getElementById('cal-day-detail').style.display='none';
+  renderCalendar();
+}
+function followUpsByDate(){
+  const map={};
+  DB.quotations.forEach(q=>(q.followUps||[]).forEach(fu=>{
+    if(!fu.date) return;
+    if(!map[fu.date]) map[fu.date]=[];
+    map[fu.date].push({...fu,quoteNo:q.quoteNo,clientName:q.clientName,qid:q.id});
+  }));
+  return map;
+}
+function renderCalendar(){
+  const dow=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  document.getElementById('cal-dow-row').innerHTML=dow.map(d=>`<div class="cal-dow">${d}</div>`).join('');
+  const first=new Date(_calYear,_calMonth,1);
+  const startDow=first.getDay();
+  const daysInMonth=new Date(_calYear,_calMonth+1,0).getDate();
+  const todayStr=new Date().toISOString().slice(0,10);
+  const fuMap=followUpsByDate();
+  document.getElementById('cal-month-label').textContent=first.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+  let cells='';
+  for(let i=0;i<startDow;i++) cells+='<div class="cal-day empty"></div>';
+  for(let d=1;d<=daysInMonth;d++){
+    const dateStr=`${_calYear}-${String(_calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const items=fuMap[dateStr]||[];
+    cells+=`<div class="cal-day ${dateStr===todayStr?'today':''}" onclick="calShowDay('${dateStr}')">
+      <div class="cal-day-num">${d}</div>
+      ${items.length?`<span class="cal-day-count">${items.length}</span>`:''}
+    </div>`;
+  }
+  document.getElementById('cal-grid').innerHTML=cells;
+}
+function calShowDay(dateStr){
+  const fuMap=followUpsByDate();
+  const items=fuMap[dateStr]||[];
+  document.getElementById('cal-day-detail').style.display='';
+  document.getElementById('cal-day-title').textContent=fmtDate(dateStr)+` — ${items.length} follow-up${items.length!==1?'s':''}`;
+  document.getElementById('cal-day-list').innerHTML = items.length ? items.map(fu=>`<div class="reminder-row">
+    <span>${escHtml(fu.time||'')} ${escHtml(fu.clientName)||'—'} · <span class="mono">${escHtml(fu.quoteNo)}</span> — ${escHtml(fu.mode||'')}${fu.summary?': '+escHtml(fu.summary):''}</span>
+    <button class="btn btn-sm" onclick="openEditor('${fu.qid}')">Open</button>
+  </div>`).join('') : '<div class="empty">No follow-ups on this day.</div>';
+}
+
+/* ============================== EDITOR ============================== */
+function qSet(field,val){ const q=curQ(); if(!q) return; q[field]=val; q.updatedAt=Date.now(); persist(); document.getElementById('ed-sub').textContent=subtitleText(q); }
+function qSetTerm(field,val){ const q=curQ(); if(!q) return; q.terms[field]=val; q.updatedAt=Date.now(); persist(); }
+function qSetBank(field,val){ const q=curQ(); if(!q) return; q.terms.bank[field]=val; q.updatedAt=Date.now(); persist(); }
+function subtitleText(q){ return `${q.status} · Rev ${q.revisionNo||1} · Last saved ${new Date(q.updatedAt).toLocaleTimeString('en-IN')}`; }
+
+/* ---- Modal helpers ---- */
+function openModalHtml(html){ document.getElementById('modal-box').innerHTML=html; document.getElementById('modal-bg').classList.add('open'); }
+function closeModal(){ document.getElementById('modal-bg').classList.remove('open'); document.getElementById('modal-box').innerHTML=''; }
+
+/* ---- Status lifecycle ---- */
+let _pendingLossPrevStatus=null;
+function changeStatus(newStatus){
+  const q=curQ(); if(!q) return;
+  const prev=q.status;
+  if(prev===newStatus) return;
+  if(newStatus==='Lost'){ openLossReasonModal(prev); return; }
+  const remarks=prompt('Remarks for this status change (optional):','')||'';
+  applyStatusChange(q,prev,newStatus,remarks);
+}
+function applyStatusChange(q,prev,newStatus,remarks){
+  q.status=newStatus;
+  q.updatedAt=Date.now();
+  const today=new Date().toISOString().slice(0,10);
+  if(WON_STATUSES.includes(newStatus) && !WON_STATUSES.includes(prev)) q.wonDate=today;
+  if(newStatus==='Lost') q.lostDate=today;
+  logActivity(q,'status',`Status changed: "${prev}" → "${newStatus}"${remarks?' — '+remarks:''}`);
+  persist();
+  renderEditor();
+  renderQuotations();
+  renderDashboard();
+  if(document.getElementById('kanban-board')) renderKanban();
+}
+function openLossReasonModal(prevStatus){
+  const q=curQ();
+  _pendingLossPrevStatus=prevStatus;
+  const checked=new Set(q.lossReasons||[]);
+  openModalHtml(`
+    <div class="modal-hd"><div class="modal-title">Why was this quotation lost?</div><button class="modal-close" onclick="cancelLostStatus()">✕</button></div>
+    <div class="checkbox-list">
+      ${LOSS_REASONS.map(r=>`<label><input type="checkbox" value="${escHtml(r)}" ${checked.has(r)?'checked':''}> ${escHtml(r)}</label>`).join('')}
+    </div>
+    <div class="frow" style="margin-top:10px"><label class="fl">Remarks</label><textarea class="inp" id="loss-remarks" rows="3">${escHtml(q.lossRemarks||'')}</textarea></div>
+    <div class="modal-ft">
+      <button class="btn btn-outline" onclick="cancelLostStatus()">Cancel</button>
+      <button class="btn btn-red" onclick="confirmLostStatus()">Mark as Lost</button>
+    </div>
+  `);
+}
+function cancelLostStatus(){ closeModal(); _pendingLossPrevStatus=null; renderEditor(); }
+function confirmLostStatus(){
+  const q=curQ();
+  const reasons=Array.from(document.querySelectorAll('#modal-box .checkbox-list input:checked')).map(x=>x.value);
+  if(!reasons.length){ alert('Please select at least one reason.'); return; }
+  q.lossReasons=reasons;
+  q.lossRemarks=document.getElementById('loss-remarks').value||'';
+  const prev=_pendingLossPrevStatus;
+  closeModal();
+  applyStatusChange(q,prev,'Lost','Reasons: '+reasons.join(', '));
+  _pendingLossPrevStatus=null;
+}
+
+function renderEditor(){
+  const q=curQ();
+  if(!q){ nav('quotations',null); return; }
+  document.getElementById('ed-title').textContent=q.clientName?`Quotation — ${q.clientName}`:'New Quotation';
+  document.getElementById('ed-sub').textContent=subtitleText(q);
+  document.getElementById('ed-quoteno').textContent=q.quoteNo;
+  document.getElementById('ed-client').value=q.clientName||'';
+  document.getElementById('ed-project').value=q.projectName||'';
+  document.getElementById('ed-location').value=q.projectLocation||'';
+  document.getElementById('ed-refno').value=q.clientRefNo||'';
+  document.getElementById('ed-date').value=q.date||'';
+  document.getElementById('ed-rev').value=q.revisionNo||1;
+  document.getElementById('ed-preparedby').value=q.preparedBy||'';
+  document.getElementById('ed-validity').value=q.validityDays||14;
+  document.getElementById('ed-inclprofile').checked=!!q.includeCompanyProfile;
+  document.getElementById('ed-welcome').value=q.welcomeNote||'';
+  document.getElementById('ed-disctype').value=q.discountType||'flat';
+  document.getElementById('ed-discval').value=q.discountValue||0;
+  document.getElementById('ed-gst').value=q.gstPct||0;
+  document.getElementById('ed-scope').value=q.terms.scope||'';
+  document.getElementById('ed-warranty').value=q.terms.warranty||'';
+  document.getElementById('ed-delivery').value=q.terms.deliveryTimeline||'';
+  document.getElementById('ed-taxes').value=q.terms.taxesNote||'';
+  document.getElementById('ed-acceptance').value=q.terms.acceptanceText||'';
+  document.getElementById('ed-bank-name').value=q.terms.bank.accName||'';
+  document.getElementById('ed-bank-no').value=q.terms.bank.accNo||'';
+  document.getElementById('ed-bank-ifsc').value=q.terms.bank.ifsc||'';
+  document.getElementById('ed-bank-branch').value=q.terms.bank.bank||'';
+  document.getElementById('ed-bank-type').value=q.terms.bank.type||'';
+  renderBoq();
+  renderMaterialSpecs();
+  renderInclusions();
+  renderExclusions();
+  renderPaymentRows();
+  renderSummary();
+  renderSalesTab();
+}
+
+/* ---- Editor tabs ---- */
+function showEditorTab(tab,el){
+  document.querySelectorAll('.etab').forEach(e=>e.classList.remove('active'));
+  document.getElementById('etab-'+tab).classList.add('active');
+  document.querySelectorAll('#editor-tabs .tab-btn').forEach(b=>b.classList.remove('active'));
+  if(el) el.classList.add('active');
+  if(tab==='followups') renderFollowUps();
+  if(tab==='timeline') renderTimeline();
+  if(tab==='revisions') renderRevisions();
+}
+
+/* ---- Sales Tracking tab ---- */
+function populateLeadRefDropdown(leadSource,selectedId){
+  const wrap=document.getElementById('ed-leadref-wrap');
+  const sel=document.getElementById('ed-leadref');
+  const label=document.getElementById('ed-leadref-label');
+  const listKey=LEAD_SOURCE_PARTNER_TYPE[leadSource];
+  if(listKey){
+    wrap.style.display='';
+    label.textContent = leadSource==='Staff' ? 'Staff Member' : leadSource+' Name';
+    const list=DB[listKey]||[];
+    sel.innerHTML='<option value="">Select…</option>'+list.map(p=>`<option value="${p.id}" ${p.id===selectedId?'selected':''}>${escHtml(p.name)}${p.company?' — '+escHtml(p.company):''}</option>`).join('');
+  } else {
+    wrap.style.display='none';
+    sel.innerHTML='';
+  }
+}
+function onLeadSourceChange(val){
+  const q=curQ(); if(!q) return;
+  q.leadSource=val; q.leadSourceRefId=''; q.updatedAt=Date.now(); persist();
+  populateLeadRefDropdown(val,'');
+}
+function renderSalesTab(){
+  const q=curQ(); if(!q) return;
+  const lsSel=document.getElementById('ed-leadsource');
+  if(!lsSel.options.length) lsSel.innerHTML='<option value="">Select…</option>'+LEAD_SOURCES.map(s=>`<option>${s}</option>`).join('');
+  lsSel.value=q.leadSource||'';
+  populateLeadRefDropdown(q.leadSource||'',q.leadSourceRefId||'');
+  document.getElementById('ed-designer').value=q.designer||'';
+  document.getElementById('ed-estimator').value=q.estimator||'';
+  document.getElementById('ed-salesexec').value=q.salesExecutive||'';
+  document.getElementById('ed-priority').value=q.priority||'Medium';
+  document.getElementById('ed-winprob').value=q.winProbability??50;
+  document.getElementById('ed-projtype').value=q.projectType||'';
+  document.getElementById('ed-closedate').value=q.expectedClosingDate||'';
+  const statusSel=document.getElementById('ed-status');
+  if(!statusSel.options.length) statusSel.innerHTML=STATUS_GROUPS.map(g=>`<optgroup label="${escHtml(g.label)}">${g.statuses.map(s=>`<option>${s}</option>`).join('')}</optgroup>`).join('');
+  statusSel.value=q.status||'Draft';
+  document.getElementById('ed-remarks').value=q.remarks||'';
+}
+
+/* ---- Follow-ups tab ---- */
+function renderFollowUps(){
+  const staffSel=document.getElementById('fu-staff');
+  staffSel.innerHTML='<option value="">—</option>'+(DB.staff||[]).map(s=>`<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
+  const modeSel=document.getElementById('fu-mode');
+  if(!modeSel.options.length) modeSel.innerHTML=FOLLOWUP_MODES.map(m=>`<option>${m}</option>`).join('');
+  document.getElementById('fu-date').value=new Date().toISOString().slice(0,10);
+  renderFollowUpList();
+}
+function addFollowUp(){
+  const q=curQ(); if(!q) return;
+  const staffId=document.getElementById('fu-staff').value;
+  const staffName=((DB.staff||[]).find(s=>s.id===staffId)||{}).name||'';
+  const fu={
+    id:uid('FU'),
+    date:document.getElementById('fu-date').value||new Date().toISOString().slice(0,10),
+    time:document.getElementById('fu-time').value||'',
+    staffId, staffName,
+    department:document.getElementById('fu-dept').value||'',
+    mode:document.getElementById('fu-mode').value||'',
+    summary:document.getElementById('fu-summary').value||'',
+    clientResponse:document.getElementById('fu-response').value||'',
+    interestLevel:document.getElementById('fu-interest').value||'',
+    objections:document.getElementById('fu-objections').value||'',
+    nextAction:document.getElementById('fu-nextaction').value||'',
+    reminderDate:document.getElementById('fu-remdate').value||'',
+    reminderTime:document.getElementById('fu-remtime').value||'',
+    expectedDecisionDate:document.getElementById('fu-decdate').value||'',
+    outcome:document.getElementById('fu-outcome').value||'',
+    createdAt:Date.now()
+  };
+  if(!Array.isArray(q.followUps)) q.followUps=[];
+  q.followUps.push(fu);
+  if(fu.reminderDate) q.nextFollowUpDate=fu.reminderDate;
+  q.updatedAt=Date.now();
+  logActivity(q,'followup',`Follow-up logged (${fu.mode||'—'}) by ${fu.staffName||'—'}${fu.summary?': '+fu.summary:''}`);
+  persist();
+  ['fu-dept','fu-summary','fu-response','fu-objections','fu-nextaction','fu-remdate','fu-remtime','fu-decdate','fu-outcome'].forEach(id=>document.getElementById(id).value='');
+  renderFollowUpList();
+  renderDashboard();
+}
+function renderFollowUpList(){
+  const q=curQ(); if(!q) return;
+  const list=[...(q.followUps||[])].sort((a,b)=>b.createdAt-a.createdAt);
+  document.getElementById('followup-list').innerHTML = list.length ? list.map(fu=>`
+    <div class="card" style="margin-bottom:10px;padding:12px 14px">
+      <div class="chip-row" style="justify-content:space-between">
+        <span class="bold">${fmtDate(fu.date)} ${escHtml(fu.time||'')} · ${escHtml(fu.mode||'—')}</span>
+        <span class="tag ${fu.interestLevel==='Hot'?'tag-red':fu.interestLevel==='Warm'?'tag-amber':'tag-blue'}">${escHtml(fu.interestLevel||'—')}</span>
+      </div>
+      <div class="small" style="margin-top:4px">By ${escHtml(fu.staffName||'—')}${fu.department?' · '+escHtml(fu.department):''}</div>
+      ${fu.summary?`<div style="margin-top:6px">${escHtml(fu.summary)}</div>`:''}
+      ${fu.clientResponse?`<div class="small" style="margin-top:4px"><b>Client response:</b> ${escHtml(fu.clientResponse)}</div>`:''}
+      ${fu.objections?`<div class="small"><b>Objections:</b> ${escHtml(fu.objections)}</div>`:''}
+      ${fu.nextAction?`<div class="small"><b>Next action:</b> ${escHtml(fu.nextAction)}</div>`:''}
+      ${fu.reminderDate?`<div class="small"><b>Reminder:</b> ${fmtDate(fu.reminderDate)} ${escHtml(fu.reminderTime||'')}</div>`:''}
+      ${fu.expectedDecisionDate?`<div class="small"><b>Expected decision:</b> ${fmtDate(fu.expectedDecisionDate)}</div>`:''}
+      ${fu.outcome?`<div class="small" style="margin-top:4px"><b>Outcome:</b> ${escHtml(fu.outcome)}</div>`:''}
+    </div>`).join('') : '<div class="empty">No follow-ups logged yet.</div>';
+}
+
+/* ---- Timeline tab ---- */
+function renderTimeline(){
+  const q=curQ(); if(!q) return;
+  const list=[...(q.activity||[])].sort((a,b)=>b.ts-a.ts);
+  document.getElementById('timeline-list').innerHTML = list.length ? list.map(a=>`
+    <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <div style="font-size:16px">${ACTIVITY_ICONS[a.type]||'•'}</div>
+      <div><div>${escHtml(a.text)}</div><div class="small">${new Date(a.ts).toLocaleString('en-IN')}</div></div>
+    </div>`).join('') : '<div class="empty">No activity recorded yet.</div>';
+}
+
+/* ---- Revisions tab ---- */
+function saveNewRevision(){
+  const q=curQ(); if(!q) return;
+  const reason=prompt('Reason for this revision (e.g. client requested material change):','')||'';
+  const amount=finalPayable(q);
+  const last=(q.revisionHistory||[]).slice(-1)[0];
+  const prevAmount=last?last.amount:0;
+  const diff=amount-prevAmount;
+  const pct=prevAmount?(diff/prevAmount*100):0;
+  q.revisionNo=(q.revisionNo||1)+1;
+  if(!Array.isArray(q.revisionHistory)) q.revisionHistory=[];
+  q.revisionHistory.push({revisionNo:q.revisionNo,date:new Date().toISOString().slice(0,10),amount,amountDiff:diff,pctChange:pct,reason,preparedBy:q.preparedBy||'',approvalStatus:'Pending'});
+  q.updatedAt=Date.now();
+  logActivity(q,'revision',`Revision ${q.revisionNo} saved — ${INR(amount)}${reason?' ('+reason+')':''}`);
+  persist();
+  renderRevisions();
+  document.getElementById('ed-rev').value=q.revisionNo;
+  document.getElementById('ed-sub').textContent=subtitleText(q);
+}
+function revisionApprovalChange(idx,val){ const q=curQ(); q.revisionHistory[idx].approvalStatus=val; persist(); }
+function renderRevisions(){
+  const q=curQ(); if(!q) return;
+  const list=[...(q.revisionHistory||[])].sort((a,b)=>b.revisionNo-a.revisionNo);
+  document.getElementById('revision-tb').innerHTML = list.length ? list.map(r=>{
+    const idx=q.revisionHistory.indexOf(r);
+    return `<tr>
+      <td class="bold">Rev ${r.revisionNo}</td><td>${fmtDate(r.date)}</td><td class="right mono">${INR(r.amount)}</td>
+      <td class="right mono" style="color:${r.amountDiff>0?'var(--red)':r.amountDiff<0?'var(--green)':'inherit'}">${r.amountDiff>=0?'+':''}${INR(r.amountDiff)} (${r.pctChange.toFixed(1)}%)</td>
+      <td>${escHtml(r.reason)||'—'}</td><td>${escHtml(r.preparedBy)||'—'}</td>
+      <td><select class="inp inp-sm" onchange="revisionApprovalChange(${idx},this.value)">${['Pending','Approved','Rejected'].map(o=>`<option ${r.approvalStatus===o?'selected':''}>${o}</option>`).join('')}</select></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="7" class="empty">No revisions saved yet. Use "+ Save New Revision" whenever you send an updated amount to the client.</td></tr>';
+}
+
+/* ---- BOQ ---- */
+function addSection(){ const q=curQ(); q.sections.push({id:uid('SEC'),name:'',items:[]}); persist(); renderBoq(); }
+function deleteSection(secId){
+  const q=curQ();
+  if(!confirm('Delete this section and all its items?')) return;
+  q.sections=q.sections.filter(s=>s.id!==secId);
+  persist(); renderBoq();
+}
+function renameSection(secId,val){ const q=curQ(); const sec=q.sections.find(s=>s.id===secId); if(sec){ sec.name=val; persist(); } }
+function addItem(secId){
+  const q=curQ(); const sec=q.sections.find(s=>s.id===secId); if(!sec) return;
+  sec.items.push({id:uid('IT'),description:'',finish:'',material:'',size:'',unit:'Nos',qty:1,unitPrice:0,notes:'',included:false,includedNote:''});
+  persist(); renderBoq();
+}
+function deleteItem(secId,itemId){
+  const q=curQ(); const sec=q.sections.find(s=>s.id===secId); if(!sec) return;
+  sec.items=sec.items.filter(i=>i.id!==itemId);
+  persist(); renderBoq();
+}
+function itemChange(secId,itemId,field,val){
+  const q=curQ(); const sec=q.sections.find(s=>s.id===secId); if(!sec) return;
+  const it=sec.items.find(i=>i.id===itemId); if(!it) return;
+  if(field==='qty'||field==='unitPrice') it[field]=num(val);
+  else if(field==='included') it.included=val;
+  else it[field]=val;
+  q.updatedAt=Date.now();
+  persist();
+
+  // Targeted DOM updates only — never rebuild the whole table here, or the
+  // browser's pending Tab focus-move lands on a node that no longer exists
+  // (blur→onchange fires before the browser focuses the next field).
+  if(field==='included'){
+    const qtyEl=document.getElementById('qty-'+itemId);
+    const priceEl=document.getElementById('price-'+itemId);
+    if(qtyEl) qtyEl.disabled=it.included;
+    if(priceEl) priceEl.disabled=it.included;
+    const wrap=document.getElementById('inclwrap-'+itemId);
+    if(wrap) wrap.innerHTML = it.included ? `<input class="inp inp-sm" style="margin-top:4px" placeholder="Incl. in Item…" value="${escHtml(it.includedNote)}" onchange="itemChange('${secId}','${itemId}','includedNote',this.value)">` : '';
+  }
+  if(field==='qty'||field==='unitPrice'||field==='included'){
+    const amtEl=document.getElementById('amt-'+itemId);
+    if(amtEl) amtEl.textContent = it.included?(it.includedNote||'Included'):INR(itemAmount(it));
+    const secTotEl=document.getElementById('sectotal-'+secId);
+    if(secTotEl) secTotEl.textContent = INR(sectionTotal(sec));
+    const grandEl=document.getElementById('boq-grand');
+    if(grandEl) grandEl.textContent = INR(grandTotal(q));
+    renderSummary();
+  }
+  if(field==='includedNote'){
+    const amtEl=document.getElementById('amt-'+itemId);
+    if(amtEl && it.included) amtEl.textContent = it.includedNote||'Included';
+  }
+}
+function renderBoq(){
+  const q=curQ();
+  const slMap=slNoMap(q);
+  const el=document.getElementById('boq-sections');
+  if(!q.sections.length){
+    el.innerHTML='<div class="empty">No sections yet. Click "+ Add Section" to start (e.g. Foyer, Living Room, Kitchen, Bedrooms…).</div>';
+  } else {
+    el.innerHTML = q.sections.map(sec=>`
+    <div class="card boq-card">
+      <div class="sec-hd" style="margin-bottom:8px">
+        <input class="inp bold" style="font-size:14px;max-width:320px" value="${escHtml(sec.name)}" placeholder="Section name (e.g. Kitchen)" onchange="renameSection('${sec.id}',this.value)">
+        <div class="chip-row">
+          <span class="small mono" id="sectotal-${sec.id}">${INR(sectionTotal(sec))}</span>
+          <button class="btn btn-sm btn-outline" onclick="addItem('${sec.id}')">+ Item</button>
+          <button class="btn btn-sm btn-red" onclick="deleteSection('${sec.id}')">✕ Section</button>
+        </div>
+      </div>
+      <div class="tbl-wrap"><table style="width:auto;min-width:1120px;table-layout:fixed">
+        <thead><tr>
+          <th style="width:30px">Sl.</th><th style="width:170px">Description</th><th style="width:120px">Finish</th>
+          <th style="width:120px">Material Spec.</th><th style="width:80px">Size</th><th style="width:70px">Unit</th>
+          <th style="width:60px">Qty</th><th style="width:90px">Unit Price</th><th style="width:80px">Incl.?</th>
+          <th style="width:130px">Notes</th><th class="right" style="width:90px">Amount</th><th style="width:36px"></th>
+        </tr></thead>
+        <tbody>${sec.items.length?sec.items.map(it=>`<tr>
+          <td>${slMap[it.id]}</td>
+          <td><input class="inp inp-sm" value="${escHtml(it.description)}" onchange="itemChange('${sec.id}','${it.id}','description',this.value)"></td>
+          <td><input class="inp inp-sm" value="${escHtml(it.finish)}" onchange="itemChange('${sec.id}','${it.id}','finish',this.value)"></td>
+          <td><input class="inp inp-sm" value="${escHtml(it.material)}" onchange="itemChange('${sec.id}','${it.id}','material',this.value)"></td>
+          <td><input class="inp inp-sm" value="${escHtml(it.size)}" placeholder="N/A" onchange="itemChange('${sec.id}','${it.id}','size',this.value)"></td>
+          <td><input class="inp inp-sm" value="${escHtml(it.unit)}" onchange="itemChange('${sec.id}','${it.id}','unit',this.value)"></td>
+          <td><input class="inp inp-sm" type="number" id="qty-${it.id}" value="${it.qty}" ${it.included?'disabled':''} onchange="itemChange('${sec.id}','${it.id}','qty',this.value)"></td>
+          <td><input class="inp inp-sm" type="number" id="price-${it.id}" value="${it.unitPrice}" ${it.included?'disabled':''} onchange="itemChange('${sec.id}','${it.id}','unitPrice',this.value)"></td>
+          <td style="text-align:center">
+            <input type="checkbox" ${it.included?'checked':''} onchange="itemChange('${sec.id}','${it.id}','included',this.checked)">
+            <div id="inclwrap-${it.id}">${it.included?`<input class="inp inp-sm" style="margin-top:4px" placeholder="Incl. in Item…" value="${escHtml(it.includedNote)}" onchange="itemChange('${sec.id}','${it.id}','includedNote',this.value)">`:''}</div>
+          </td>
+          <td><input class="inp inp-sm" value="${escHtml(it.notes)}" placeholder="e.g. by Hettich/Hafele" onchange="itemChange('${sec.id}','${it.id}','notes',this.value)"></td>
+          <td class="right mono" id="amt-${it.id}">${it.included?escHtml(it.includedNote||'Included'):INR(itemAmount(it))}</td>
+          <td><button class="btn btn-sm btn-red" onclick="deleteItem('${sec.id}','${it.id}')">✕</button></td>
+        </tr>`).join(''):'<tr><td colspan="12" class="empty">No items yet.</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>`).join('');
+  }
+  document.getElementById('boq-grand').textContent=INR(grandTotal(q));
+  renderSummary();
+}
+
+/* ---- Material Specs (per quotation) ---- */
+function addSpec(){ const q=curQ(); q.materialSpecs.push({category:'',spec:''}); persist(); renderMaterialSpecs(); }
+function specChange(i,field,val){ const q=curQ(); q.materialSpecs[i][field]=val; persist(); }
+function removeSpec(i){ const q=curQ(); q.materialSpecs.splice(i,1); persist(); renderMaterialSpecs(); }
+function renderMaterialSpecs(){
+  const q=curQ();
+  document.getElementById('specs-tb').innerHTML = q.materialSpecs.length ? q.materialSpecs.map((m,i)=>`<tr>
+    <td><input class="inp inp-sm" value="${escHtml(m.category)}" onchange="specChange(${i},'category',this.value)"></td>
+    <td><input class="inp inp-sm" value="${escHtml(m.spec)}" onchange="specChange(${i},'spec',this.value)"></td>
+    <td><button class="btn btn-sm btn-red" onclick="removeSpec(${i})">✕</button></td>
+  </tr>`).join('') : '<tr><td colspan="3" class="empty">No specification rows yet.</td></tr>';
+}
+
+/* ---- Inclusions / Exclusions (bullet lists) ---- */
+function bulletListHtml(arr,addFn,changeFn,removeFn,placeholder){
+  let html=(arr||[]).map((v,i)=>`<div class="list-line">
+    <input class="inp" value="${escHtml(v)}" placeholder="${placeholder||''}" onchange="${changeFn}(${i},this.value)">
+    <button class="btn btn-sm btn-red" type="button" onclick="${removeFn}(${i})">✕</button>
+  </div>`).join('');
+  html+=`<button class="btn btn-sm btn-outline" type="button" onclick="${addFn}()">+ Add Line</button>`;
+  return html;
+}
+function addInclusion(){ curQ().terms.inclusions.push(''); persist(); renderInclusions(); }
+function inclusionChange(i,val){ curQ().terms.inclusions[i]=val; persist(); }
+function removeInclusion(i){ curQ().terms.inclusions.splice(i,1); persist(); renderInclusions(); }
+function renderInclusions(){ document.getElementById('inclusions-list').innerHTML=bulletListHtml(curQ().terms.inclusions,'addInclusion','inclusionChange','removeInclusion','e.g. Dedicated site supervisor.'); }
+
+function addExclusion(){ curQ().terms.exclusions.push(''); persist(); renderExclusions(); }
+function exclusionChange(i,val){ curQ().terms.exclusions[i]=val; persist(); }
+function removeExclusion(i){ curQ().terms.exclusions.splice(i,1); persist(); renderExclusions(); }
+function renderExclusions(){ document.getElementById('exclusions-list').innerHTML=bulletListHtml(curQ().terms.exclusions,'addExclusion','exclusionChange','removeExclusion','e.g. Curtains and blinds.'); }
+
+/* ---- Payment schedule (per quotation) ---- */
+function addPay(){ curQ().terms.paymentSchedule.push({label:'',note:'',pct:0}); persist(); renderPaymentRows(); }
+function payChange(i,field,val){ const p=curQ().terms.paymentSchedule[i]; p[field]=field==='pct'?num(val):val; persist(); renderPaymentRows(); }
+function removePay(i){ curQ().terms.paymentSchedule.splice(i,1); persist(); renderPaymentRows(); }
+function renderPaymentRows(){
+  const rows=curQ().terms.paymentSchedule||[];
+  const sum=rows.reduce((s,p)=>s+num(p.pct),0);
+  document.getElementById('pay-tb').innerHTML = rows.length ? rows.map((p,i)=>`<tr>
+    <td><input class="inp inp-sm" value="${escHtml(p.label)}" onchange="payChange(${i},'label',this.value)"></td>
+    <td><input class="inp inp-sm" value="${escHtml(p.note)}" onchange="payChange(${i},'note',this.value)"></td>
+    <td><input class="inp inp-sm" type="number" value="${num(p.pct)}" onchange="payChange(${i},'pct',this.value)"></td>
+    <td><button class="btn btn-sm btn-red" onclick="removePay(${i})">✕</button></td>
+  </tr>`).join('') : '<tr><td colspan="4" class="empty">No payment lines yet.</td></tr>';
+  const sumEl=document.getElementById('pay-sum');
+  sumEl.textContent=sum+'%';
+  sumEl.className='tag '+(sum===100?'tag-green':'tag-amber');
+}
+
+/* ---- Pricing summary ---- */
+function renderSummary(){
+  const q=curQ(); if(!q) return;
+  document.getElementById('sum-grand').textContent=INR(grandTotal(q));
+  document.getElementById('sum-disc').textContent='- '+INR(discountAmount(q));
+  document.getElementById('sum-taxable').textContent=INR(taxableAmount(q));
+  document.getElementById('sum-gst').textContent=num(q.gstPct)>0?INR(gstAmount(q)):'Extra, as applicable';
+  document.getElementById('sum-final').textContent=INR(finalPayable(q));
+}
+
+/* ============================== SETTINGS ============================== */
+function stSet(field,val){ DB.settings[field]=val; persist(); }
+function stSetTerm(field,val){ DB.settings.defaultTerms[field]=val; persist(); }
+function stSetBank(field,val){ DB.settings.defaultTerms.bank[field]=val; persist(); }
+
+function settingsAddSpec(){ DB.settings.defaultMaterialSpecs.push({category:'',spec:''}); persist(); renderSettingsSpecs(); }
+function settingsSpecChange(i,field,val){ DB.settings.defaultMaterialSpecs[i][field]=val; persist(); }
+function settingsRemoveSpec(i){ DB.settings.defaultMaterialSpecs.splice(i,1); persist(); renderSettingsSpecs(); }
+function renderSettingsSpecs(){
+  const arr=DB.settings.defaultMaterialSpecs||[];
+  document.getElementById('st-specs-tb').innerHTML = arr.length ? arr.map((m,i)=>`<tr>
+    <td><input class="inp inp-sm" value="${escHtml(m.category)}" onchange="settingsSpecChange(${i},'category',this.value)"></td>
+    <td><input class="inp inp-sm" value="${escHtml(m.spec)}" onchange="settingsSpecChange(${i},'spec',this.value)"></td>
+    <td><button class="btn btn-sm btn-red" onclick="settingsRemoveSpec(${i})">✕</button></td>
+  </tr>`).join('') : '<tr><td colspan="3" class="empty">No rows yet.</td></tr>';
+}
+
+function settingsAddInclusion(){ DB.settings.defaultTerms.inclusions.push(''); persist(); renderSettingsInclusions(); }
+function settingsInclusionChange(i,val){ DB.settings.defaultTerms.inclusions[i]=val; persist(); }
+function settingsRemoveInclusion(i){ DB.settings.defaultTerms.inclusions.splice(i,1); persist(); renderSettingsInclusions(); }
+function renderSettingsInclusions(){ document.getElementById('st-inclusions-list').innerHTML=bulletListHtml(DB.settings.defaultTerms.inclusions,'settingsAddInclusion','settingsInclusionChange','settingsRemoveInclusion','e.g. Dedicated site supervisor.'); }
+
+function settingsAddExclusion(){ DB.settings.defaultTerms.exclusions.push(''); persist(); renderSettingsExclusions(); }
+function settingsExclusionChange(i,val){ DB.settings.defaultTerms.exclusions[i]=val; persist(); }
+function settingsRemoveExclusion(i){ DB.settings.defaultTerms.exclusions.splice(i,1); persist(); renderSettingsExclusions(); }
+function renderSettingsExclusions(){ document.getElementById('st-exclusions-list').innerHTML=bulletListHtml(DB.settings.defaultTerms.exclusions,'settingsAddExclusion','settingsExclusionChange','settingsRemoveExclusion','e.g. Curtains and blinds.'); }
+
+function settingsAddPay(){ DB.settings.defaultTerms.paymentSchedule.push({label:'',note:'',pct:0}); persist(); renderSettingsPayRows(); }
+function settingsPayChange(i,field,val){ const p=DB.settings.defaultTerms.paymentSchedule[i]; p[field]=field==='pct'?num(val):val; persist(); }
+function settingsRemovePay(i){ DB.settings.defaultTerms.paymentSchedule.splice(i,1); persist(); renderSettingsPayRows(); }
+function renderSettingsPayRows(){
+  const rows=DB.settings.defaultTerms.paymentSchedule||[];
+  document.getElementById('st-pay-tb').innerHTML = rows.length ? rows.map((p,i)=>`<tr>
+    <td><input class="inp inp-sm" value="${escHtml(p.label)}" onchange="settingsPayChange(${i},'label',this.value)"></td>
+    <td><input class="inp inp-sm" value="${escHtml(p.note)}" onchange="settingsPayChange(${i},'note',this.value)"></td>
+    <td><input class="inp inp-sm" type="number" value="${num(p.pct)}" onchange="settingsPayChange(${i},'pct',this.value)"></td>
+    <td><button class="btn btn-sm btn-red" onclick="settingsRemovePay(${i})">✕</button></td>
+  </tr>`).join('') : '<tr><td colspan="4" class="empty">No rows yet.</td></tr>';
+}
+
+function renderSettings(){
+  const s=DB.settings;
+  document.getElementById('st-companyName').value=s.companyName||'';
+  document.getElementById('st-tagline').value=s.tagline||'';
+  document.getElementById('st-phone').value=s.phone||'';
+  document.getElementById('st-email').value=s.email||'';
+  document.getElementById('st-website').value=s.website||'';
+  document.getElementById('st-signatory').value=s.signatoryTitle||'';
+  document.getElementById('st-validity').value=s.defaultValidityDays||14;
+  document.getElementById('st-prefix').value=s.quotePrefix||'AT';
+  document.getElementById('st-seq').value=s.nextQuoteSeq||1;
+  document.getElementById('st-profile').value=s.companyProfile||'';
+  document.getElementById('st-welcome').value=s.welcomeNote||'';
+  document.getElementById('st-scope').value=s.defaultTerms.scope||'';
+  document.getElementById('st-warranty').value=s.defaultTerms.warranty||'';
+  document.getElementById('st-delivery').value=s.defaultTerms.deliveryTimeline||'';
+  document.getElementById('st-taxes').value=s.defaultTerms.taxesNote||'';
+  document.getElementById('st-acceptance').value=s.defaultTerms.acceptanceText||'';
+  document.getElementById('st-bank-name').value=s.defaultTerms.bank.accName||'';
+  document.getElementById('st-bank-no').value=s.defaultTerms.bank.accNo||'';
+  document.getElementById('st-bank-ifsc').value=s.defaultTerms.bank.ifsc||'';
+  document.getElementById('st-bank-branch').value=s.defaultTerms.bank.bank||'';
+  document.getElementById('st-bank-type').value=s.defaultTerms.bank.type||'';
+  renderSettingsSpecs();
+  renderSettingsInclusions();
+  renderSettingsExclusions();
+  renderSettingsPayRows();
+}
+
+/* ============================== PRINT / PDF ============================== */
+const PRINT_CSS=`
+@page {
+  size: A4;
+  margin: 22mm 16mm 26mm 16mm;
+  @bottom-left { content: element(footerBlock); vertical-align: middle; }
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-family:'Manrope',sans-serif; font-size:8.5pt; color:#9D9A91; vertical-align: middle; padding-top:3mm; }
+  @top-right { content: element(headerBlock); }
+}
+@page :first {
+  margin: 0mm;
+  @bottom-left { content: none; }
+  @bottom-right { content: none; }
+  @top-right { content: none; }
+}
+* { box-sizing:border-box; }
+body{ font-family:'Manrope',sans-serif; color:#2B2A27; font-size:10pt; line-height:1.55; margin:0; }
+img{ max-width:100%; }
+.footer-run{ position: running(footerBlock); display:flex; align-items:center; gap:6px; font-size:8pt; color:#6b6a63; padding-top:3mm; border-top: 0.75pt solid #E7E4DC; width:100%; }
+.footer-run img{ height:11px; width:auto; }
+.header-run{ position: running(headerBlock); font-size:8pt; color:#9D9A91; padding-top:2mm; text-align:right; white-space:nowrap; }
+
+.cover-page{ height:297mm; width:210mm; position:relative; padding:30mm 22mm; background:linear-gradient(180deg,#fff 0%,#fff 76%,#F4F1DC 100%); }
+.cover-logo{ width:84px; }
+.cover-topline{ font-size:9pt; letter-spacing:.14em; text-transform:uppercase; color:#9A8A3A; margin-top:16mm; font-weight:700; }
+.cover-title{ font-size:36pt; font-weight:800; color:#1C1C1A; margin-top:3mm; }
+.cover-sub{ font-size:13pt; color:#6b6a63; margin-top:3mm; max-width:130mm; }
+.cover-rule{ height:2.4px; width:44mm; background:#C3B152; margin:13mm 0 11mm; }
+.cover-grid{ display:grid; grid-template-columns:1fr 1fr; row-gap:7mm; column-gap:8mm; max-width:150mm; }
+.cover-k{ font-size:8pt; text-transform:uppercase; letter-spacing:.06em; color:#9D9A91; margin-bottom:1.5mm; }
+.cover-v{ font-size:12.5pt; font-weight:700; color:#1C1C1A; }
+.cover-foot{ position:absolute; bottom:20mm; left:22mm; right:22mm; font-size:8pt; color:#9D9A91; display:flex; justify-content:space-between; border-top:0.75pt solid #E7E4DC; padding-top:4mm; }
+
+.doc-h1{ font-size:16pt; font-weight:800; color:#1C1C1A; margin:0 0 5mm; }
+.doc-h1 .bar{ display:block; width:20mm; height:3px; background:#C3B152; margin-bottom:3mm; }
+.intro-body p{ margin:0 0 4mm; }
+.callout{ border:0.75pt solid #E7E4DC; background:#FBFAF7; border-left:3px solid #C3B152; padding:5mm 6mm; font-size:9pt; color:#6b6a63; margin-top:6mm; break-inside:avoid; }
+
+.client-strip{ border-left:3px solid #C3B152; background:#FBFAF7; padding:5mm 6mm; margin-bottom:7mm; display:grid; grid-template-columns:repeat(4,1fr); row-gap:4mm; column-gap:6mm; break-inside:avoid; }
+.client-strip .k{ font-size:7.2pt; text-transform:uppercase; letter-spacing:.05em; color:#9D9A91; }
+.client-strip .v{ font-size:9.3pt; font-weight:700; color:#1C1C1A; margin-top:0.5mm; }
+
+table.boq{ width:100%; border-collapse:collapse; font-size:7.6pt; }
+table.boq thead th{ background:#1C1C1A; color:#EDEBE4; text-transform:uppercase; letter-spacing:.02em; font-size:6.6pt; padding:2.6mm 1.8mm; text-align:left; }
+table.boq td{ padding:2.3mm 1.8mm; border-bottom:0.5pt solid #E7E4DC; vertical-align:top; }
+table.boq tr.section-row td{ background:#F4F1DC; font-weight:800; color:#5c521f; font-size:8pt; padding:2.6mm 1.8mm; text-transform:uppercase; letter-spacing:.03em; break-after:avoid; break-inside:avoid; }
+table.boq tr.item-row{ break-inside:avoid; }
+table.boq tr.total-row td{ border-top:1.2pt solid #1C1C1A; border-bottom:none; font-weight:800; padding-top:3mm; break-inside:avoid; }
+table.boq td.num{ text-align:right; font-family:'JetBrains Mono',monospace; white-space:nowrap; }
+table.boq td.muted{ color:#9D9A91; font-size:7pt; }
+
+.summary-box{ margin-top:7mm; margin-left:auto; width:82mm; break-inside:avoid; }
+.summary-box .row{ display:flex; justify-content:space-between; padding:2mm 0; font-size:9pt; border-bottom:0.5pt solid #E7E4DC; }
+.summary-box .row.final{ border-top:1.2pt solid #1C1C1A; border-bottom:none; font-weight:800; font-size:11pt; padding-top:3mm; margin-top:1mm; }
+.summary-box .row .v{ font-family:'JetBrains Mono',monospace; }
+
+table.spec{ width:100%; border-collapse:collapse; font-size:9pt; }
+table.spec th{ background:#1C1C1A; color:#EDEBE4; text-align:left; padding:2.6mm 3mm; font-size:7.5pt; text-transform:uppercase; }
+table.spec td{ padding:2.6mm 3mm; border-bottom:0.5pt solid #E7E4DC; break-inside:avoid; }
+table.spec tr td:first-child{ font-weight:700; width:38mm; }
+
+.tc-section{ margin-bottom:6mm; break-inside:avoid-page; }
+.tc-lbl{ font-weight:800; font-size:10pt; color:#1C1C1A; margin-bottom:2mm; }
+.tc-lbl .letter{ color:#9A8A3A; margin-right:2mm; }
+ul.bullets{ margin:0; padding-left:4.5mm; }
+ul.bullets li{ margin-bottom:1.6mm; font-size:9pt; }
+table.pay{ width:100%; border-collapse:collapse; font-size:9pt; margin-top:2mm; }
+table.pay th{ text-align:left; font-size:7.5pt; text-transform:uppercase; color:#9D9A91; border-bottom:0.75pt solid #1C1C1A; padding:2mm; }
+table.pay td{ padding:2mm; border-bottom:0.5pt solid #E7E4DC; }
+table.bank td{ padding:1.6mm 3mm 1.6mm 0; font-size:9pt; }
+table.bank td:first-child{ color:#9D9A91; width:40mm; }
+
+.pgbreak{ break-before: page; }
+
+.sign-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16mm; margin-top:20mm; }
+.sign-box .line{ border-top:0.75pt solid #1C1C1A; margin-top:20mm; padding-top:2mm; font-size:9pt; }
+.sign-box .role{ font-size:8pt; color:#9D9A91; margin-top:1mm; }
+`;
+
+function buildPrintContent(q){
+  const s=DB.settings;
+  const slMap=slNoMap(q);
+  const rows=[];
+  q.sections.forEach(sec=>{
+    rows.push(`<tr class="section-row"><td colspan="9">${escHtml(sec.name||'Untitled Section')}</td></tr>`);
+    sec.items.forEach(it=>{
+      const amt = it.included ? `<span class="muted">${escHtml(it.includedNote||'Included')}</span>` : INR(itemAmount(it));
+      rows.push(`<tr class="item-row">
+        <td>${slMap[it.id]}</td>
+        <td>${escHtml(it.description)}${it.notes?`<div class="muted">${escHtml(it.notes)}</div>`:''}</td>
+        <td>${escHtml(it.finish)||'—'}</td>
+        <td>${escHtml(it.material)||'—'}</td>
+        <td>${escHtml(it.size)||'N/A'}</td>
+        <td>${escHtml(it.unit)}</td>
+        <td class="num">${it.included?'—':num(it.qty)}</td>
+        <td class="num">${it.included?'—':INR(it.unitPrice)}</td>
+        <td class="num">${amt}</td>
+      </tr>`);
+    });
+    rows.push(`<tr class="total-row"><td colspan="8">${escHtml(sec.name||'Section')} Total</td><td class="num">${INR(sectionTotal(sec))}</td></tr>`);
+  });
+
+  const gt=grandTotal(q), disc=discountAmount(q), tax=taxableAmount(q), gst=gstAmount(q), fin=finalPayable(q);
+  const bank=q.terms.bank||{};
+
+  return `
+  <div class="footer-run"><img src="logo.png" alt=""><span>${escHtml(s.phone||'')} &nbsp;|&nbsp; ${escHtml(s.email||'')} &nbsp;|&nbsp; ${escHtml(s.website||'')}</span></div>
+  <div class="header-run">${escHtml(q.quoteNo)} — ${escHtml(q.clientName||'')}</div>
+
+  <div class="cover-page">
+    <img class="cover-logo" src="logo.png" alt="Appletree Interiors">
+    <div class="cover-topline">${escHtml(s.tagline||'')}</div>
+    <div class="cover-title">Quotation</div>
+    <div class="cover-sub">${escHtml(q.projectName||'Interior Design &amp; Execution Proposal')}</div>
+    <div class="cover-rule"></div>
+    <div class="cover-grid">
+      <div><div class="cover-k">Quotation No.</div><div class="cover-v">${escHtml(q.quoteNo)}${q.revisionNo>1?' · Rev '+q.revisionNo:''}</div></div>
+      <div><div class="cover-k">Date</div><div class="cover-v">${fmtDate(q.date)}</div></div>
+      <div><div class="cover-k">Client Name</div><div class="cover-v">${escHtml(q.clientName)||'—'}</div></div>
+      <div><div class="cover-k">Project Location</div><div class="cover-v">${escHtml(q.projectLocation)||'—'}</div></div>
+      <div><div class="cover-k">Prepared By</div><div class="cover-v">${escHtml(q.preparedBy)||'—'}</div></div>
+      <div><div class="cover-k">Estimate Validity</div><div class="cover-v">${num(q.validityDays)} days</div></div>
+    </div>
+    <div class="cover-foot"><span>${escHtml(s.companyName||'')}</span><span>${escHtml(s.website||'')}</span></div>
+  </div>
+
+  <div class="pgbreak">
+    <div class="doc-h1"><span class="bar"></span>Welcome</div>
+    <div class="intro-body">
+      ${q.includeCompanyProfile && s.companyProfile ? `<p>${nl2br(s.companyProfile)}</p>` : ''}
+      <p>${nl2br(q.welcomeNote||s.welcomeNote||'')}</p>
+    </div>
+    <div class="callout">Portfolio, past project references, and our company brochure are available on request.</div>
+  </div>
+
+  <div class="pgbreak">
+    <div class="client-strip">
+      <div><div class="k">Client Name</div><div class="v">${escHtml(q.clientName)||'—'}</div></div>
+      <div><div class="k">Project Name</div><div class="v">${escHtml(q.projectName)||'—'}</div></div>
+      <div><div class="k">Project Location</div><div class="v">${escHtml(q.projectLocation)||'—'}</div></div>
+      <div><div class="k">Reference No.</div><div class="v">${escHtml(q.clientRefNo)||escHtml(q.quoteNo)}</div></div>
+      <div><div class="k">Date</div><div class="v">${fmtDate(q.date)}</div></div>
+      <div><div class="k">Revision</div><div class="v">Rev ${q.revisionNo||1}</div></div>
+      <div><div class="k">Prepared By</div><div class="v">${escHtml(q.preparedBy)||'—'}</div></div>
+      <div><div class="k">Estimate Validity</div><div class="v">${num(q.validityDays)} days</div></div>
+    </div>
+    <div class="doc-h1"><span class="bar"></span>Bill of Quantities</div>
+    <table class="boq">
+      <thead><tr><th>Sl.</th><th>Item Description</th><th>Finish</th><th>Material Spec.</th><th>Size</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit Price ₹</th><th class="num">Amount ₹</th></tr></thead>
+      <tbody>${rows.join('')||'<tr><td colspan="9" class="muted" style="padding:8mm 0;text-align:center">No items added yet.</td></tr>'}</tbody>
+    </table>
+    <div class="summary-box">
+      <div class="row"><span>Grand Total</span><span class="v">${INR(gt)}</span></div>
+      ${disc>0?`<div class="row"><span>Discount ${q.discountType==='pct'?'('+num(q.discountValue)+'%)':''}</span><span class="v">- ${INR(disc)}</span></div>`:''}
+      ${num(q.gstPct)>0?`<div class="row"><span>GST (${num(q.gstPct)}%)</span><span class="v">${INR(gst)}</span></div>`:`<div class="row"><span>GST</span><span class="v">Extra, as applicable</span></div>`}
+      <div class="row final"><span>Total Payable</span><span class="v">${INR(fin)}</span></div>
+    </div>
+  </div>
+
+  <div class="pgbreak">
+    <div class="doc-h1"><span class="bar"></span>Material &amp; Specification</div>
+    <table class="spec"><thead><tr><th>Category</th><th>Specification</th></tr></thead>
+    <tbody>${(q.materialSpecs||[]).map(m=>`<tr><td>${escHtml(m.category)}</td><td>${escHtml(m.spec)}</td></tr>`).join('')||'<tr><td colspan="2" style="text-align:center;color:#9D9A91">No specifications added.</td></tr>'}</tbody></table>
+  </div>
+
+  <div class="pgbreak">
+    <div class="doc-h1"><span class="bar"></span>Terms &amp; Conditions</div>
+    <div class="tc-section"><div class="tc-lbl"><span class="letter">A.</span>Scope of Work</div><p>${nl2br(q.terms.scope||'')}</p></div>
+    <div class="tc-section"><div class="tc-lbl"><span class="letter">B.</span>Estimate Includes</div><ul class="bullets">${(q.terms.inclusions||[]).filter(Boolean).map(x=>`<li>${escHtml(x)}</li>`).join('')}</ul></div>
+    <div class="tc-section"><div class="tc-lbl"><span class="letter">C.</span>Estimate Excludes</div><ul class="bullets">${(q.terms.exclusions||[]).filter(Boolean).map(x=>`<li>${escHtml(x)}</li>`).join('')}</ul></div>
+    <div class="tc-section"><div class="tc-lbl"><span class="letter">D.</span>Payment Schedule</div>
+      <table class="pay"><thead><tr><th>Milestone</th><th>Description</th><th class="num">%</th></tr></thead>
+      <tbody>${(q.terms.paymentSchedule||[]).map(p=>`<tr><td>${escHtml(p.label)}</td><td>${escHtml(p.note)}</td><td class="num">${num(p.pct)}%</td></tr>`).join('')}</tbody></table>
+    </div>
+    <div class="tc-section"><div class="tc-lbl"><span class="letter">E.</span>Warranty</div><p>${nl2br(q.terms.warranty||'')}</p></div>
+    <div class="tc-section"><div class="tc-lbl"><span class="letter">F.</span>Delivery Timeline</div><p>${escHtml(q.terms.deliveryTimeline||'')}</p></div>
+    <div class="tc-section"><div class="tc-lbl"><span class="letter">G.</span>Validity &amp; Taxes</div><p>This estimate is valid for ${num(q.validityDays)} days from the date of issue.<br>${escHtml(q.terms.taxesNote||'')}</p></div>
+    <div class="tc-section"><div class="tc-lbl"><span class="letter">H.</span>Bank Account Details</div>
+      <table class="bank">
+        <tr><td>Account Name</td><td>${escHtml(bank.accName)}</td></tr>
+        <tr><td>Account No.</td><td>${escHtml(bank.accNo)}</td></tr>
+        <tr><td>IFSC</td><td>${escHtml(bank.ifsc)}</td></tr>
+        <tr><td>Bank &amp; Branch</td><td>${escHtml(bank.bank)}</td></tr>
+        <tr><td>Account Type</td><td>${escHtml(bank.type)}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="pgbreak">
+    <div class="doc-h1"><span class="bar"></span>Acceptance</div>
+    <p>${nl2br(q.terms.acceptanceText||'')}</p>
+    <p>Thank you for considering us for your interior design project. To accept this proposal, please sign below.</p>
+    <div class="sign-grid">
+      <div class="sign-box"><div class="line">For ${escHtml(s.companyName||'')}</div><div class="role">${escHtml(s.signatoryTitle||'Authorized Signatory')}</div></div>
+      <div class="sign-box"><div class="line">Client Acceptance</div><div class="role">${escHtml(q.clientName)||''}${q.clientName?' · ':''}Date: _______________</div></div>
+    </div>
+  </div>
+  `;
+}
+
+/* ============================== EXCEL EXPORT ============================== */
+function buildQuotationWorkbook(q){
+  const slMap=slNoMap(q);
+  const rows=[];
+  rows.push(['Appletree Interiors — Quotation']);
+  rows.push(['Quote No.',q.quoteNo,'','Date',fmtDate(q.date)]);
+  rows.push(['Client Name',q.clientName||'','','Project Name',q.projectName||'']);
+  rows.push(['Project Location',q.projectLocation||'','','Prepared By',q.preparedBy||'']);
+  rows.push(['Revision','Rev '+(q.revisionNo||1),'','Estimate Validity',(q.validityDays||14)+' days']);
+  rows.push([]);
+  rows.push(['Sl.','Item Description','Finish','Material Spec.','Size','Unit','Qty','Unit Price','Amount','Notes']);
+  q.sections.forEach(sec=>{
+    rows.push([sec.name||'Untitled Section']);
+    sec.items.forEach(it=>{
+      rows.push([
+        slMap[it.id], it.description||'', it.finish||'', it.material||'', it.size||'', it.unit||'',
+        it.included?'—':num(it.qty), it.included?'—':num(it.unitPrice),
+        it.included?(it.includedNote||'Included'):itemAmount(it),
+        it.notes||''
+      ]);
+    });
+    rows.push(['','','','','','','','',sectionTotal(sec),(sec.name||'Section')+' Total']);
+    rows.push([]);
+  });
+  rows.push(['','','','','','','','',grandTotal(q),'Grand Total']);
+  if(discountAmount(q)>0) rows.push(['','','','','','','','',-discountAmount(q),'Discount'+(q.discountType==='pct'?' ('+num(q.discountValue)+'%)':'')]);
+  rows.push(['','','','','','','','',taxableAmount(q),'Taxable Amount']);
+  rows.push(['','','','','','','','',num(q.gstPct)>0?gstAmount(q):0,num(q.gstPct)>0?('GST ('+num(q.gstPct)+'%)'):'GST — Extra, as applicable']);
+  rows.push(['','','','','','','','',finalPayable(q),'Final Amount Payable']);
+  const ws1=XLSX.utils.aoa_to_sheet(rows);
+  ws1['!cols']=[{wch:5},{wch:34},{wch:20},{wch:28},{wch:12},{wch:8},{wch:8},{wch:12},{wch:14},{wch:24}];
+
+  const specRows=[['Category','Specification'],...(q.materialSpecs||[]).map(m=>[m.category||'',m.spec||''])];
+  const ws2=XLSX.utils.aoa_to_sheet(specRows);
+  ws2['!cols']=[{wch:22},{wch:60}];
+
+  const t=q.terms||{};
+  const bank=t.bank||{};
+  const termRows=[
+    ['Scope of Work'],[t.scope||''],[],
+    ['Estimate Includes'],...(t.inclusions||[]).filter(Boolean).map(x=>[x]),[],
+    ['Estimate Excludes'],...(t.exclusions||[]).filter(Boolean).map(x=>[x]),[],
+    ['Payment Schedule'],['Milestone','Description','%'],...(t.paymentSchedule||[]).map(p=>[p.label||'',p.note||'',num(p.pct)]),[],
+    ['Warranty'],[t.warranty||''],[],
+    ['Delivery Timeline'],[t.deliveryTimeline||''],[],
+    ['Taxes Note'],[t.taxesNote||''],[],
+    ['Bank Account Details'],
+    ['Account Name',bank.accName||''],['Account No.',bank.accNo||''],['IFSC',bank.ifsc||''],
+    ['Bank & Branch',bank.bank||''],['Account Type',bank.type||''],[],
+    ['Acceptance'],[t.acceptanceText||'']
+  ];
+  const ws3=XLSX.utils.aoa_to_sheet(termRows);
+  ws3['!cols']=[{wch:26},{wch:60},{wch:10}];
+
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws1,'Quotation');
+  XLSX.utils.book_append_sheet(wb,ws2,'Material Spec');
+  XLSX.utils.book_append_sheet(wb,ws3,'Terms & Conditions');
+  return wb;
+}
+async function exportExcel(){
+  const q=curQ(); if(!q) return;
+  const wb=buildQuotationWorkbook(q);
+  const out=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+  const blob=new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  await saveBlobToDisk(blob, safeFileBase(q)+'.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Excel Workbook', ['.xlsx']);
+}
+
+async function renderPrintPreview(){
+  const q=curQ();
+  const target=document.getElementById('print-target');
+  if(!q){ target.innerHTML='<div class="empty">No quotation loaded.</div>'; return; }
+  target.innerHTML='<div style="padding:60px;text-align:center;color:#9D9A91">Rendering paginated preview…</div>';
+  const content=buildPrintContent(q);
+  try{
+    const previewer=new Paged.Previewer();
+    target.innerHTML='';
+    await previewer.preview(content,[{'quotation-print-css':PRINT_CSS}],target);
+  }catch(e){
+    console.error('Paged.js render failed',e);
+    target.innerHTML='<div class="empty">Could not render print preview. Open the browser console for details.</div>';
+  }
+}
+
+/* ============================== INIT ============================== */
+document.getElementById('modal-bg').addEventListener('click',e=>{
+  if(e.target.id!=='modal-bg') return;
+  if(_pendingLossPrevStatus!==null) cancelLostStatus(); else closeModal();
+});
+try{
+  loadOrSeed();
+  nav('dashboard',document.querySelector('.nav-item[data-pg="dashboard"]'));
+}catch(e){
+  console.error('Fatal error loading Quotation Studio',e);
+  document.getElementById('content').innerHTML=`<div class="card">
+    <div class="card-title">Something went wrong loading your saved data</div>
+    <div class="card-sub" style="margin-top:8px;line-height:1.6">This usually happens when data saved on this computer from an older version doesn't match the latest version. Click below to reset and start fresh — this only clears data stored in this browser; any quotations you already saved to a file on your PC are not affected.</div>
+    <button class="btn btn-red" style="margin-top:14px" onclick="localStorage.removeItem('${STORE_KEY}');window.location.reload()">Reset App Data &amp; Reload</button>
+  </div>`;
+}
+</script>
+</body>
+</html>
