@@ -4756,14 +4756,16 @@ table.bank td:first-child{ color:#9D9A91; width:40mm; }
 function buildPrintContent(q){
   const s=DB.settings;
   const slMap=slNoMap(q);
+  const hasAnyPhoto = q.sections.some(sec=>sec.items.some(it=>it.photo));
+  const baseCols=9, totalCols=hasAnyPhoto?baseCols+1:baseCols;
   const rows=[];
   q.sections.forEach(sec=>{
-    rows.push(`<tr class="section-row"><td colspan="10">${escHtml(sec.name||'Untitled Section')}</td></tr>`);
+    rows.push(`<tr class="section-row"><td colspan="${totalCols}">${escHtml(sec.name||'Untitled Section')}</td></tr>`);
     sec.items.forEach(it=>{
       const amt = it.included ? `<span class="muted">${escHtml(it.includedNote||'Included')}</span>` : INR(itemAmount(it));
       rows.push(`<tr class="item-row">
         <td>${slMap[it.id]}</td>
-        <td class="photo-cell">${it.photo?`<img src="${it.photo}" alt="">`:''}</td>
+        ${hasAnyPhoto?`<td class="photo-cell">${it.photo?`<img src="${it.photo}" alt="">`:''}</td>`:''}
         <td>${escHtml(it.description)}${it.notes?`<div class="muted">${escHtml(it.notes)}</div>`:''}</td>
         <td>${escHtml(it.finish)||'—'}</td>
         <td>${escHtml(it.material)||'—'}</td>
@@ -4774,7 +4776,7 @@ function buildPrintContent(q){
         <td class="num">${amt}</td>
       </tr>`);
     });
-    rows.push(`<tr class="total-row"><td colspan="9">${escHtml(sec.name||'Section')} Total</td><td class="num">${INR(sectionTotal(sec))}</td></tr>`);
+    rows.push(`<tr class="total-row"><td colspan="${totalCols-1}">${escHtml(sec.name||'Section')} Total</td><td class="num">${INR(sectionTotal(sec))}</td></tr>`);
   });
 
   const gt=grandTotal(q), disc=discountAmount(q), tax=taxableAmount(q), gst=gstAmount(q), fin=finalPayable(q);
@@ -4824,8 +4826,8 @@ function buildPrintContent(q){
     <div class="doc-h1"><span class="bar"></span>Bill of Quantities</div>
     ${q.customBoq&&q.customBoq.enabled ? clientGridHtmlForPrint(q.customBoq) : `
     <table class="boq">
-      <thead><tr><th>Sl.</th><th>Photo</th><th>Item Description</th><th>Finish</th><th>Material Spec.</th><th>Size</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit Price ₹</th><th class="num">Amount ₹</th></tr></thead>
-      <tbody>${rows.join('')||'<tr><td colspan="10" class="muted" style="padding:8mm 0;text-align:center">No items added yet.</td></tr>'}</tbody>
+      <thead><tr><th>Sl.</th>${hasAnyPhoto?'<th>Photo</th>':''}<th>Item Description</th><th>Finish</th><th>Material Spec.</th><th>Size</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit Price ₹</th><th class="num">Amount ₹</th></tr></thead>
+      <tbody>${rows.join('')||`<tr><td colspan="${totalCols}" class="muted" style="padding:8mm 0;text-align:center">No items added yet.</td></tr>`}</tbody>
     </table>`}
     <div class="summary-box">
       <div class="row"><span>Grand Total</span><span class="v">${INR(gt)}</span></div>
