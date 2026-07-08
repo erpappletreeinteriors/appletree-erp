@@ -471,7 +471,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
         <!-- Bill of Quantities -->
         <div class="card" id="boq-card-wrap">
           <div class="card-hd">
-            <div><div class="card-title">Bill of Quantities</div><div class="card-sub">Add unlimited sections (Foyer, Living, Kitchen…) and unlimited line items per section</div></div>
+            <div><div class="card-title">Bill of Quantities</div><div class="card-sub">Add unlimited sections (Foyer, Living, Kitchen…) and unlimited line items per section · 📋 Tip: click a photo box, then press Ctrl+V to paste a screenshot instead of browsing for a file</div></div>
             <div class="chip-row"><span class="small">Grand Total: <span class="mono bold" id="boq-grand"></span></span><button class="btn btn-gold btn-sm" onclick="addSection()">+ Add Section</button></div>
           </div>
           <div id="boq-sections"></div>
@@ -4323,18 +4323,36 @@ function renderBoq(){
 const ITEM_PHOTO_MAX_DIM=500, ITEM_PHOTO_QUALITY=0.72;
 let _pendingPhotoTarget=null;
 function itemPhotoCellHtml(secId,it){
+  const pasteHint='Click to browse for a file — or just click here once, then press Ctrl+V to paste a screenshot/copied image';
   if(it.photo){
     return `<div style="position:relative;width:56px;height:56px">
-      <img src="${it.photo}" style="width:56px;height:56px;object-fit:contain;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer" onclick="openItemPhotoPicker('${secId}','${it.id}')" title="Click to replace">
+      <img src="${it.photo}" style="width:56px;height:56px;object-fit:contain;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer" onclick="openItemPhotoPicker('${secId}','${it.id}')" title="${pasteHint}">
       <button type="button" onclick="removeItemPhoto('${secId}','${it.id}')" title="Remove photo" style="position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;border:1px solid var(--border);background:#fff;color:var(--red);font-size:11px;line-height:1;cursor:pointer;padding:0">✕</button>
     </div>`;
   }
-  return `<button type="button" class="btn btn-sm btn-outline" style="width:56px;height:56px;display:flex;align-items:center;justify-content:center;font-size:18px;padding:0" onclick="openItemPhotoPicker('${secId}','${it.id}')" title="Add photo">+</button>`;
+  return `<button type="button" class="btn btn-sm btn-outline" style="width:56px;height:56px;display:flex;align-items:center;justify-content:center;font-size:18px;padding:0" onclick="openItemPhotoPicker('${secId}','${it.id}')" title="${pasteHint}">+</button>`;
 }
 function openItemPhotoPicker(secId,itemId){
   _pendingPhotoTarget={secId,itemId};
   document.getElementById('item-photo-file').value='';
   document.getElementById('item-photo-file').click();
+}
+async function handleGlobalPhotoPaste(evt){
+  if(!_pendingPhotoTarget) return;
+  const items=evt.clipboardData && evt.clipboardData.items;
+  if(!items) return;
+  let imageItem=null;
+  for(const item of items){ if(item.type && item.type.startsWith('image/')){ imageItem=item; break; } }
+  if(!imageItem) return;
+  evt.preventDefault();
+  const target=_pendingPhotoTarget; _pendingPhotoTarget=null;
+  const file=imageItem.getAsFile();
+  if(!file) return;
+  try{
+    const dataUri=await resizeImageToDataUri(file,ITEM_PHOTO_MAX_DIM,ITEM_PHOTO_QUALITY);
+    itemChange(target.secId,target.itemId,'photo',dataUri);
+    renderBoq();
+  }catch(e){ console.error(e); alert('Could not paste that image — try again or use the upload button.'); }
 }
 function resizeImageToDataUri(file,maxDim,quality){
   return new Promise((resolve,reject)=>{
@@ -5358,6 +5376,7 @@ document.getElementById('modal-bg').addEventListener('click',e=>{
   if(e.target.id!=='modal-bg') return;
   if(_pendingLossPrevStatus!==null) cancelLostStatus(); else closeModal();
 });
+document.addEventListener('paste',handleGlobalPhotoPaste);
 function _withTimeout(promise,ms){
   return Promise.race([promise, new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),ms))]);
 }
