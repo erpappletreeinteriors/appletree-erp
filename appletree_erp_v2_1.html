@@ -11508,11 +11508,18 @@ function seedVendorLists(){
           _sb.from(sbTable(key)).select('id,data').eq('org_id','appletree-interiors'),
           8000, key
         );
-        if(!error&&data&&data.length>0){
-          DB[key]=data.map(row=>row.data);
+        // Always trust the server as source of truth once we hear back
+        // successfully — including an empty result. Previously this only
+        // overwrote DB[key] when data.length>0, so an empty Supabase table
+        // silently left the hardcoded seed/demo array (or a stale in-memory
+        // copy from a tab left open before a data clear) in place. Any save
+        // action would then re-sync that stale data back up to Supabase,
+        // resurrecting records that had been deleted.
+        if(!error){
+          DB[key]=(data||[]).map(row=>row.data);
         }
       }catch(e){
-        // One slow/stuck table must not block the rest — skip it and keep
+        // Only a timeout/network failure should fall back to keeping
         // whatever was already in DB[key] (seed data or last cached copy).
         console.warn('[ERP] Skipping',key,'—',e.message);
       }finally{
