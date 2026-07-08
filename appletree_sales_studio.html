@@ -475,6 +475,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
             <div class="chip-row"><span class="small">Grand Total: <span class="mono bold" id="boq-grand"></span></span><button class="btn btn-gold btn-sm" onclick="addSection()">+ Add Section</button></div>
           </div>
           <div id="boq-sections"></div>
+          <input type="file" id="item-photo-file" accept="image/*" style="display:none" onchange="handleItemPhotoFile(event)">
         </div>
 
         <!-- Material Specification -->
@@ -1429,7 +1430,7 @@ function seed(){
 function sanitizeQuotation(q){
   if(!q||typeof q!=='object') return;
   if(!Array.isArray(q.sections)) q.sections=[];
-  q.sections.forEach(sec=>{ if(sec && !Array.isArray(sec.items)) sec.items=[]; });
+  q.sections.forEach(sec=>{ if(sec && !Array.isArray(sec.items)) sec.items=[]; if(sec) sec.items.forEach(it=>{ if(it.photo===undefined) it.photo=null; }); });
   if(!Array.isArray(q.materialSpecs)) q.materialSpecs=[];
   if(!q.terms||typeof q.terms!=='object') q.terms=defaultTerms();
   if(!Array.isArray(q.terms.inclusions)) q.terms.inclusions=[];
@@ -4212,7 +4213,7 @@ function deleteSection(secId){
 function renameSection(secId,val){ const q=curQ(); const sec=q.sections.find(s=>s.id===secId); if(sec){ sec.name=val; persist(); } }
 function addItem(secId){
   const q=curQ(); const sec=q.sections.find(s=>s.id===secId); if(!sec) return;
-  sec.items.push({id:uid('IT'),description:'',finish:'',material:'',size:'',unit:'Nos',qty:1,unitPrice:0,notes:'',included:false,includedNote:''});
+  sec.items.push({id:uid('IT'),description:'',finish:'',material:'',size:'',unit:'Nos',qty:1,unitPrice:0,notes:'',included:false,includedNote:'',photo:null});
   persist(); renderBoq();
 }
 function deleteItem(secId,itemId){
@@ -4271,15 +4272,16 @@ function renderBoq(){
           <button class="btn btn-sm btn-red" onclick="deleteSection('${sec.id}')">✕ Section</button>
         </div>
       </div>
-      <div class="tbl-wrap"><table style="width:auto;min-width:1120px;table-layout:fixed">
+      <div class="tbl-wrap"><table style="width:auto;min-width:1190px;table-layout:fixed">
         <thead><tr>
-          <th style="width:30px">Sl.</th><th style="width:170px">Description</th><th style="width:120px">Finish</th>
+          <th style="width:30px">Sl.</th><th style="width:66px">Photo</th><th style="width:170px">Description</th><th style="width:120px">Finish</th>
           <th style="width:120px">Material Spec.</th><th style="width:80px">Size</th><th style="width:70px">Unit</th>
           <th style="width:60px">Qty</th><th style="width:90px">Unit Price</th><th style="width:80px">Incl.?</th>
           <th style="width:130px">Notes</th><th class="right" style="width:90px">Amount</th><th style="width:36px"></th>
         </tr></thead>
         <tbody>${sec.items.length?sec.items.map(it=>`<tr>
           <td>${slMap[it.id]}</td>
+          <td>${itemPhotoCellHtml(sec.id,it)}</td>
           <td><input class="inp inp-sm" value="${escHtml(it.description)}" onchange="itemChange('${sec.id}','${it.id}','description',this.value)"></td>
           <td><input class="inp inp-sm" value="${escHtml(it.finish)}" onchange="itemChange('${sec.id}','${it.id}','finish',this.value)"></td>
           <td><input class="inp inp-sm" value="${escHtml(it.material)}" onchange="itemChange('${sec.id}','${it.id}','material',this.value)"></td>
@@ -4294,13 +4296,67 @@ function renderBoq(){
           <td><input class="inp inp-sm" value="${escHtml(it.notes)}" placeholder="e.g. by Hettich/Hafele" onchange="itemChange('${sec.id}','${it.id}','notes',this.value)"></td>
           <td class="right mono" id="amt-${it.id}">${it.included?escHtml(it.includedNote||'Included'):INR(itemAmount(it))}</td>
           <td><button class="btn btn-sm btn-red" onclick="deleteItem('${sec.id}','${it.id}')">✕</button></td>
-        </tr>`).join(''):'<tr><td colspan="12" class="empty">No items yet.</td></tr>'}
+        </tr>`).join(''):'<tr><td colspan="13" class="empty">No items yet.</td></tr>'}
         </tbody>
       </table></div>
     </div>`).join('');
   }
   document.getElementById('boq-grand').textContent=INR(grandTotal(q));
   renderSummary();
+}
+
+/* ---- Line item photos (optional, per-item, resized+compressed client-side so no separate file storage is needed) ---- */
+const ITEM_PHOTO_MAX_DIM=500, ITEM_PHOTO_QUALITY=0.72;
+let _pendingPhotoTarget=null;
+function itemPhotoCellHtml(secId,it){
+  if(it.photo){
+    return `<div style="position:relative;width:56px;height:56px">
+      <img src="${it.photo}" style="width:56px;height:56px;object-fit:contain;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer" onclick="openItemPhotoPicker('${secId}','${it.id}')" title="Click to replace">
+      <button type="button" onclick="removeItemPhoto('${secId}','${it.id}')" title="Remove photo" style="position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;border:1px solid var(--border);background:#fff;color:var(--red);font-size:11px;line-height:1;cursor:pointer;padding:0">✕</button>
+    </div>`;
+  }
+  return `<button type="button" class="btn btn-sm btn-outline" style="width:56px;height:56px;display:flex;align-items:center;justify-content:center;font-size:18px;padding:0" onclick="openItemPhotoPicker('${secId}','${it.id}')" title="Add photo">+</button>`;
+}
+function openItemPhotoPicker(secId,itemId){
+  _pendingPhotoTarget={secId,itemId};
+  document.getElementById('item-photo-file').value='';
+  document.getElementById('item-photo-file').click();
+}
+function resizeImageToDataUri(file,maxDim,quality){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=e=>{
+      const img=new Image();
+      img.onload=()=>{
+        let w=img.width, h=img.height;
+        if(w>h){ if(w>maxDim){ h=Math.round(h*maxDim/w); w=maxDim; } }
+        else { if(h>maxDim){ w=Math.round(w*maxDim/h); h=maxDim; } }
+        const canvas=document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        resolve(canvas.toDataURL('image/jpeg',quality));
+      };
+      img.onerror=reject;
+      img.src=e.target.result;
+    };
+    reader.onerror=reject;
+    reader.readAsDataURL(file);
+  });
+}
+async function handleItemPhotoFile(evt){
+  const file=evt.target.files[0];
+  const target=_pendingPhotoTarget; _pendingPhotoTarget=null;
+  if(!file||!target) return;
+  if(!file.type.startsWith('image/')){ alert('Please choose an image file.'); return; }
+  try{
+    const dataUri=await resizeImageToDataUri(file,ITEM_PHOTO_MAX_DIM,ITEM_PHOTO_QUALITY);
+    itemChange(target.secId,target.itemId,'photo',dataUri);
+    renderBoq();
+  }catch(e){ console.error(e); alert('Could not read that image — try a different file.'); }
+}
+function removeItemPhoto(secId,itemId){
+  itemChange(secId,itemId,'photo',null);
+  renderBoq();
 }
 
 /* ---- Client's own-format BOQ (upload Excel, edit in place, wrap with our cover/terms) ---- */
@@ -4662,6 +4718,8 @@ table.boq tr.item-row{ break-inside:avoid; }
 table.boq tr.total-row td{ border-top:1.2pt solid #1C1C1A; border-bottom:none; font-weight:800; padding-top:3mm; break-inside:avoid; }
 table.boq td.num{ text-align:right; font-family:'JetBrains Mono',monospace; white-space:nowrap; }
 table.boq td.muted{ color:#9D9A91; font-size:7pt; }
+table.boq td.photo-cell{ width:16mm; padding:1mm; }
+table.boq td.photo-cell img{ display:block; width:14mm; height:14mm; object-fit:contain; border:0.5pt solid #E7E4DC; border-radius:1mm; background:#fff; }
 
 .summary-box{ margin-top:7mm; margin-left:auto; width:82mm; break-inside:avoid; }
 .summary-box .row{ display:flex; justify-content:space-between; padding:2mm 0; font-size:9pt; border-bottom:0.5pt solid #E7E4DC; }
@@ -4700,11 +4758,12 @@ function buildPrintContent(q){
   const slMap=slNoMap(q);
   const rows=[];
   q.sections.forEach(sec=>{
-    rows.push(`<tr class="section-row"><td colspan="9">${escHtml(sec.name||'Untitled Section')}</td></tr>`);
+    rows.push(`<tr class="section-row"><td colspan="10">${escHtml(sec.name||'Untitled Section')}</td></tr>`);
     sec.items.forEach(it=>{
       const amt = it.included ? `<span class="muted">${escHtml(it.includedNote||'Included')}</span>` : INR(itemAmount(it));
       rows.push(`<tr class="item-row">
         <td>${slMap[it.id]}</td>
+        <td class="photo-cell">${it.photo?`<img src="${it.photo}" alt="">`:''}</td>
         <td>${escHtml(it.description)}${it.notes?`<div class="muted">${escHtml(it.notes)}</div>`:''}</td>
         <td>${escHtml(it.finish)||'—'}</td>
         <td>${escHtml(it.material)||'—'}</td>
@@ -4715,7 +4774,7 @@ function buildPrintContent(q){
         <td class="num">${amt}</td>
       </tr>`);
     });
-    rows.push(`<tr class="total-row"><td colspan="8">${escHtml(sec.name||'Section')} Total</td><td class="num">${INR(sectionTotal(sec))}</td></tr>`);
+    rows.push(`<tr class="total-row"><td colspan="9">${escHtml(sec.name||'Section')} Total</td><td class="num">${INR(sectionTotal(sec))}</td></tr>`);
   });
 
   const gt=grandTotal(q), disc=discountAmount(q), tax=taxableAmount(q), gst=gstAmount(q), fin=finalPayable(q);
@@ -4765,8 +4824,8 @@ function buildPrintContent(q){
     <div class="doc-h1"><span class="bar"></span>Bill of Quantities</div>
     ${q.customBoq&&q.customBoq.enabled ? clientGridHtmlForPrint(q.customBoq) : `
     <table class="boq">
-      <thead><tr><th>Sl.</th><th>Item Description</th><th>Finish</th><th>Material Spec.</th><th>Size</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit Price ₹</th><th class="num">Amount ₹</th></tr></thead>
-      <tbody>${rows.join('')||'<tr><td colspan="9" class="muted" style="padding:8mm 0;text-align:center">No items added yet.</td></tr>'}</tbody>
+      <thead><tr><th>Sl.</th><th>Photo</th><th>Item Description</th><th>Finish</th><th>Material Spec.</th><th>Size</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit Price ₹</th><th class="num">Amount ₹</th></tr></thead>
+      <tbody>${rows.join('')||'<tr><td colspan="10" class="muted" style="padding:8mm 0;text-align:center">No items added yet.</td></tr>'}</tbody>
     </table>`}
     <div class="summary-box">
       <div class="row"><span>Grand Total</span><span class="v">${INR(gt)}</span></div>
@@ -4852,7 +4911,7 @@ function buildQuotationWorkbook(q){
     rows.push([sec.name||'Untitled Section']);
     sec.items.forEach(it=>{
       rows.push([
-        slMap[it.id], it.description||'', it.finish||'', it.material||'', it.size||'', it.unit||'',
+        slMap[it.id], (it.photo?'[Photo attached — see PDF] ':'')+(it.description||''), it.finish||'', it.material||'', it.size||'', it.unit||'',
         it.included?'—':num(it.qty), it.included?'—':num(it.unitPrice),
         it.included?(it.includedNote||'Included'):itemAmount(it),
         it.notes||''
