@@ -1172,6 +1172,20 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
 <div class="modal-bg" id="modal-bg"><div class="modal" id="modal-box"></div></div>
 
+<!-- ASK — offline smart search over the app's own data, no internet/AI-service required -->
+<button id="ai-assist-btn" onclick="toggleAiAssist()" style="display:none;position:fixed;bottom:22px;right:22px;width:52px;height:52px;border-radius:50%;background:var(--gold);border:none;color:var(--dark);font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25);z-index:150">💬</button>
+<div id="ai-assist-panel" style="display:none;position:fixed;bottom:86px;right:22px;width:340px;max-height:480px;background:#fff;border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:150;flex-direction:column;overflow:hidden">
+  <div style="background:var(--dark);color:#fff;padding:12px 14px;display:flex;justify-content:space-between;align-items:center">
+    <div><div style="font-weight:700;font-size:13px">Ask</div><div style="font-size:10.5px;color:var(--muted)">Looks up answers from your own data — works offline</div></div>
+    <button onclick="toggleAiAssist()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer">✕</button>
+  </div>
+  <div id="ai-assist-log" style="flex:1;overflow-y:auto;padding:12px 14px;font-size:12.5px;display:flex;flex-direction:column;gap:10px"></div>
+  <div style="display:flex;gap:6px;padding:10px;border-top:1px solid var(--border)">
+    <input class="inp inp-sm" id="ai-assist-input" placeholder="Ask a question…" onkeydown="if(event.key==='Enter') askAiAssist()">
+    <button class="btn btn-sm btn-gold" onclick="askAiAssist()">Ask</button>
+  </div>
+</div>
+
 <script>window.PagedConfig = { auto:false };</script>
 <script src="vendor/paged.polyfill.js"></script>
 <script src="vendor/xlsx.full.min.js"></script>
@@ -5016,6 +5030,8 @@ function _showScreen(name){
   document.getElementById('login-screen').style.display = name==='login' ? 'flex' : 'none';
   document.getElementById('pending-screen').style.display = name==='pending' ? 'flex' : 'none';
   document.getElementById('app').style.display = name==='app' ? 'flex' : 'none';
+  document.getElementById('ai-assist-btn').style.display = name==='app' ? 'flex' : 'none';
+  if(name!=='app'){ document.getElementById('ai-assist-panel').style.display='none'; }
 }
 function toggleAuthForm(which){
   document.getElementById('login-form').style.display = which==='login' ? '' : 'none';
@@ -5201,6 +5217,140 @@ async function rejectPendingUser(i){
     await _sb.from('ss_pending_users').update({status:'rejected',decided_at:new Date().toISOString(),decided_by:_currentUser.id}).eq('id',p.id);
     renderTeamApprovals();
   }catch(e){ console.error(e); alert('Could not reject this user — check your connection and try again.'); }
+}
+
+/* ============================== ASK — offline smart search, no AI service/network needed ============================== */
+const AI_EXAMPLES=[
+  'How many quotations are pending?',
+  'Total value of won quotations',
+  'Show overdue follow-ups',
+  'Status of AT00012',
+  "What's our conversion rate?",
+  'Who is the top performer?'
+];
+let _aiChatLog=[];
+function _aiExamplesHtml(){ return `<div class="chip-row" style="margin-top:8px">${AI_EXAMPLES.map(x=>`<span class="chip" style="cursor:pointer" onclick='askAiAssistWith(${JSON.stringify(x)})'>${escHtml(x)}</span>`).join('')}</div>`; }
+function toggleAiAssist(){
+  const panel=document.getElementById('ai-assist-panel');
+  const opening = panel.style.display==='none'||!panel.style.display;
+  panel.style.display = opening ? 'flex' : 'none';
+  if(opening && !_aiChatLog.length){
+    _aiChatLog.push({role:'assistant', html:`Hi${_currentUser?', '+escHtml(_currentUser.name.split(' ')[0]):''}! Ask me about your quotations, follow-ups, or estimation pipeline — I only look things up from data already in the app, no internet needed.${_aiExamplesHtml()}`});
+    renderAiChatLog();
+  }
+  if(opening) setTimeout(()=>{ const el=document.getElementById('ai-assist-input'); if(el) el.focus(); },50);
+}
+function askAiAssistWith(text){ document.getElementById('ai-assist-input').value=text; askAiAssist(); }
+function askAiAssist(){
+  const input=document.getElementById('ai-assist-input');
+  const text=input.value.trim();
+  if(!text) return;
+  input.value='';
+  _aiChatLog.push({role:'user', html:escHtml(text)});
+  let answer;
+  try{ answer=answerAssistQuery(text); }
+  catch(e){ console.error('Ask query failed',e); answer='Something went wrong answering that — try rephrasing.'; }
+  _aiChatLog.push({role:'assistant', html:answer});
+  renderAiChatLog();
+}
+function renderAiChatLog(){
+  const log=document.getElementById('ai-assist-log');
+  log.innerHTML=_aiChatLog.map(m=>`<div style="align-self:${m.role==='user'?'flex-end':'flex-start'};max-width:88%;background:${m.role==='user'?'var(--gold-pale)':'#F4F3EF'};padding:8px 10px;border-radius:10px;line-height:1.5">${m.html}</div>`).join('');
+  log.scrollTop=log.scrollHeight;
+}
+function answerAssistQuery(raw){
+  const q=raw.toLowerCase().trim();
+  const role=_currentUser?.role;
+  const canSeeCosting = !!role && ['Cost Estimator','Admin Coordinator','Management','CEO'].includes(role);
+  const canSeeSales = !!role && ['Sales Executive','Admin Coordinator','Management','CEO'].includes(role);
+  const noSalesAccess='Quotations and follow-ups aren\'t part of your role — ask a Sales Executive or Admin Coordinator.';
+  const noCostingAccess='Costing/estimation details aren\'t part of your role — ask a Cost Estimator or Admin Coordinator.';
+
+  const quoteNoMatch=raw.match(/\bAT\d{4,}\b/i);
+  if(quoteNoMatch){
+    if(!canSeeSales) return noSalesAccess;
+    const qn=quoteNoMatch[0].toUpperCase();
+    const quo=DB.quotations.find(x=>(x.quoteNo||'').toUpperCase()===qn);
+    if(!quo) return `I couldn't find a quotation numbered <b>${escHtml(qn)}</b>.`;
+    return `<b>${escHtml(quo.quoteNo)}</b> — ${escHtml(quo.clientName||'—')}<br>Status: ${statusTag(quo.status)}<br>Final Payable: <b>${INR(finalPayable(quo))}</b>${quo.estimatedCost!=null?`<br>Estimated Cost (from Estimation): ${INR(quo.estimatedCost)}`:''}<div style="margin-top:6px"><button class="btn btn-sm" onclick="openEditor('${quo.id}');toggleAiAssist()">Open Quotation</button></div>`;
+  }
+
+  if(/follow.?up/.test(q) && /(overdue|today|tomorrow|pending|due)/.test(q)){
+    if(!canSeeSales) return noSalesAccess;
+    const rem=computeReminders();
+    const which = /overdue/.test(q) ? 'overdue' : /tomorrow/.test(q) ? 'tomorrow' : 'today';
+    const list = which==='overdue'?rem.overdue:which==='tomorrow'?rem.tomorrow:rem.today;
+    if(!list.length) return `No ${which} follow-ups right now. 🎉`;
+    return `${list.length} ${which} follow-up${list.length!==1?'s':''}:<ul style="margin:6px 0 0;padding-left:18px">${list.slice(0,8).map(x=>`<li>${escHtml(x.clientName||'—')} (${escHtml(x.quoteNo)})</li>`).join('')}</ul>${list.length>8?`<div class="small">+${list.length-8} more</div>`:''}`;
+  }
+
+  if(/conversion/.test(q)){
+    if(!canSeeSales) return noSalesAccess;
+    const s=computeGroupStats(DB.quotations);
+    return s.conversionPct==null ? `Not enough closed quotations yet to calculate a conversion rate.` : `Conversion rate: <b>${s.conversionPct.toFixed(0)}%</b> (${s.wonCount} won of ${s.wonCount+s.lostCount} closed)`;
+  }
+
+  if(/top (performer|lead ?source|architect|builder|b2b)/.test(q)){
+    if(!canSeeSales) return noSalesAccess;
+    const t=computeTopPerformers();
+    if(/architect/.test(q)) return t.topArchitect ? `Top architect: <b>${escHtml(t.topArchitect.name)}</b> — ${INR(t.topArchitect.value)} won` : `No architect-referred wins yet.`;
+    if(/builder/.test(q)) return t.topBuilder ? `Top builder: <b>${escHtml(t.topBuilder.name)}</b> — ${INR(t.topBuilder.value)} won` : `No builder-referred wins yet.`;
+    if(/b2b/.test(q)) return t.topB2B ? `Top B2B partner: <b>${escHtml(t.topB2B.name)}</b> — ${INR(t.topB2B.value)} won` : `No B2B-referred wins yet.`;
+    if(/lead ?source/.test(q)) return t.topLeadSource ? `Top lead source: <b>${escHtml(t.topLeadSource.name)}</b> — ${INR(t.topLeadSource.value)} won` : `No wins yet to rank lead sources.`;
+    const names=[...new Set(DB.quotations.map(ownerOf))];
+    const ranked=names.map(name=>({name,...computeGroupStats(DB.quotations.filter(x=>ownerOf(x)===name))})).sort((a,b)=>b.wonValue-a.wonValue);
+    const best=ranked[0];
+    return best && best.wonValue>0 ? `Top performer: <b>${escHtml(best.name)}</b> — ${INR(best.wonValue)} won (${best.wonCount} quotation${best.wonCount!==1?'s':''})` : `No wins recorded yet.`;
+  }
+
+  if(/how many (quot|lead)/.test(q) || /(count|number) of quot/.test(q)){
+    if(!canSeeSales) return noSalesAccess;
+    let list=DB.quotations, label='quotations';
+    if(/draft/.test(q)){ list=list.filter(x=>x.status==='Draft'); label='Draft quotations'; }
+    else if(/\bwon\b/.test(q)){ list=list.filter(x=>WON_STATUSES.includes(x.status)); label='Won quotations'; }
+    else if(/\blost\b/.test(q)){ list=list.filter(x=>x.status==='Lost'); label='Lost quotations'; }
+    else if(/pending|open|active/.test(q)){ list=list.filter(isActiveQuotation); label='active/pending quotations'; }
+    return `${list.length} ${label}.`;
+  }
+
+  if(/(total|value|worth)/.test(q) && /quot/.test(q)){
+    if(!canSeeSales) return noSalesAccess;
+    if(/\bwon\b/.test(q)){ const list=DB.quotations.filter(x=>WON_STATUSES.includes(x.status)); return `Total value of won quotations: <b>${INR(list.reduce((s,x)=>s+finalPayable(x),0))}</b>`; }
+    let list=DB.quotations, label='all quotations';
+    if(/pending|open|active/.test(q)){ list=list.filter(isActiveQuotation); label='active quotations'; }
+    return `Total value of ${label}: <b>${INR(list.reduce((s,x)=>s+grandTotal(x),0))}</b>`;
+  }
+
+  if(/(how many|count|number of).*(material|hardware|labour|template)/.test(q)){
+    if(!canSeeCosting) return noCostingAccess;
+    if(/material/.test(q)) return `${DB.materials.length} materials in Material Master.`;
+    if(/hardware/.test(q)) return `${DB.hardware.length} hardware items in Hardware Master.`;
+    if(/labour/.test(q)) return `${DB.labour.length} labour rates in Labour Master.`;
+    return `${DB.templates.length} furniture templates.`;
+  }
+
+  if(/(project|costing|estimat)/.test(q)){
+    if(!canSeeCosting) return noCostingAccess;
+    let list=DB.projects, label='costing projects';
+    if(/submit/.test(q)){ list=list.filter(x=>x.status==='Submitted'); label='projects submitted for approval'; }
+    else if(/approv/.test(q)){ list=list.filter(x=>x.status==='Approved'); label='approved projects'; }
+    else if(/return/.test(q)){ list=list.filter(x=>x.status==='Returned'); label='projects returned for correction'; }
+    else if(/draft|await/.test(q)){ list=list.filter(x=>x.status==='Draft'); label='projects still in draft/awaiting costing'; }
+    return `${list.length} ${label}.`;
+  }
+
+  const forMatch = raw.match(/(?:quotations?|quotes?)\s+for\s+(.+)/i) || raw.match(/show\s+(?:me\s+)?(.+)/i);
+  if(forMatch && canSeeSales){
+    const name=forMatch[1].trim().replace(/[?.!]+$/,'');
+    if(name && name.length>1){
+      const matches=DB.quotations.filter(x=>(x.clientName||'').toLowerCase().includes(name.toLowerCase()));
+      if(matches.length) return `${matches.length} quotation${matches.length!==1?'s':''} for "${escHtml(name)}":<ul style="margin:6px 0 0;padding-left:18px">${matches.slice(0,6).map(x=>`<li>${escHtml(x.quoteNo)} — ${statusTag(x.status)} — ${INR(finalPayable(x))} <a href="#" onclick="openEditor('${x.id}');toggleAiAssist();return false">Open</a></li>`).join('')}</ul>`;
+    }
+  }
+
+  if(/help|what can you|examples?/.test(q)) return `Here's what I can look up:${_aiExamplesHtml()}`;
+
+  return `I'm not sure how to answer that yet — I can only look up things already in the app (quotations, follow-ups, estimation status). Type "help" for examples.`;
 }
 
 /* ============================== INIT ============================== */
