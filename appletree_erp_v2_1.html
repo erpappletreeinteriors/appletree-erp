@@ -1319,7 +1319,13 @@ textarea.inp{resize:vertical;min-height:72px;}
      PAGE: STOCK REPORT
 ══════════════════════════════════════════════ -->
 <div id="pg-stockreport" class="page">
-  <div class="sec-hd"><div class="sec-title">Stock Report</div></div>
+  <div class="sec-hd">
+    <div class="sec-title">Stock Report</div>
+    <div style="display:flex;gap:6px">
+      <button class="tpl-tab active" id="sr-tab-overall" onclick="switchStockReportTab('overall')">Overall Stock</button>
+      <button class="tpl-tab" id="sr-tab-aging" onclick="switchStockReportTab('aging')">Stock Aging</button>
+    </div>
+  </div>
 
   <!-- Overall Stock Report (default view) -->
   <div id="sr-overall-section">
@@ -1337,6 +1343,19 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="tbl-wrap"><table>
         <thead><tr><th>Item</th><th>Category</th><th>Unit</th><th class="right">Current Stock</th><th class="right">Reserved</th><th class="right">Available</th><th class="right">Avg Cost ₹</th><th class="right">Stock Value ₹</th><th>Actions</th></tr></thead>
         <tbody id="sr-overall-tb"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <!-- Stock Aging Report -->
+  <div id="sr-aging-section" style="display:none">
+    <div class="alert alert-info">ℹ️ Age is approximated from each item's last received Purchase Order — this schema doesn't track individual lots/batches, so items received via multiple POs are aged from the most recent one. Items never received through a PO show as "Unknown".</div>
+    <div class="kpi-row c4" id="sr-aging-kpis" style="margin-bottom:16px"></div>
+    <div class="card">
+      <div style="padding:16px 16px 0"><div id="sr-aging-chart"></div></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Item</th><th>Category</th><th>Unit</th><th class="right">Qty</th><th class="right">Rate ₹</th><th class="right">Value ₹</th><th>Age Bucket</th></tr></thead>
+        <tbody id="sr-aging-tb"></tbody>
       </table></div>
     </div>
   </div>
@@ -3824,15 +3843,16 @@ function _reservedQty(itemId){
 }
 
 // Entry point when navigating to the Stock Report page — always resets to
-// the Overall Stock Report view (drill-down is reached via its "Ledger"
+// the Overall Stock Report tab (drill-down is reached via its "Ledger"
 // button, matching how every other list→detail page in this app works).
 function renderStockReportPage(){
   closeStockLedger();
-  renderStockReportOverall();
+  switchStockReportTab('overall');
 }
 
 function openStockLedger(itemId){
   document.getElementById('sr-overall-section').style.display='none';
+  document.getElementById('sr-aging-section').style.display='none';
   document.getElementById('sr-ledger-section').style.display='';
   const sel=document.getElementById('sr-item-sel');
   if(sel) sel.value=itemId;
@@ -3840,7 +3860,106 @@ function openStockLedger(itemId){
 }
 function closeStockLedger(){
   document.getElementById('sr-ledger-section').style.display='none';
-  document.getElementById('sr-overall-section').style.display='';
+  const agingActive = document.getElementById('sr-tab-aging')?.classList.contains('active');
+  document.getElementById('sr-aging-section').style.display = agingActive ? '' : 'none';
+  document.getElementById('sr-overall-section').style.display = agingActive ? 'none' : '';
+}
+
+// ── STOCK AGING ──────────────────────────────────────────────────
+// This schema has no true per-lot/batch tracking, so "age" here is an
+// approximation: days since the item was last restocked via a received
+// Purchase Order (using the PO's receivedDate, matched by itemId). Items
+// that were never restocked through a PO (added directly, or predate PO
+// tracking) show as "Unknown" rather than guessing — an honest gap is
+// better than fake precision on a financial report.
+function _lastRestockDate(itemId){
+  let latest = null;
+  (DB.purchaseOrders||[]).forEach(po=>{
+    if(po.destination!=='Warehouse' || !po.receivedDate) return;
+    const hasItem = (po.items||[]).some(i=>i.itemId===itemId && (i.receivedQty||0)>0);
+    if(hasItem && (!latest || po.receivedDate>latest)) latest = po.receivedDate;
+  });
+  return latest;
+}
+
+const AGE_BUCKETS = [
+  {label:'0–30 Days',   min:0,   max:30},
+  {label:'31–60 Days',  min:31,  max:60},
+  {label:'61–90 Days',  min:61,  max:90},
+  {label:'91–180 Days', min:91,  max:180},
+  {label:'Above 180 Days', min:181, max:Infinity},
+];
+
+function renderStockAging(){
+  const now = new Date();
+  const buckets = AGE_BUCKETS.map(b=>({...b, qty:0, value:0, items:[]}));
+  let unknownQty=0, unknownValue=0, unknownItems=[];
+  let totalAgeDays=0, totalAgedQty=0;
+
+  DB.warehouse.forEach(w=>{
+    if(w.qty<=0) return;
+    const lastDate = _lastRestockDate(w.id);
+    const value = w.qty*w.rate;
+    if(!lastDate){
+      unknownQty+=w.qty; unknownValue+=value; unknownItems.push(w);
+      return;
+    }
+    const days = Math.floor((now - new Date(lastDate))/86400000);
+    const bucket = buckets.find(b=>days>=b.min && days<=b.max) || buckets[buckets.length-1];
+    bucket.qty += w.qty; bucket.value += value; bucket.items.push({...w, days});
+    totalAgeDays += days*w.qty; totalAgedQty += w.qty;
+  });
+
+  const avgAge = totalAgedQty ? Math.round(totalAgeDays/totalAgedQty) : 0;
+  const totalValue = buckets.reduce((s,b)=>s+b.value,0) + unknownValue;
+
+  document.getElementById('sr-aging-kpis').innerHTML = `
+    ${kpiBox('Total Stock Value', INR(totalValue), '', 'var(--gold)')}
+    ${kpiBox('Average Age', avgAge+' days', 'Weighted by quantity', avgAge>90?'var(--red)':avgAge>30?'var(--amber)':'var(--green)')}
+    ${kpiBox('Above 180 Days', INR(buckets[4].value), buckets[4].qty+' units — review for dead stock', buckets[4].value>0?'var(--red)':'')}
+    ${kpiBox('Unknown Age', INR(unknownValue), unknownItems.length+' item(s) — no PO receipt on record', unknownValue>0?'var(--muted)':'')}
+  `;
+
+  const maxVal = Math.max(...buckets.map(b=>b.value), 1);
+  document.getElementById('sr-aging-chart').innerHTML = buckets.map(b=>`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="width:100px;font-size:11px;color:var(--muted)">${b.label}</div>
+      <div style="flex:1;background:var(--border2);border-radius:6px;height:20px;overflow:hidden">
+        <div style="width:${(b.value/maxVal*100)}%;height:100%;background:${b.min>=181?'var(--red)':b.min>=91?'var(--amber)':'var(--green)'};display:flex;align-items:center;padding-left:6px">
+          ${b.value>0?`<span style="font-size:10px;color:#fff;font-weight:600">${INR(b.value)}</span>`:''}
+        </div>
+      </div>
+      <div style="width:60px;text-align:right;font-size:11px;color:var(--muted)">${b.qty} units</div>
+    </div>
+  `).join('');
+
+  const tb = document.getElementById('sr-aging-tb');
+  const rows = [
+    ...buckets.flatMap(b=>b.items.map(i=>({...i, bucketLabel:b.label}))),
+    ...unknownItems.map(i=>({...i, days:null, bucketLabel:'Unknown'}))
+  ].sort((a,b)=>(b.days??999)-(a.days??999));
+
+  if(!rows.length){
+    tb.innerHTML = `<tr><td colspan="7" class="muted" style="text-align:center;padding:24px">No stock to age.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = rows.map(i=>`<tr>
+    <td><strong>${escHtml(i.name)}</strong><div class="muted small">${escHtml(i.code||'')}</div></td>
+    <td><span class="tag tag-grey">${escHtml(i.category||'—')}</span></td>
+    <td>${i.unit}</td>
+    <td class="mono right">${i.qty}</td>
+    <td class="mono right">${INR(i.rate)}</td>
+    <td class="mono right">${INR(i.qty*i.rate)}</td>
+    <td><span class="tag ${i.days===null?'tag-grey':i.days>180?'tag-red':i.days>90?'tag-amber':'tag-green'}">${i.days===null?'Unknown':i.bucketLabel}</span></td>
+  </tr>`).join('');
+}
+
+function switchStockReportTab(tab){
+  document.getElementById('sr-tab-overall').classList.toggle('active', tab==='overall');
+  document.getElementById('sr-tab-aging').classList.toggle('active', tab==='aging');
+  document.getElementById('sr-overall-section').style.display = tab==='overall' ? '' : 'none';
+  document.getElementById('sr-aging-section').style.display = tab==='aging' ? '' : 'none';
+  if(tab==='aging') renderStockAging(); else renderStockReportOverall();
 }
 
 function renderStockReportOverall(){
