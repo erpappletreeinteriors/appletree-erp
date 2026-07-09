@@ -408,6 +408,8 @@ font-weight:500;}
 .aging-legend-item{display:flex;align-items:center;gap:6px;color:var(--dark)}
 .aging-legend-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
 
+.kbd{display:inline-block;background:var(--bg);border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;padding:2px 7px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dark);font-weight:600}
+
 /* Chart.js canvases default to inline display, which breaks its responsive
    width auto-sizing inside flex/grid card containers (reports width:0). */
 .card canvas{display:block;width:100%!important;height:100%!important}
@@ -790,6 +792,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="tb-breadcrumb" id="pageCrumb"></div>
     </div>
     <div class="tb-right" id="topbarActions">
+      <button class="btn btn-outline btn-sm" onclick="openKeyboardHelp()" title="Keyboard shortcuts (?)">⌨️</button>
       <button class="btn btn-outline btn-sm" onclick="toggleDarkMode()" title="Toggle dark mode" id="dark-mode-toggle">🌙</button>
       <button class="btn btn-outline btn-sm" onclick="exportPage()">⬇ Export</button>
       <button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-b)" onclick="doLogout()" title="Sign Out">🔒 Sign Out</button>
@@ -2154,6 +2157,26 @@ textarea.inp{resize:vertical;min-height:72px;}
   </div>
 </div>
 
+<!-- KEYBOARD SHORTCUTS HELP -->
+<div id="kbd-help-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;align-items:center;justify-content:center;padding:16px" onclick="if(event.target===this)closeKeyboardHelp()">
+  <div style="background:var(--white);border-radius:var(--r-lg);width:420px;max-width:95vw;padding:24px;box-shadow:var(--shadow-lg)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-size:16px;font-weight:700;color:var(--dark)">⌨️ Keyboard Shortcuts</div>
+      <button class="x-btn" onclick="closeKeyboardHelp()">✕</button>
+    </div>
+    <div style="display:grid;gap:10px;font-size:13px">
+      <div style="display:flex;justify-content:space-between"><span>Close a dialog / modal</span><kbd class="kbd">Esc</kbd></div>
+      <div style="display:flex;justify-content:space-between"><span>Save the open form</span><kbd class="kbd">Ctrl/Cmd + S</kbd></div>
+      <div style="display:flex;justify-content:space-between"><span>Jump to search box</span><kbd class="kbd">/</kbd></div>
+      <div style="display:flex;justify-content:space-between"><span>New record on this page</span><kbd class="kbd">Alt + N</kbd></div>
+      <div style="display:flex;justify-content:space-between"><span>Move between fields</span><kbd class="kbd">Tab</kbd> / <kbd class="kbd">Shift+Tab</kbd></div>
+      <div style="display:flex;justify-content:space-between"><span>Move within a dropdown</span><kbd class="kbd">↑</kbd> <kbd class="kbd">↓</kbd></div>
+      <div style="display:flex;justify-content:space-between"><span>Show this help</span><kbd class="kbd">?</kbd></div>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:16px">While a dialog is open, Tab cycles only through that dialog's fields — it won't jump to the page behind it.</div>
+  </div>
+</div>
+
 <!-- MODAL OVERLAY -->
 <div class="overlay" id="overlay">
   <div class="modal" id="modal">
@@ -2629,6 +2652,111 @@ function toggleDarkMode(){
 document.addEventListener('DOMContentLoaded', ()=>{
   const btn = document.getElementById('dark-mode-toggle');
   if(btn) btn.textContent = document.documentElement.getAttribute('data-theme')==='dark' ? '☀️' : '🌙';
+});
+
+// ═══════════════════════════════════════════
+//  GLOBAL KEYBOARD NAVIGATION
+//  Rather than rewiring 40+ pages' individual forms/buttons (high risk of
+//  regressions for a single-file app this size), this implements the
+//  highest-value shortcuts as one global, event-delegated layer that
+//  works everywhere without touching existing page markup: Esc closes any
+//  open modal/overlay, Ctrl/Cmd+S saves the open modal instead of
+//  triggering the browser's Save Page dialog, "/" jumps to the current
+//  page's search box, Alt+N triggers the current page's primary "+ New"
+//  button, Tab/Shift+Tab are trapped inside an open modal so focus can't
+//  leak to background page elements, and "?" shows a shortcuts reference.
+//  Native browser behavior already covers Tab/Shift+Tab field-to-field
+//  movement, Enter-to-submit in forms, and Arrow-key navigation inside
+//  <select> dropdowns — those need no custom code.
+// ═══════════════════════════════════════════
+const _OVERLAY_CLOSERS = {
+  'overlay':              ()=>closeModal(),
+  'doc-preview-overlay':  ()=>closeDocPreview(),
+  'user-modal-overlay':   ()=>closeUserModal(),
+  'budget-overlay':       ()=>closeBudgetOverlay(),
+  'prod-bom-overlay':     ()=>closeProdBom(),
+  'bill-builder-overlay': ()=>closeBillBuilder(),
+  'pur-builder-overlay':  ()=>closePurBuilder(),
+  'jc-print-overlay':     ()=>{ document.getElementById('jc-print-overlay').style.display='none'; },
+  'kbd-help-overlay':     ()=>closeKeyboardHelp(),
+};
+
+function _findVisibleOverlay(){
+  for(const id of Object.keys(_OVERLAY_CLOSERS)){
+    const el = document.getElementById(id);
+    if(el && getComputedStyle(el).display !== 'none') return id;
+  }
+  return null;
+}
+
+function openKeyboardHelp(){
+  const el = document.getElementById('kbd-help-overlay');
+  if(el) el.style.display = 'flex';
+}
+function closeKeyboardHelp(){
+  const el = document.getElementById('kbd-help-overlay');
+  if(el) el.style.display = 'none';
+}
+
+document.addEventListener('keydown', function(e){
+  const visId = _findVisibleOverlay();
+
+  // Esc — close whatever's open, topmost first
+  if(e.key === 'Escape' && visId){
+    e.preventDefault(); _OVERLAY_CLOSERS[visId](); return;
+  }
+
+  // Ctrl/Cmd+S — save the open modal; otherwise just swallow the browser's
+  // native Save Page shortcut so it doesn't hijack the keystroke.
+  if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){
+    e.preventDefault();
+    if(visId==='overlay'){
+      const btn=document.getElementById('modal-save-btn');
+      if(btn && getComputedStyle(btn).display!=='none') btn.click();
+    } else if(visId){
+      const overlayEl=document.getElementById(visId);
+      const saveBtn=overlayEl?.querySelector('.btn-gold');
+      if(saveBtn) saveBtn.click();
+    }
+    return;
+  }
+
+  // "?" — shortcuts help (only when not typing in a field)
+  if(e.key === '?' ){
+    const active=document.activeElement;
+    const isTyping = active && (active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.isContentEditable);
+    if(!isTyping){ e.preventDefault(); openKeyboardHelp(); return; }
+  }
+
+  // "/" — jump to the current page's search box
+  if(e.key === '/' && !visId){
+    const active = document.activeElement;
+    const isTyping = active && (active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT'||active.isContentEditable);
+    if(!isTyping){
+      const activePage = document.querySelector('.page.active');
+      const searchInp = activePage?.querySelector('.inp-search');
+      if(searchInp){ e.preventDefault(); searchInp.focus(); }
+    }
+  }
+
+  // Alt+N — trigger the current page's primary "+ New ..." button
+  if(e.altKey && e.key.toLowerCase()==='n' && !visId){
+    const activePage = document.querySelector('.page.active');
+    const newBtn = activePage?.querySelector('.sec-hd .btn-gold');
+    if(newBtn){ e.preventDefault(); newBtn.click(); }
+  }
+
+  // Tab / Shift+Tab — trap focus inside an open modal so it can't escape
+  // to background page elements while a dialog is up.
+  if(e.key === 'Tab' && visId){
+    const overlayEl = document.getElementById(visId);
+    const focusable = [...overlayEl.querySelectorAll('button, [href], input:not([type="hidden"]), select, textarea, [tabindex]:not([tabindex="-1"])')]
+      .filter(el=>getComputedStyle(el).display!=='none' && !el.disabled);
+    if(!focusable.length) return;
+    const first = focusable[0], last = focusable[focusable.length-1];
+    if(e.shiftKey && document.activeElement===first){ e.preventDefault(); last.focus(); }
+    else if(!e.shiftKey && document.activeElement===last){ e.preventDefault(); first.focus(); }
+  }
 });
 
 // ═══════════════════════════════════════════
