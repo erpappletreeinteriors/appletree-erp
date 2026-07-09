@@ -154,6 +154,10 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
       <div class="nav-item" data-pg="reports" onclick="nav('reports',this)"><span class="ni">🖨️</span> Reports</div>
     </div>
     <div class="nav-group">
+      <div class="nav-label">Documents</div>
+      <div class="nav-item" data-pg="proformalist" onclick="nav('proformalist',this)"><span class="ni">🧾</span> Proforma Invoices</div>
+    </div>
+    <div class="nav-group">
       <div class="nav-label">System</div>
       <div class="nav-item" data-pg="settings" onclick="nav('settings',this)"><span class="ni">⚙️</span> Settings</div>
     </div>
@@ -288,6 +292,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
             <button class="btn btn-outline" onclick="nav('projects',null)">← All Projects</button>
             <button class="btn btn-outline" onclick="openProjectModal(currentProjectId)">✏️ Edit Details</button>
             <button class="btn btn-outline" onclick="shareProjectPdf(currentProjectId)">📄 Share PDF</button>
+            <button class="btn btn-outline" onclick="convertProjectToProforma(currentProjectId)">🧾 Convert to Proforma Invoice</button>
           </div>
         </div>
         <div class="kpi-row c4" id="pd-kpis"></div>
@@ -380,6 +385,34 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
         <div id="rep-output"></div>
       </div>
 
+      <!-- PROFORMA INVOICE LIST -->
+      <div id="pg-proformalist" class="page">
+        <div class="sec-hd"><div class="sec-title">Proforma Invoices</div><button class="btn btn-gold" onclick="openProformaModal()">+ Create Proforma Invoice</button></div>
+        <div class="card">
+          <div class="tbl-toolbar">
+            <input class="inp inp-search" id="pi-search" placeholder="Search doc no., customer, project ref…" oninput="renderProformaList()">
+          </div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Doc No.</th><th>Customer</th><th>Project / Reference</th><th>Date</th><th class="right">Grand Total ₹</th><th>Status</th><th></th></tr></thead>
+            <tbody id="tb-proformalist"></tbody>
+          </table></div>
+        </div>
+      </div>
+
+      <!-- PROFORMA INVOICE DETAIL -->
+      <div id="pg-proformadetail" class="page">
+        <div class="sec-hd">
+          <div><div class="sec-title" id="pid-title">Proforma Invoice</div><div class="card-sub" id="pid-sub"></div></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-outline" onclick="nav('proformalist',null)">← All Proforma Invoices</button>
+            <button class="btn btn-outline" onclick="editProformaInvoice()">✏️ Edit</button>
+            <button class="btn btn-outline" onclick="duplicateProformaInvoice(currentProformaId)">⧉ Duplicate</button>
+            <button class="btn btn-gold" onclick="shareProformaPdf(currentProformaId)">📄 Print / Share PDF</button>
+          </div>
+        </div>
+        <div id="pid-content"></div>
+      </div>
+
       <!-- SETTINGS -->
       <div id="pg-settings" class="page">
         <div class="sec-hd"><div class="sec-title">Global Settings</div></div>
@@ -390,6 +423,26 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
             <div><label class="fl">Default Overhead %</label><input class="inp" id="st-overhead" type="number"></div>
             <div><label class="fl">Default Profit %</label><input class="inp" id="st-profit" type="number"></div>
           </div>
+          <div class="modal-ft" style="border:none;padding-top:14px"><button class="btn btn-gold" onclick="saveSettings()">Save Settings</button></div>
+        </div>
+        <div class="card" style="max-width:560px">
+          <div class="card-hd"><div class="card-title">Company Details <span class="hint" style="margin:0">(shown on Proforma Invoices)</span></div></div>
+          <div class="fgrid">
+            <div><label class="fl">Address</label><input class="inp" id="st-companyaddress" style="width:100%"></div>
+            <div><label class="fl">Phone</label><input class="inp" id="st-companyphone" style="width:100%"></div>
+            <div><label class="fl">Email</label><input class="inp" id="st-companyemail" style="width:100%"></div>
+            <div><label class="fl">GSTIN</label><input class="inp" id="st-companygstin" style="width:100%"></div>
+          </div>
+          <div class="modal-ft" style="border:none;padding-top:14px"><button class="btn btn-gold" onclick="saveSettings()">Save Settings</button></div>
+        </div>
+        <div class="card" style="max-width:560px">
+          <div class="card-hd"><div class="card-title">Proforma Invoice Numbering</div></div>
+          <div class="fgrid">
+            <div><label class="fl">Prefix</label><input class="inp" id="st-piprefix" style="width:100%" placeholder="PI-"></div>
+            <div><label class="fl">Digits (zero-padded)</label><input class="inp" id="st-pidigits" type="number" min="1" max="10" style="width:100%"></div>
+            <div><label class="fl">Next Number To Issue</label><input class="inp" id="st-pinextseq" type="number" min="1" style="width:100%"></div>
+          </div>
+          <div class="hint" id="st-pipreview" style="margin-top:8px"></div>
           <div class="modal-ft" style="border:none;padding-top:14px"><button class="btn btn-gold" onclick="saveSettings()">Save Settings</button></div>
         </div>
         <div class="card" style="max-width:560px">
@@ -426,7 +479,7 @@ const CONSTRUCTION_TYPES={
 const HINGE_TIERS=[{maxH:900,qty:2},{maxH:1600,qty:3},{maxH:2200,qty:4},{maxH:2700,qty:5}];
 
 /* ============================== DB / PERSISTENCE ============================== */
-let DB={materials:[],hardware:[],labour:[],templates:[],projects:[],costingItems:[],customItems:[],simpleItems:[],settings:{}};
+let DB={materials:[],hardware:[],labour:[],templates:[],projects:[],costingItems:[],customItems:[],simpleItems:[],proformaInvoices:[],settings:{}};
 const STORE_KEY='appletree_costing_db_v1';
 
 function persist(){
@@ -435,7 +488,7 @@ function persist(){
 }
 function loadOrSeed(){
   const raw=localStorage.getItem(STORE_KEY);
-  if(raw){ try{ DB=JSON.parse(raw); if(!DB.settings) DB.settings={}; if(!DB.customItems) DB.customItems=[]; if(!DB.simpleItems) DB.simpleItems=[]; return; }catch(e){ console.error('Corrupt local data, reseeding',e); } }
+  if(raw){ try{ DB=JSON.parse(raw); if(!DB.settings) DB.settings={}; if(!DB.customItems) DB.customItems=[]; if(!DB.simpleItems) DB.simpleItems=[]; if(!DB.proformaInvoices) DB.proformaInvoices=[]; if(DB.settings.piPrefix==null) DB.settings.piPrefix='PI-'; if(DB.settings.piDigits==null) DB.settings.piDigits=5; if(DB.settings.piNextSeq==null) DB.settings.piNextSeq=1; return; }catch(e){ console.error('Corrupt local data, reseeding',e); } }
   seed();
   persist();
 }
@@ -448,7 +501,9 @@ function today(){ return new Date().toISOString().slice(0,10); }
 
 /* ============================== SEED DATA ============================== */
 function seed(){
-  DB.settings={ sheetSqft:32, defaultWastage:8, defaultOverhead:10, defaultProfit:20, nextProjectSeq:1 };
+  DB.settings={ sheetSqft:32, defaultWastage:8, defaultOverhead:10, defaultProfit:20, nextProjectSeq:1,
+    companyAddress:'', companyPhone:'', companyEmail:'sales.appletreeinteriors@gmail.com', companyGSTIN:'',
+    piPrefix:'PI-', piDigits:5, piNextSeq:1 };
 
   const M=(code,category,subCategory,name,brand,thickness,finish,unit,purchaseRate,wastagePct,vendor,leadTime,remarks)=>({
     id:uid('mat'),code,category,subCategory,name,brand,thickness,finish,unit,purchaseRate,wastagePct,vendor,leadTime,lastUpdated:today(),status:'Active',remarks:remarks||''
@@ -569,11 +624,12 @@ function seed(){
   DB.costingItems=[];
   DB.customItems=[];
   DB.simpleItems=[];
+  DB.proformaInvoices=[];
 }
 
 /* ============================== NAVIGATION ============================== */
-const PAGE_TITLES={dashboard:'Dashboard',materials:'Material Master',hardware:'Hardware Master',labour:'Labour Master',templates:'Furniture Template Library',projects:'Projects',projectdetail:'Project',itemdetail:'Furniture Item',customitemdetail:'Custom Wood Item',simpleitemdetail:'Simple Costing Item',reports:'Reports',settings:'Settings'};
-let currentProjectId=null, currentItemId=null, currentCustomItemId=null, currentSimpleItemId=null;
+const PAGE_TITLES={dashboard:'Dashboard',materials:'Material Master',hardware:'Hardware Master',labour:'Labour Master',templates:'Furniture Template Library',projects:'Projects',projectdetail:'Project',itemdetail:'Furniture Item',customitemdetail:'Custom Wood Item',simpleitemdetail:'Simple Costing Item',reports:'Reports',proformalist:'Proforma Invoices',proformadetail:'Proforma Invoice',settings:'Settings'};
+let currentProjectId=null, currentItemId=null, currentCustomItemId=null, currentSimpleItemId=null, currentProformaId=null;
 
 function nav(pg,el){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
@@ -581,9 +637,10 @@ function nav(pg,el){
   document.getElementById('pg-title').textContent=PAGE_TITLES[pg]||pg;
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   if(el) el.classList.add('active');
-  else { const match=document.querySelector(`.nav-item[data-pg="${['projectdetail','itemdetail','customitemdetail','simpleitemdetail'].includes(pg)?'projects':pg}"]`); if(match) match.classList.add('active'); }
+  else { const match=document.querySelector(`.nav-item[data-pg="${['projectdetail','itemdetail','customitemdetail','simpleitemdetail'].includes(pg)?'projects':pg==='proformadetail'?'proformalist':pg}"]`); if(match) match.classList.add('active'); }
   const renderers={dashboard:renderDashboard,materials:renderMaterials,hardware:renderHardware,labour:renderLabour,templates:renderTemplates,projects:renderProjects,reports:renderReportsPage,settings:renderSettings,
-    projectdetail:renderProjectDetail,itemdetail:renderCostingItemDetail,customitemdetail:renderCustomItemDetail,simpleitemdetail:renderSimpleItemDetail};
+    projectdetail:renderProjectDetail,itemdetail:renderCostingItemDetail,customitemdetail:renderCustomItemDetail,simpleitemdetail:renderSimpleItemDetail,
+    proformalist:renderProformaList,proformadetail:renderProformaDetail};
   if(renderers[pg]) renderers[pg]();
 }
 
@@ -1650,6 +1707,240 @@ function toggleFreezeSimple(){
   persist(); renderSimpleItemDetail(); renderProjectDetail();
 }
 
+/* ============================== PROFORMA INVOICE ============================== */
+const DEFAULT_PI_TERMS='1. This is a Proforma Invoice and not a demand for payment.\n2. Prices are valid for 15 days from the date of issue.\n3. Payment terms: as agreed in the project contract.\n4. Goods/services will be delivered upon confirmation of order and receipt of advance payment, if applicable.';
+function previewProformaNumber(){
+  const seq=DB.settings.piNextSeq||1;
+  const digits=DB.settings.piDigits||5;
+  return (DB.settings.piPrefix||'PI-')+String(seq).padStart(digits,'0');
+}
+function consumeProformaNumber(){
+  const n=previewProformaNumber();
+  DB.settings.piNextSeq=(DB.settings.piNextSeq||1)+1;
+  return n;
+}
+let proformaLinesDraft=[];
+function openProformaModal(existingId,prefill){
+  const pi=existingId?DB.proformaInvoices.find(x=>x.id===existingId):null;
+  proformaLinesDraft = pi?.items ? JSON.parse(JSON.stringify(pi.items)) : (prefill?.items ? JSON.parse(JSON.stringify(prefill.items)) : [{description:'',qty:1,unit:'Nos',unitPrice:0}]);
+  const p=pi||prefill||{};
+  openModalHtml(`
+    <div class="modal-hd"><div class="modal-title">${pi?'Edit':'Create'} Proforma Invoice</div><button class="modal-close" onclick="closeModal()">×</button></div>
+    <input type="hidden" id="pim-id" value="${pi?.id||''}">
+    <input type="hidden" id="pim-projectid" value="${p.projectId||''}">
+    <div class="card-sub" style="margin-bottom:10px;font-weight:700;color:var(--text)">Document Info</div>
+    <div class="fgrid">
+      <div><label class="fl req">Document Number</label><input class="inp" id="pim-docnumber" value="${escHtml(pi?.docNumber||prefill?.docNumber||previewProformaNumber())}" style="width:100%"></div>
+      <div><label class="fl">Date</label><input class="inp" id="pim-date" type="date" value="${p.date||today()}" style="width:100%"></div>
+      <div><label class="fl">Project / Reference</label><input class="inp" id="pim-projectref" value="${escHtml(p.projectRef||'')}" style="width:100%"></div>
+      <div><label class="fl">Status</label><select class="inp" id="pim-status" style="width:100%">${optionsHtml(['Draft','Sent','Approved'],p.status||'Draft')}</select></div>
+    </div>
+    <div class="card-sub" style="margin:14px 0 8px;font-weight:700;color:var(--text)">Customer Details</div>
+    <div class="fgrid">
+      <div><label class="fl req">Customer Name</label><input class="inp" id="pim-custname" value="${escHtml(p.customerName||'')}" style="width:100%"></div>
+      <div><label class="fl">Customer GSTIN</label><input class="inp" id="pim-custgstin" value="${escHtml(p.customerGSTIN||'')}" style="width:100%"></div>
+    </div>
+    <div class="frow"><label class="fl">Customer Address</label><input class="inp" id="pim-custaddress" value="${escHtml(p.customerAddress||'')}" style="width:100%"></div>
+    <div class="card-sub" style="margin:14px 0 8px;font-weight:700;color:var(--text)">Items</div>
+    <div id="pim-lines"></div>
+    <button class="btn btn-sm btn-outline" onclick="addProformaLine()">+ Add Line</button>
+    <div class="fgrid" style="margin-top:14px">
+      <div><label class="fl">Discount Type</label><select class="inp" id="pim-disctype" style="width:100%" onchange="renderProformaLines()">${optionsHtml(['None','Percent','Amount'],p.discountType||'None')}</select></div>
+      <div><label class="fl">Discount Value</label><input class="inp" id="pim-discvalue" type="number" min="0" value="${p.discountValue||0}" style="width:100%" onchange="renderProformaLines()"></div>
+      <div><label><input type="checkbox" id="pim-taxenabled" ${p.taxEnabled?'checked':''} onchange="renderProformaLines()"> Apply Tax/GST</label></div>
+      <div><label class="fl">Tax %</label><input class="inp" id="pim-taxpct" type="number" min="0" value="${p.taxPct||0}" style="width:100%" onchange="renderProformaLines()"></div>
+    </div>
+    <div id="pim-totals" style="margin-top:10px"></div>
+    <div class="card-sub" style="margin:14px 0 8px;font-weight:700;color:var(--text)">Notes &amp; Terms</div>
+    <div class="frow"><label class="fl">Notes</label><textarea class="inp" id="pim-notes" rows="2" style="width:100%">${escHtml(p.notes||'')}</textarea></div>
+    <div class="frow"><label class="fl">Terms &amp; Conditions</label><textarea class="inp" id="pim-terms" rows="4" style="width:100%">${escHtml(p.terms??DEFAULT_PI_TERMS)}</textarea></div>
+    <div class="modal-ft"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-gold" onclick="saveProformaInvoice()">Save Proforma Invoice</button></div>
+  `);
+  renderProformaLines();
+}
+function renderProformaLines(){
+  const el=document.getElementById('pim-lines');
+  el.innerHTML=`<div class="tbl-wrap"><table>
+    <thead><tr><th style="min-width:180px">Description</th><th style="width:70px">Qty</th><th style="width:90px">Unit</th><th style="width:100px">Unit Price ₹</th><th class="right" style="width:100px">Amount ₹</th><th></th></tr></thead>
+    <tbody>
+    ${proformaLinesDraft.map((l,i)=>{
+      const amt=(l.qty||0)*(l.unitPrice||0);
+      return `<tr>
+        <td><input class="inp inp-sm" style="width:100%" value="${escHtml(l.description)}" onchange="proformaLinesDraft[${i}].description=this.value"></td>
+        <td><input class="inp inp-sm" type="number" min="0" step="0.01" value="${l.qty}" style="width:100%" onchange="proformaLinesDraft[${i}].qty=num(this.value);renderProformaLines()"></td>
+        <td><select class="inp inp-sm" style="width:100%" onchange="proformaLinesDraft[${i}].unit=this.value">${optionsHtml(UNITS,l.unit)}</select></td>
+        <td><input class="inp inp-sm" type="number" min="0" value="${l.unitPrice}" style="width:100%" onchange="proformaLinesDraft[${i}].unitPrice=num(this.value);renderProformaLines()"></td>
+        <td class="mono right">${INR(amt)}</td>
+        <td><button class="btn btn-sm btn-red" onclick="removeProformaLine(${i})">✕</button></td>
+      </tr>`;
+    }).join('')}
+    </tbody>
+  </table></div>`;
+  const draftDoc={
+    items:proformaLinesDraft,
+    discountType:document.getElementById('pim-disctype')?.value||'None',
+    discountValue:num(document.getElementById('pim-discvalue')?.value),
+    taxEnabled:document.getElementById('pim-taxenabled')?.checked||false,
+    taxPct:num(document.getElementById('pim-taxpct')?.value)
+  };
+  const t=calcProformaTotals(draftDoc);
+  const tot=document.getElementById('pim-totals');
+  if(tot) tot.innerHTML=`<table style="max-width:360px;margin-left:auto">
+    <tr><td>Subtotal</td><td class="mono right">${INR(t.subtotal)}</td></tr>
+    ${t.discountAmt?`<tr><td>Discount</td><td class="mono right">− ${INR(t.discountAmt)}</td></tr>`:''}
+    ${t.taxAmt?`<tr><td>Tax (${draftDoc.taxPct}%)</td><td class="mono right">${INR(t.taxAmt)}</td></tr>`:''}
+    <tr class="tr-sum"><td>Grand Total</td><td class="mono right">${INR(t.grandTotal)}</td></tr>
+  </table>`;
+}
+function addProformaLine(){ proformaLinesDraft.push({description:'',qty:1,unit:'Nos',unitPrice:0}); renderProformaLines(); }
+function removeProformaLine(i){ proformaLinesDraft.splice(i,1); renderProformaLines(); }
+function calcProformaTotals(pi){
+  const items=pi.items||[];
+  const subtotal=items.reduce((s,l)=>s+(l.qty||0)*(l.unitPrice||0),0);
+  let discountAmt=0;
+  if(pi.discountType==='Percent') discountAmt=subtotal*(pi.discountValue||0)/100;
+  else if(pi.discountType==='Amount') discountAmt=pi.discountValue||0;
+  const afterDiscount=Math.max(0,subtotal-discountAmt);
+  const taxAmt=pi.taxEnabled?afterDiscount*(pi.taxPct||0)/100:0;
+  const grandTotal=afterDiscount+taxAmt;
+  return {subtotal,discountAmt,afterDiscount,taxAmt,grandTotal};
+}
+function saveProformaInvoice(){
+  const id=document.getElementById('pim-id').value;
+  const docNumber=document.getElementById('pim-docnumber').value.trim();
+  const customerName=document.getElementById('pim-custname').value.trim();
+  if(!docNumber){ alert('Document Number is required.'); return; }
+  if(!customerName){ alert('Customer Name is required.'); return; }
+  const dup=DB.proformaInvoices.find(p=>p.docNumber.toLowerCase()===docNumber.toLowerCase()&&p.id!==id);
+  if(dup){ alert('A Proforma Invoice with this document number already exists.'); return; }
+  // Only advance the sequence when creating a brand-new invoice AND the estimator kept the system-suggested number —
+  // opening the form, cancelling, or typing a custom number never burns a sequence value.
+  if(!id && docNumber===previewProformaNumber()) consumeProformaNumber();
+  const items=proformaLinesDraft.filter(l=>l.description||l.qty||l.unitPrice);
+  if(!items.length){ alert('Add at least one item line.'); return; }
+  const rec={
+    id:id||uid('pi'), docNumber, projectId:document.getElementById('pim-projectid').value||null,
+    date:document.getElementById('pim-date').value||today(),
+    projectRef:document.getElementById('pim-projectref').value.trim(),
+    status:document.getElementById('pim-status').value,
+    customerName, customerAddress:document.getElementById('pim-custaddress').value.trim(),
+    customerGSTIN:document.getElementById('pim-custgstin').value.trim(),
+    items,
+    discountType:document.getElementById('pim-disctype').value,
+    discountValue:num(document.getElementById('pim-discvalue').value),
+    taxEnabled:document.getElementById('pim-taxenabled').checked,
+    taxPct:num(document.getElementById('pim-taxpct').value),
+    notes:document.getElementById('pim-notes').value.trim(),
+    terms:document.getElementById('pim-terms').value,
+    createdAt:(id&&DB.proformaInvoices.find(x=>x.id===id)?.createdAt)||new Date().toISOString()
+  };
+  const idx=DB.proformaInvoices.findIndex(p=>p.id===id);
+  if(idx>-1) DB.proformaInvoices[idx]=rec; else DB.proformaInvoices.push(rec);
+  persist(); closeModal(); renderProformaList();
+  openProformaInvoice(rec.id);
+}
+function deleteProformaInvoice(id){
+  if(!confirm('Delete this Proforma Invoice permanently?')) return;
+  DB.proformaInvoices=DB.proformaInvoices.filter(p=>p.id!==id);
+  persist(); nav('proformalist',null);
+}
+function duplicateProformaInvoice(id){
+  const src=DB.proformaInvoices.find(p=>p.id===id);
+  if(!src) return;
+  openProformaModal(null,{...src, docNumber:previewProformaNumber(), date:today(), status:'Draft'});
+}
+function convertProjectToProforma(projectId){
+  const proj=DB.projects.find(p=>p.id===projectId);
+  if(!proj) return;
+  const items=DB.costingItems.filter(ci=>ci.projectId===projectId);
+  const customItems=DB.customItems.filter(ci=>ci.projectId===projectId);
+  const simpleItems=DB.simpleItems.filter(ci=>ci.projectId===projectId);
+  const allItems=[...items,...customItems,...simpleItems];
+  if(!allItems.length){ alert('This project has no costed furniture items yet — nothing to convert.'); return; }
+  const lines=allItems.map(ci=>({
+    description:ci.name+(ci.room?' — '+ci.room:''),
+    qty:ci.qty||1,
+    unit:'Nos',
+    unitPrice:Math.round(((ci.snapshot?.sellingPrice||0))/(ci.qty||1))
+  }));
+  openProformaModal(null,{
+    projectId:proj.id, projectRef:proj.name, customerName:proj.client, customerAddress:proj.location||'',
+    docNumber:previewProformaNumber(), date:today(), status:'Draft', items:lines,
+    discountType:'None', discountValue:0, taxEnabled:false, taxPct:0, notes:'', terms:DEFAULT_PI_TERMS
+  });
+}
+function renderProformaList(){
+  const q=(document.getElementById('pi-search')?.value||'').toLowerCase();
+  const rows=DB.proformaInvoices.filter(p=>!q||`${p.docNumber} ${p.customerName} ${p.projectRef}`.toLowerCase().includes(q));
+  document.getElementById('tb-proformalist').innerHTML=rows.length?rows.map(p=>{
+    const t=calcProformaTotals(p);
+    return `<tr style="cursor:pointer" onclick="openProformaInvoice('${p.id}')">
+      <td class="mono">${escHtml(p.docNumber)}</td><td>${escHtml(p.customerName)}</td><td>${escHtml(p.projectRef||'—')}</td>
+      <td>${fmtDate(p.date)}</td><td class="mono right">${INR(t.grandTotal)}</td>
+      <td><span class="tag ${p.status==='Approved'?'tag-green':p.status==='Sent'?'tag-blue':'tag-grey'}">${escHtml(p.status)}</span></td>
+      <td onclick="event.stopPropagation()"><button class="btn btn-sm btn-red" onclick="deleteProformaInvoice('${p.id}')">Del</button></td>
+    </tr>`;
+  }).join(''):`<tr><td colspan="7" class="empty">No Proforma Invoices yet. Click "+ Create Proforma Invoice" to start.</td></tr>`;
+}
+function openProformaInvoice(id){ currentProformaId=id; nav('proformadetail',null); renderProformaDetail(); }
+function editProformaInvoice(){ openProformaModal(currentProformaId); }
+function proformaDocumentHtml(pi){
+  const t=calcProformaTotals(pi);
+  const logoSrc=location.origin+'/logo.png';
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--gold);padding-bottom:14px;margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <img src="${logoSrc}" alt="Apple Tree" style="width:44px;height:auto">
+        <div>
+          <div style="font-family:'Manrope';font-weight:800;color:var(--gold-dim);letter-spacing:.06em;font-size:17px;text-transform:uppercase">Apple Tree Interiors</div>
+          <div class="small">${escHtml(DB.settings.companyAddress||'')}</div>
+          <div class="small">${[DB.settings.companyPhone,DB.settings.companyEmail].filter(Boolean).map(escHtml).join(' · ')}</div>
+          ${DB.settings.companyGSTIN?`<div class="small">GSTIN: ${escHtml(DB.settings.companyGSTIN)}</div>`:''}
+        </div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-weight:800;font-size:18px;letter-spacing:.04em">PROFORMA INVOICE</div>
+        <div class="mono bold" style="font-size:13px;margin-top:4px">${escHtml(pi.docNumber)}</div>
+        <div class="small">Date: ${fmtDate(pi.date)}</div>
+        <div class="small">Status: ${escHtml(pi.status)}</div>
+      </div>
+    </div>
+    <div class="fgrid" style="margin-bottom:16px">
+      <div><div class="small">BILL TO</div><div class="bold">${escHtml(pi.customerName)}</div>${pi.customerAddress?`<div class="small">${escHtml(pi.customerAddress)}</div>`:''}${pi.customerGSTIN?`<div class="small">GSTIN: ${escHtml(pi.customerGSTIN)}</div>`:''}</div>
+      <div><div class="small">PROJECT / REFERENCE</div><div class="bold">${escHtml(pi.projectRef||'—')}</div></div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr><th>Description</th><th class="right">Qty</th><th>Unit</th><th class="right">Unit Price ₹</th><th class="right">Amount ₹</th></tr></thead><tbody>
+      ${pi.items.map(l=>`<tr><td>${escHtml(l.description)}</td><td class="mono right">${l.qty}</td><td>${escHtml(l.unit)}</td><td class="mono right">${INR(l.unitPrice)}</td><td class="mono right">${INR((l.qty||0)*(l.unitPrice||0))}</td></tr>`).join('')}
+    </tbody></table></div>
+    <table style="max-width:360px;margin-left:auto;margin-top:8px">
+      <tr><td>Subtotal</td><td class="mono right">${INR(t.subtotal)}</td></tr>
+      ${t.discountAmt?`<tr><td>Discount</td><td class="mono right">− ${INR(t.discountAmt)}</td></tr>`:''}
+      ${t.taxAmt?`<tr><td>Tax (${pi.taxPct}%)</td><td class="mono right">${INR(t.taxAmt)}</td></tr>`:''}
+      <tr class="tr-sum"><td>Grand Total</td><td class="mono right">${INR(t.grandTotal)}</td></tr>
+    </table>
+    ${pi.notes?`<div class="card" style="margin-top:16px"><div class="card-title" style="margin-bottom:6px">Notes</div><div class="small" style="white-space:pre-wrap">${escHtml(pi.notes)}</div></div>`:''}
+    ${pi.terms?`<div class="card" style="margin-top:12px"><div class="card-title" style="margin-bottom:6px">Terms &amp; Conditions</div><div class="small" style="white-space:pre-wrap">${escHtml(pi.terms)}</div></div>`:''}
+    <div style="margin-top:48px;display:flex;justify-content:flex-end">
+      <div style="text-align:center">
+        <div style="margin-bottom:40px">For Apple Tree Interiors</div>
+        <div style="border-top:1px solid var(--border);padding-top:6px;font-size:11px;color:var(--muted)">Authorized Signature</div>
+      </div>
+    </div>
+  `;
+}
+function renderProformaDetail(){
+  const pi=DB.proformaInvoices.find(x=>x.id===currentProformaId);
+  if(!pi){ nav('proformalist',null); return; }
+  document.getElementById('pid-title').textContent=pi.docNumber;
+  document.getElementById('pid-sub').textContent=`${pi.customerName} · ${fmtDate(pi.date)} · ${pi.status}`;
+  document.getElementById('pid-content').innerHTML=`<div class="card">${proformaDocumentHtml(pi)}</div>`;
+}
+function shareProformaPdf(id){
+  const pi=DB.proformaInvoices.find(x=>x.id===id);
+  if(!pi) return;
+  openInNewTab(pi.docNumber+' — Proforma Invoice','<div class="card">'+proformaDocumentHtml(pi)+'</div>');
+}
+
 /* ============================== CALCULATION ENGINE ============================== */
 function mmToFt(mm){ return mm/304.8; }
 function mmToM(mm){ return mm/1000; }
@@ -2219,16 +2510,42 @@ function renderSettings(){
   document.getElementById('st-wastage').value=DB.settings.defaultWastage;
   document.getElementById('st-overhead').value=DB.settings.defaultOverhead;
   document.getElementById('st-profit').value=DB.settings.defaultProfit;
+  document.getElementById('st-companyaddress').value=DB.settings.companyAddress||'';
+  document.getElementById('st-companyphone').value=DB.settings.companyPhone||'';
+  document.getElementById('st-companyemail').value=DB.settings.companyEmail||'';
+  document.getElementById('st-companygstin').value=DB.settings.companyGSTIN||'';
+  document.getElementById('st-piprefix').value=DB.settings.piPrefix||'PI-';
+  document.getElementById('st-pidigits').value=DB.settings.piDigits||5;
+  document.getElementById('st-pinextseq').value=DB.settings.piNextSeq||1;
+  updatePiPreview();
 }
+function updatePiPreview(){
+  const prefix=document.getElementById('st-piprefix').value||'PI-';
+  const digits=num(document.getElementById('st-pidigits').value,5);
+  const next=num(document.getElementById('st-pinextseq').value,1);
+  document.getElementById('st-pipreview').textContent='Next number will be: '+prefix+String(next).padStart(digits,'0');
+}
+['st-piprefix','st-pidigits','st-pinextseq'].forEach(id=>{
+  document.addEventListener('input',e=>{ if(e.target.id===id) updatePiPreview(); });
+});
 function saveSettings(){
   const sheetSqft=num(document.getElementById('st-sheetsqft').value,32);
   const defaultWastage=num(document.getElementById('st-wastage').value,8);
   const defaultOverhead=num(document.getElementById('st-overhead').value,10);
   const defaultProfit=num(document.getElementById('st-profit').value,20);
+  const piPrefix=document.getElementById('st-piprefix').value.trim()||'PI-';
+  const piDigits=num(document.getElementById('st-pidigits').value,5);
+  const piNextSeq=num(document.getElementById('st-pinextseq').value,1);
   if(sheetSqft<=0){ alert('Usable Sqft per Sheet must be greater than 0.'); return; }
   if(defaultWastage<0||defaultWastage>100){ alert('Default Wastage % must be between 0 and 100.'); return; }
   if(defaultOverhead<0||defaultProfit<0){ alert('Default Overhead % and Profit % cannot be negative.'); return; }
-  DB.settings={ ...DB.settings, sheetSqft, defaultWastage, defaultOverhead, defaultProfit };
+  if(piDigits<1||piNextSeq<1){ alert('Proforma Invoice digits and next number must be at least 1.'); return; }
+  DB.settings={ ...DB.settings, sheetSqft, defaultWastage, defaultOverhead, defaultProfit,
+    companyAddress:document.getElementById('st-companyaddress').value.trim(),
+    companyPhone:document.getElementById('st-companyphone').value.trim(),
+    companyEmail:document.getElementById('st-companyemail').value.trim(),
+    companyGSTIN:document.getElementById('st-companygstin').value.trim(),
+    piPrefix, piDigits, piNextSeq };
   persist(); recalcAllLiveItems(); alert('Settings saved.');
 }
 function exportData(){
