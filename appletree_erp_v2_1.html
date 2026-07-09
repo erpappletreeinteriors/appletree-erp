@@ -169,6 +169,38 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--dark);dis
 .um-item:hover{background:var(--bg);}
 .um-divider{border:none;border-top:1px solid var(--border);margin:4px 0;}
 
+#notif-bell{position:relative;}
+#notif-badge{
+  position:absolute;top:-4px;right:-4px;background:var(--red);color:#fff;
+  font-size:9px;font-weight:700;min-width:15px;height:15px;border-radius:8px;
+  display:none;align-items:center;justify-content:center;padding:0 3px;line-height:1;
+}
+#notif-badge.show{display:flex;}
+#notif-panel{
+  position:fixed;top:54px;right:60px;z-index:1000;
+  background:var(--white);border:1px solid var(--border);border-radius:var(--r);
+  box-shadow:var(--shadow-md);width:320px;max-height:420px;overflow-y:auto;display:none;
+}
+#notif-panel.open{display:block;}
+.notif-hd{padding:10px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;}
+.notif-hd a{font-size:11px;font-weight:600;color:var(--gold-dim);cursor:pointer;text-transform:none;letter-spacing:0;}
+.notif-item{padding:10px 14px;font-size:12px;border-bottom:1px solid var(--border);cursor:pointer;}
+.notif-item:hover{background:var(--bg);}
+.notif-item.unread{background:var(--amber-l);}
+.notif-item .ni-title{font-weight:700;color:var(--dark);}
+.notif-item .ni-msg{color:var(--muted);margin-top:2px;}
+.notif-item .ni-time{color:var(--muted);font-size:10px;margin-top:4px;}
+.notif-empty{padding:24px 14px;text-align:center;color:var(--muted);font-size:12px;}
+
+.timeline{position:relative;padding:4px 4px 4px 22px;}
+.timeline::before{content:'';position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--border);}
+.tl-item{position:relative;padding-bottom:18px;}
+.tl-item:last-child{padding-bottom:0;}
+.tl-dot{position:absolute;left:-22px;top:3px;width:10px;height:10px;border-radius:50%;background:var(--gold);border:2px solid var(--white);box-shadow:0 0 0 2px var(--gold);}
+.tl-action{font-weight:700;font-size:12.5px;color:var(--dark);}
+.tl-notes{font-size:12px;color:var(--muted);margin-top:2px;}
+.tl-meta{font-size:10.5px;color:var(--muted);margin-top:4px;opacity:.8;}
+
 /* ── SIDEBAR ── */
 #sidebar{
   width:220px;min-width:220px;background:var(--dark-accent);
@@ -672,6 +704,7 @@ textarea.inp{resize:vertical;min-height:72px;}
         <option value="Site Supervisor">Site Supervisor</option>
         <option value="Accounts">Accounts</option>
         <option value="Sales">Sales</option>
+        <option value="Estimator">Estimator</option>
         <option value="Procurement">Procurement</option>
       </select>
 
@@ -711,6 +744,10 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="nav-item" data-pg="leads" onclick="nav('leads',this)"><span class="ni">🎯</span> Leads & Enquiries</div>
       <div class="nav-item" data-pg="quotations" onclick="nav('quotations',this)"><span class="ni">📋</span> Quotations</div>
       <div class="nav-item" data-pg="customers" onclick="nav('customers',this)"><span class="ni">👤</span> Customers</div>
+    </div>
+    <div class="nav-grp">
+      <span class="nav-grp-label">Estimation</span>
+      <div class="nav-item" data-pg="estimatordash" onclick="nav('estimatordash',this)"><span class="ni">🧮</span> Estimator Dashboard</div>
     </div>
     <div class="nav-grp">
       <span class="nav-grp-label">Projects</span>
@@ -793,6 +830,7 @@ textarea.inp{resize:vertical;min-height:72px;}
     </div>
     <div class="tb-right" id="topbarActions">
       <button class="btn btn-outline btn-sm" onclick="openKeyboardHelp()" title="Keyboard shortcuts (?)">⌨️</button>
+      <button class="btn btn-outline btn-sm" id="notif-bell" onclick="toggleNotifMenu()" title="Notifications">🔔<span id="notif-badge">0</span></button>
       <button class="btn btn-outline btn-sm" onclick="toggleDarkMode()" title="Toggle dark mode" id="dark-mode-toggle">🌙</button>
       <button class="btn btn-outline btn-sm" onclick="exportPage()">⬇ Export</button>
       <button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-b)" onclick="doLogout()" title="Sign Out">🔒 Sign Out</button>
@@ -806,6 +844,10 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="um-item" onclick="changeMyPassword();toggleUserMenu()">🔑 Change Password</div>
       <hr class="um-divider">
       <div class="um-item" style="color:var(--red)" onclick="doLogout()">🔒 Sign Out</div>
+    </div>
+    <div id="notif-panel">
+      <div class="notif-hd"><span>Notifications</span><a onclick="markAllNotifsRead()">Mark all read</a></div>
+      <div id="notif-list"></div>
     </div>
   </header>
 
@@ -854,10 +896,29 @@ textarea.inp{resize:vertical;min-height:72px;}
       <input class="inp inp-search" placeholder="Search leads…" style="width:220px" oninput="filterTbl('tb-leads',this.value)">
       <select class="inp inp-sm" onchange="filterCol('tb-leads',4,this.value)">
         <option value="">All Status</option>
-        <option>New</option><option>Contacted</option><option>Site Visit</option><option>Quoted</option><option>Won</option><option>Lost</option>
+        <option>New</option><option>Contacted</option><option>Site Visit</option><option>Quotation Requested</option><option>Quoted</option><option>Won</option><option>Lost</option>
       </select>
     </div>
     <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Client Name</th><th>Phone</th><th>Location</th><th>Status</th><th>Source</th><th>Value ₹</th><th>Actions</th></tr></thead><tbody id="tb-leads"></tbody></table></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: ESTIMATOR DASHBOARD
+══════════════════════════════════════════════ -->
+<div id="pg-estimatordash" class="page">
+  <div class="kpi-row c3">
+    <div class="kpi b"><div class="kpi-label">New Requests</div><div class="kpi-val" id="ed-new">0</div><div class="kpi-sub">Awaiting an estimator</div></div>
+    <div class="kpi"><div class="kpi-label">Assigned To Me</div><div class="kpi-val" id="ed-mine">0</div><div class="kpi-sub">Currently estimating</div></div>
+    <div class="kpi g"><div class="kpi-label">Total Open</div><div class="kpi-val" id="ed-open">0</div><div class="kpi-sub">Across all estimators</div></div>
+  </div>
+  <div class="card" style="margin-top:4px">
+    <div class="card-hd"><div class="card-title">📥 Incoming Estimation Requests</div><div class="card-sub">Raised from Leads marked "Quotation Requested" — claim one to start</div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Requested</th><th>Customer</th><th>Location</th><th>Requested By</th><th>Est. Value ₹</th><th>Status</th><th>Action</th></tr></thead><tbody id="ed-incoming-tb"></tbody></table></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-hd"><div class="card-title">🧮 My Assigned Requests</div><div class="card-sub">Estimation requests you have claimed</div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Requested</th><th>Customer</th><th>Location</th><th>Requested By</th><th>Est. Value ₹</th><th>Costing</th><th></th></tr></thead><tbody id="ed-mine-tb"></tbody></table></div>
   </div>
 </div>
 
@@ -1483,6 +1544,7 @@ textarea.inp{resize:vertical;min-height:72px;}
         <option>Site Supervisor</option>
         <option>Accounts</option>
         <option>Sales</option>
+        <option>Estimator</option>
         <option>Procurement</option>
         <option>Admin</option>
       </select>
@@ -1509,6 +1571,7 @@ textarea.inp{resize:vertical;min-height:72px;}
         <th style="text-align:center">Factory Sup.</th>
         <th style="text-align:center">Site Sup.</th>
         <th style="text-align:center">Sales</th>
+        <th style="text-align:center">Estimator</th>
         <th style="text-align:center">Procurement</th>
         <th style="text-align:center">Admin</th>
       </tr></thead>
@@ -1543,6 +1606,7 @@ textarea.inp{resize:vertical;min-height:72px;}
             <option>Site Supervisor</option>
             <option>Accounts</option>
             <option>Sales</option>
+            <option>Estimator</option>
             <option>Procurement</option>
             <option>Admin</option>
           </select></div>
@@ -2320,6 +2384,110 @@ textarea.inp{resize:vertical;min-height:72px;}
   </div>
 </div>
 
+<!-- ══ ESTIMATION REQUEST COSTING OVERLAY (Stage 4 — Costing Preparation) ══ -->
+<!-- Mirrors the Product BOM overlay's data shape (materials/labour/expenses)
+     exactly, so a costing built here can later be copied verbatim into
+     DB.projectBudgets[].productBOMs[] once the job is won — without
+     touching the existing BOM engine above. -->
+<div id="est-cost-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:4000;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
+  <div style="background:var(--white);border-radius:var(--r-lg);width:min(1100px,98vw);box-shadow:var(--shadow-lg);position:relative">
+    <div style="padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div style="min-width:0">
+        <div style="font-size:16px;font-weight:700;color:var(--dark)" id="ec-title">Costing Preparation</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px" id="ec-subtitle">Materials + Labour & Wages</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+        <div style="text-align:right">
+          <div style="font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em">Estimated Cost</div>
+          <div id="ec-grand-total" style="font-size:18px;font-weight:700;color:var(--gold);font-family:'JetBrains Mono',monospace">₹0</div>
+        </div>
+        <button onclick="closeEstCosting()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;padding:4px 8px">✕</button>
+      </div>
+    </div>
+    <div style="display:flex;border-bottom:1px solid var(--border);padding:0 20px;gap:2px">
+      <button class="budget-tab active" onclick="_ecTab('mat',this)">📦 Raw Materials</button>
+      <button class="budget-tab" onclick="_ecTab('lab',this)">👷 Labour & Wages</button>
+      <button class="budget-tab" onclick="_ecTab('exp',this)">💰 Other Expenses</button>
+    </div>
+    <div id="ec-tab-mat" style="padding:14px 20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--muted)">List every raw material needed. Net Qty = Qty × (1 + Waste%/100).</div>
+        <button class="btn btn-outline" onclick="_ecAddMat()" style="font-size:11px;padding:4px 10px">+ Add Material</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="min-width:960px;width:100%">
+          <thead><tr>
+            <th style="width:28px;text-align:center">#</th>
+            <th style="min-width:200px">Material / Item</th>
+            <th style="width:60px">UOM</th>
+            <th style="width:88px">Qty</th>
+            <th style="width:64px">Waste %</th>
+            <th style="width:74px">Net Qty</th>
+            <th style="width:96px">Rate ₹</th>
+            <th style="width:110px">Amount ₹</th>
+            <th style="width:100px">Remarks</th>
+            <th style="width:28px"></th>
+          </tr></thead>
+          <tbody id="ec-mat-rows"></tbody>
+          <tfoot><tr style="background:var(--bg)">
+            <td colspan="7" style="text-align:right;font-size:12px;font-weight:700;color:var(--muted);padding:8px 10px">Material Total</td>
+            <td style="padding:8px 10px"><span id="ec-mat-total" style="font-size:13px;font-weight:700;color:var(--gold);font-family:'JetBrains Mono',monospace">₹0</span></td>
+            <td colspan="2"></td>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>
+    <div id="ec-tab-lab" style="display:none;padding:14px 20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--muted)">Factory carpentry, polishing, site installation, wages, subcontractors. Amount = Hours × Rate, or enter directly.</div>
+        <button class="btn btn-gold" onclick="_ecAddLab()" style="font-size:11px;padding:4px 10px">+ Add Labour</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="min-width:820px;width:100%">
+          <thead><tr>
+            <th style="min-width:180px">Work Centre / Description</th>
+            <th style="width:130px">Type</th>
+            <th style="width:90px">Hours / Days</th>
+            <th style="width:110px">Rate ₹ / hr</th>
+            <th style="width:120px">Amount ₹</th>
+            <th style="width:120px">Remarks</th>
+            <th style="width:28px"></th>
+          </tr></thead>
+          <tbody id="ec-lab-rows"></tbody>
+          <tfoot><tr style="background:var(--bg)">
+            <td colspan="4" style="text-align:right;font-size:12px;font-weight:700;color:var(--muted);padding:8px 10px">Labour Total</td>
+            <td style="padding:8px 10px"><span id="ec-lab-total" style="font-size:13px;font-weight:700;color:var(--gold);font-family:'JetBrains Mono',monospace">₹0</span></td>
+            <td colspan="2"></td>
+          </tr></tfoot>
+        </table>
+      </div>
+    </div>
+    <div id="ec-tab-exp" style="display:none;padding:20px 22px">
+      <div style="max-width:500px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Additional estimated costs — transport, installation accessories, finishing, etc.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div><label class="fl">Transport / Delivery ₹</label><input class="inp" type="number" id="ec-exp-transport" placeholder="0" oninput="_ecUpdateGrand()"></div>
+          <div><label class="fl">Installation Accessories ₹</label><input class="inp" type="number" id="ec-exp-install" placeholder="0" oninput="_ecUpdateGrand()"></div>
+          <div><label class="fl">Finishing / Polishing ₹</label><input class="inp" type="number" id="ec-exp-finish" placeholder="0" oninput="_ecUpdateGrand()"></div>
+          <div><label class="fl">Other Expenses ₹</label><input class="inp" type="number" id="ec-exp-other" placeholder="0" oninput="_ecUpdateGrand()"></div>
+        </div>
+        <div style="margin-top:16px;padding:12px;background:var(--bg);border-radius:var(--r);display:flex;justify-content:space-between">
+          <span style="font-size:12px;font-weight:600;color:var(--muted)">Total Other Expenses</span>
+          <span id="ec-exp-total" style="font-size:14px;font-weight:700;color:var(--gold);font-family:'JetBrains Mono',monospace">₹0</span>
+        </div>
+      </div>
+    </div>
+    <div style="padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:12px;color:var(--muted)">Mat + Labour + Expenses = <strong id="ec-footer-total" style="color:var(--dark)">₹0</strong></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-outline" onclick="closeEstCosting()">Cancel</button>
+        <button class="btn btn-gold" onclick="saveEstCosting()">💾 Save Costing (Draft)</button>
+      </div>
+    </div>
+    <input type="hidden" id="ec-er-id">
+  </div>
+</div>
+
 <!-- ══ PROJECT BUDGET / BOM OVERLAY ══ -->
 <div id="budget-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:3500;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
   <div style="background:var(--white);border-radius:var(--r-lg);width:min(1160px,98vw);box-shadow:var(--shadow-lg);position:relative">
@@ -2816,6 +2984,9 @@ const DB = {
   accounts:[],
   qcChecklist:[],
   rolePermissions:[],
+  estimationRequests:[],
+  notifications:[],
+  activityLog:[],
 };
 
 // Counters
@@ -2834,6 +3005,7 @@ function prodName(id){const p=DB.products.find(x=>x.id===id);return p?p.name:'Ge
 function statusTag(s){
   const m={Active:'tag-green',Planning:'tag-blue',Completed:'tag-teal','On Hold':'tag-grey',
     Won:'tag-green',Lost:'tag-red',Quoted:'tag-gold',New:'tag-blue','Site Visit':'tag-violet',Contacted:'tag-blue',
+    'Quotation Requested':'tag-violet','Pending Estimation':'tag-gold','Estimation In Progress':'tag-blue',
     Paid:'tag-green',Partial:'tag-gold',Unpaid:'tag-red',Overdue:'tag-red',
     Draft:'tag-grey',Sent:'tag-blue',Approved:'tag-green',Rejected:'tag-red',
     Pass:'tag-green',Fail:'tag-red'};
@@ -2841,12 +3013,59 @@ function statusTag(s){
 }
 function editBtn(fn,id){return `<button class="btn btn-ghost btn-xs" onclick="${fn}('${id}')">✏️</button>`;}
 function delBtn(fn,id){return `<button class="btn btn-ghost btn-xs" onclick="${fn}('${id}')">🗑</button>`;}
+function historyBtn(entityType,id){return `<button class="btn btn-ghost btn-xs" onclick="openActivityTimeline('${entityType}','${id}')" title="Activity history">🕘</button>`;}
+
+// Reusable activity timeline — reads DB.activityLog, never mutates it.
+// A Lead's timeline also folds in its linked Estimation Request's history
+// so the full journey (Lead Created → Quotation Requested → Claimed → …)
+// reads as one continuous story instead of two disconnected logs.
+function getEntityActivity(entityType, entityId){
+  if(!DB.activityLog) return [];
+  return DB.activityLog.filter(a=>a.entityType===entityType && a.entityId===entityId)
+    .sort((a,b)=>new Date(a.date)-new Date(b.date));
+}
+function getLeadFullTimeline(leadId){
+  const entries=[...getEntityActivity('lead', leadId)];
+  const er=(DB.estimationRequests||[]).find(e=>e.leadId===leadId);
+  if(er) entries.push(...getEntityActivity('estimationRequest', er.id));
+  return entries.sort((a,b)=>new Date(a.date)-new Date(b.date));
+}
+function renderTimelineHTML(entries){
+  if(!entries.length) return `<div class="muted" style="text-align:center;padding:24px">No activity recorded yet</div>`;
+  return `<div class="timeline">`+entries.map(e=>`
+    <div class="tl-item">
+      <div class="tl-dot"></div>
+      <div class="tl-action">${escHtml(e.action)}</div>
+      ${e.notes?`<div class="tl-notes">${escHtml(e.notes)}</div>`:''}
+      <div class="tl-meta">${escHtml(e.by||'—')}${e.role?' · '+escHtml(e.role):''} · ${new Date(e.date).toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}</div>
+    </div>`).join('')+`</div>`;
+}
+function openActivityTimeline(entityType, entityId){
+  let entries, label='';
+  if(entityType==='lead'){
+    const lead=DB.leads.find(x=>x.id===entityId);
+    label=lead?lead.name:'Lead';
+    entries=getLeadFullTimeline(entityId);
+  } else if(entityType==='estimationRequest'){
+    const er=DB.estimationRequests.find(x=>x.id===entityId);
+    label=er?er.customerName:'Estimation Request';
+    entries=getEntityActivity(entityType, entityId);
+  } else {
+    entries=getEntityActivity(entityType, entityId);
+  }
+  document.getElementById('modal-title').textContent='🕘 Activity — '+label;
+  document.getElementById('modal-save-btn').style.display='none';
+  document.getElementById('modal-body').innerHTML=renderTimelineHTML(entries);
+  document.getElementById('modal').className='modal';
+  document.getElementById('overlay').classList.add('show');
+}
 
 // ═══════════════════════════════════════════
 //  NAVIGATION
 // ═══════════════════════════════════════════
 const PAGE_TITLES={
   dashboard:'Dashboard',leads:'Leads & Enquiries',quotations:'Quotations / BOQ',
+  estimatordash:'Estimator Dashboard',
   customers:'Customers',projects:'Projects',products:'Products / Furniture Items',
   labour:'Labour & Wages',expenses:'Project Expenses',qc:'QC Checklist',qcdashboard:'QC Dashboard',
   warehouse:'Warehouse Stock',purchases:'Purchases',issues:'Material Issues',
@@ -2901,6 +3120,7 @@ function renderPage(pg){
     projects:renderProjects,workers:renderWorkers,
     items:renderItems,vendormaster:renderVendorMaster,
     leads:renderLeads,quotations:renderQuotations,
+    estimatordash:renderEstimatorDash,
     customers:renderCustomers,invoices:renderInvoices,
     receipts:renderReceipts,vendors:renderVendorBills,
     accounts:renderAccounts,banking:renderBanking,
@@ -4321,8 +4541,327 @@ function renderLeads(){
     <td>${statusTag(l.status)}</td>
     <td><span class="tag tag-grey">${l.source||'—'}</span></td>
     <td class="mono">${INR(l.value)}</td>
-    <td>${editBtn('editLead',l.id)}</td>
+    <td>${editBtn('editLead',l.id)}${historyBtn('lead',l.id)}</td>
   </tr>`).join('');
+}
+
+// ESTIMATOR DASHBOARD
+function renderEstimatorDash(){
+  if(!DB.estimationRequests) DB.estimationRequests=[];
+  const me = (typeof _currentUser!=='undefined'&&_currentUser)?_currentUser.name:'';
+  const all = DB.estimationRequests;
+  const incoming = all.filter(er=>er.status==='Pending Estimation');
+  const mine = all.filter(er=>er.status==='Estimation In Progress'&&er.assignedEstimator===me);
+  const open = all.filter(er=>er.status==='Pending Estimation'||er.status==='Estimation In Progress');
+
+  document.getElementById('ed-new').textContent = incoming.length;
+  document.getElementById('ed-mine').textContent = mine.length;
+  document.getElementById('ed-open').textContent = open.length;
+
+  document.getElementById('ed-incoming-tb').innerHTML = incoming.map(er=>`<tr>
+    <td>${fmtDate(er.requestedDate)}</td>
+    <td><strong>${escHtml(er.customerName)}</strong></td>
+    <td>${escHtml(er.location||'—')}</td>
+    <td class="muted">${escHtml(er.requestedBy||'—')}</td>
+    <td class="mono">${INR(er.estimatedValue)}</td>
+    <td>${statusTag(er.status)}</td>
+    <td><button class="btn btn-gold btn-xs" onclick="claimEstimationRequest('${er.id}')">Claim</button>${historyBtn('estimationRequest',er.id)}</td>
+  </tr>`).join('') || `<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No incoming requests</td></tr>`;
+
+  document.getElementById('ed-mine-tb').innerHTML = mine.map(er=>`<tr>
+    <td>${fmtDate(er.requestedDate)}</td>
+    <td><strong>${escHtml(er.customerName)}</strong></td>
+    <td>${escHtml(er.location||'—')}</td>
+    <td class="muted">${escHtml(er.requestedBy||'—')}</td>
+    <td class="mono">${INR(er.estimatedValue)}</td>
+    <td>${er.costing?`<span class="tag tag-gold">Draft — ${INR(er.costing.grandTotal)}</span>`:`<span class="tag tag-grey">Not started</span>`}</td>
+    <td><button class="btn btn-gold btn-xs" onclick="openEstCosting('${er.id}')">${er.costing?'Edit':'Prepare'} Costing</button>${historyBtn('estimationRequest',er.id)}</td>
+  </tr>`).join('') || `<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">Nothing claimed yet</td></tr>`;
+}
+
+function claimEstimationRequest(id){
+  const er = DB.estimationRequests.find(x=>x.id===id);
+  if(!er || er.status!=='Pending Estimation') return;
+  er.status = 'Estimation In Progress';
+  er.assignedEstimator = (typeof _currentUser!=='undefined'&&_currentUser)?_currentUser.name:'';
+  logActivity('estimationRequest', er.id, 'Claimed', `Claimed by ${er.assignedEstimator}`);
+  pushNotification({forRole:'Sales', title:'Estimation In Progress',
+    message:`${er.customerName} — claimed by ${er.assignedEstimator}`,
+    link:{page:'leads', entityId:er.leadId}});
+  toast(`Claimed ${er.customerName} ✓`,'ok');
+  renderEstimatorDash();
+}
+
+// ═══════════════════════════════════════════
+//  STAGE 4 — COSTING PREPARATION (Estimation Request costing)
+//  Mirrors the Product BOM engine's data shape 1:1 (see _pbAddMat /
+//  saveProdBom above) but operates on an Estimation Request instead of a
+//  Product, since no Project/Product exists yet at this stage — the job
+//  hasn't been won. That shared shape means this costing can be copied
+//  verbatim into a real productBOM later without any transformation.
+// ═══════════════════════════════════════════
+let _ecMatId=0, _ecLabId=0;
+
+function openEstCosting(erId){
+  if(!requireRole('CEO','Admin','Estimator')){_accessDenied();return;}
+  const er=DB.estimationRequests.find(x=>x.id===erId);
+  if(!er) return;
+  document.getElementById('ec-er-id').value=erId;
+  document.getElementById('ec-title').textContent=er.customerName+' — Costing Preparation';
+  document.getElementById('ec-subtitle').textContent=(er.location?er.location+' · ':'')+'Est. Value '+INR(er.estimatedValue||0);
+
+  const saved=er.costing||{};
+  const materials=saved.materials||[];
+  const labour=saved.labour||[];
+  const exp=saved.expenses||{};
+
+  document.getElementById('ec-mat-rows').innerHTML='';
+  document.getElementById('ec-lab-rows').innerHTML='';
+  _ecMatId=0; _ecLabId=0;
+
+  if(materials.length){ materials.forEach(m=>_ecAddMat(m)); }
+  else{ _ecAddMat(); _ecAddMat(); _ecAddMat(); }
+
+  if(labour.length){ labour.forEach(l=>_ecAddLab(l)); }
+  else{
+    _ecAddLab({workCenter:'Carpentry',type:'Factory'});
+    _ecAddLab({workCenter:'Site Installation',type:'Site'});
+  }
+
+  document.getElementById('ec-exp-transport').value=exp.transport||'';
+  document.getElementById('ec-exp-install').value=exp.install||'';
+  document.getElementById('ec-exp-finish').value=exp.finish||'';
+  document.getElementById('ec-exp-other').value=exp.other||'';
+
+  _ecTab('mat',document.querySelector('#est-cost-overlay .budget-tab'));
+  _ecUpdateGrand();
+  document.getElementById('est-cost-overlay').style.display='flex';
+}
+
+function closeEstCosting(){
+  document.getElementById('est-cost-overlay').style.display='none';
+}
+
+function _ecTab(tab, btn){
+  document.querySelectorAll('#est-cost-overlay .budget-tab').forEach(b=>b.classList.remove('active'));
+  ['mat','lab','exp'].forEach(t=>{ const el=document.getElementById('ec-tab-'+t); if(el) el.style.display='none'; });
+  if(btn) btn.classList.add('active');
+  document.getElementById('ec-tab-'+tab).style.display='block';
+}
+
+function _ecAddMat(data){
+  const id=++_ecMatId;
+  const items=DB.warehouse.map(w=>`<option value="${w.id}" data-unit="${w.unit}" data-rate="${w.rate}">${escHtml(w.name)}</option>`).join('');
+  const tr=document.createElement('tr');
+  tr.id='ecm-row-'+id;
+  tr.innerHTML=`
+    <td style="text-align:center;color:var(--muted);font-size:11px;font-weight:600">${id}</td>
+    <td style="min-width:200px">
+      <select class="bom-inp" id="ecm-item-${id}" onchange="_ecOnItemChange(${id})" style="width:100%;margin-bottom:3px">
+        <option value="">— Select from warehouse —</option>${items}
+        <option value="__custom__">+ Custom / unlisted material</option>
+      </select>
+      <input class="bom-inp" id="ecm-name-${id}" placeholder="Custom material name" style="display:${data&&!data.itemId?'block':'none'};font-size:11px" value="${data?escHtml(data.itemName||''):''}">
+    </td>
+    <td><input class="bom-inp" id="ecm-unit-${id}" placeholder="UOM" value="${data?data.unit||'':''}" style="width:52px;font-size:11px"></td>
+    <td><input class="bom-inp" type="number" id="ecm-qty-${id}" placeholder="0" value="${data?data.qty||'':''}" oninput="_ecCalcMat(${id})" style="width:76px;font-size:12px"></td>
+    <td><input class="bom-inp" type="number" id="ecm-waste-${id}" placeholder="0" value="${data?data.wastage||'0':''}" oninput="_ecCalcMat(${id})" style="width:52px;font-size:11px" min="0" max="50"></td>
+    <td><input class="bom-inp" id="ecm-net-${id}" readonly value="${data&&data.netQty?data.netQty.toFixed(2):''}" style="width:64px;font-size:11px;background:var(--bg);text-align:right"></td>
+    <td><input class="bom-inp" type="number" id="ecm-rate-${id}" placeholder="0" value="${data?data.rate||'':''}" oninput="_ecCalcMat(${id})" style="width:84px;font-size:12px"></td>
+    <td><input class="bom-inp" id="ecm-amt-${id}" readonly value="${data&&data.amount?INR(data.amount):''}" style="width:98px;background:var(--gold-pale);font-weight:700;font-family:'JetBrains Mono',monospace;font-size:11px"></td>
+    <td><input class="bom-inp" id="ecm-rem-${id}" placeholder="Notes" value="${data?escHtml(data.remarks||''):''}" style="width:88px;font-size:11px"></td>
+    <td><button onclick="_ecRemMat(${id})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px">×</button></td>`;
+  document.getElementById('ec-mat-rows').appendChild(tr);
+  if(data&&data.itemId){
+    const sel=document.getElementById('ecm-item-'+id);
+    if(sel) sel.value=data.itemId;
+  }
+}
+
+function _ecOnItemChange(id){
+  const sel=document.getElementById('ecm-item-'+id);
+  const nameInp=document.getElementById('ecm-name-'+id);
+  const unitInp=document.getElementById('ecm-unit-'+id);
+  const rateInp=document.getElementById('ecm-rate-'+id);
+  if(sel.value==='__custom__'||sel.value===''){
+    if(nameInp) nameInp.style.display='block';
+  } else {
+    if(nameInp) nameInp.style.display='none';
+    const opt=sel.options[sel.selectedIndex];
+    if(unitInp&&opt.dataset.unit) unitInp.value=opt.dataset.unit;
+    if(rateInp&&opt.dataset.rate) rateInp.value=opt.dataset.rate;
+    _ecCalcMat(id);
+  }
+}
+
+function _ecCalcMat(id){
+  const qty=parseFloat(document.getElementById('ecm-qty-'+id)?.value)||0;
+  const waste=parseFloat(document.getElementById('ecm-waste-'+id)?.value)||0;
+  const rate=parseFloat(document.getElementById('ecm-rate-'+id)?.value)||0;
+  const netQty=qty*(1+waste/100);
+  const amt=netQty*rate;
+  const netEl=document.getElementById('ecm-net-'+id);
+  const amtEl=document.getElementById('ecm-amt-'+id);
+  if(netEl) netEl.value=netQty?netQty.toFixed(2):'';
+  if(amtEl) amtEl.value=amt?INR(amt):'';
+  _ecUpdateMatTotal();
+}
+
+function _ecRemMat(id){
+  document.getElementById('ecm-row-'+id)?.remove();
+  _ecUpdateMatTotal();
+}
+
+function _ecUpdateMatTotal(){
+  let t=0;
+  document.querySelectorAll('[id^="ecm-qty-"]').forEach(el=>{
+    const id=el.id.replace('ecm-qty-','');
+    const qty=parseFloat(el.value)||0, waste=parseFloat(document.getElementById('ecm-waste-'+id)?.value)||0;
+    const rate=parseFloat(document.getElementById('ecm-rate-'+id)?.value)||0;
+    t+=qty*(1+waste/100)*rate;
+  });
+  const el=document.getElementById('ec-mat-total');
+  if(el) el.textContent=INR(t);
+  _ecUpdateGrand();
+}
+
+function _ecAddLab(data){
+  const id=++_ecLabId;
+  const types=['Factory','Site','Wages','Subcontractor'];
+  const wcs=['Carpentry','Polishing / Duco','PU Coating','Glass Fitting','Hardware Fitting','Site Installation','Electrician','Plumber','Mason','Welder','Painter','Other'];
+  const tr=document.createElement('tr');
+  tr.id='ecl-row-'+id;
+  tr.innerHTML=`
+    <td style="min-width:180px">
+      <select class="bom-inp" id="ecl-wc-${id}" style="width:100%;margin-bottom:2px;font-size:12px">
+        ${wcs.map(w=>`<option value="${w}" ${data&&data.workCenter===w?'selected':''}>${w}</option>`).join('')}
+        <option value="__custom__">+ Custom</option>
+      </select>
+      <input class="bom-inp" id="ecl-wc-custom-${id}" placeholder="Describe work" style="display:none;font-size:11px">
+    </td>
+    <td>
+      <select class="bom-inp" id="ecl-type-${id}" style="width:120px;font-size:12px">
+        ${types.map(t=>`<option value="${t}" ${data&&data.type===t?'selected':''}>${t}</option>`).join('')}
+      </select>
+    </td>
+    <td><input class="bom-inp" type="number" id="ecl-hrs-${id}" placeholder="0" value="${data?data.hours||'':''}" oninput="_ecCalcLab(${id})" style="width:80px;font-size:12px"></td>
+    <td><input class="bom-inp" type="number" id="ecl-rate-${id}" placeholder="0" value="${data?data.rate||'':''}" oninput="_ecCalcLab(${id})" style="width:98px;font-size:12px"></td>
+    <td><input class="bom-inp" type="number" id="ecl-amt-${id}" placeholder="0" value="${data?data.amount||'':''}" oninput="_ecUpdateLabTotal()" style="width:108px;font-size:12px;font-weight:700;background:var(--gold-pale)"></td>
+    <td><input class="bom-inp" id="ecl-rem-${id}" placeholder="Notes" value="${data?escHtml(data.remarks||''):''}" style="width:108px;font-size:11px"></td>
+    <td><button onclick="_ecRemLab(${id})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px">×</button></td>`;
+  document.getElementById('ec-lab-rows').appendChild(tr);
+  document.getElementById('ecl-wc-'+id)?.addEventListener('change',function(){
+    const cust=document.getElementById('ecl-wc-custom-'+id);
+    if(cust) cust.style.display=this.value==='__custom__'?'block':'none';
+  });
+}
+
+function _ecCalcLab(id){
+  const hrs=parseFloat(document.getElementById('ecl-hrs-'+id)?.value)||0;
+  const rate=parseFloat(document.getElementById('ecl-rate-'+id)?.value)||0;
+  if(hrs&&rate){
+    const amtEl=document.getElementById('ecl-amt-'+id);
+    if(amtEl) amtEl.value=(hrs*rate).toFixed(0);
+  }
+  _ecUpdateLabTotal();
+}
+
+function _ecRemLab(id){
+  document.getElementById('ecl-row-'+id)?.remove();
+  _ecUpdateLabTotal();
+}
+
+function _ecUpdateLabTotal(){
+  let t=0;
+  document.querySelectorAll('[id^="ecl-amt-"]').forEach(el=>{ t+=parseFloat(el.value)||0; });
+  const el=document.getElementById('ec-lab-total');
+  if(el) el.textContent=INR(t);
+  _ecUpdateGrand();
+}
+
+function _ecUpdateGrand(){
+  const fl=id=>parseFloat(document.getElementById(id)?.value)||0;
+  let mat=0;
+  document.querySelectorAll('[id^="ecm-qty-"]').forEach(el=>{
+    const id=el.id.replace('ecm-qty-','');
+    const qty=parseFloat(el.value)||0, waste=parseFloat(document.getElementById('ecm-waste-'+id)?.value)||0;
+    const rate=parseFloat(document.getElementById('ecm-rate-'+id)?.value)||0;
+    mat+=qty*(1+waste/100)*rate;
+  });
+  let lab=0;
+  document.querySelectorAll('[id^="ecl-amt-"]').forEach(el=>{ lab+=parseFloat(el.value)||0; });
+  const exp=fl('ec-exp-transport')+fl('ec-exp-install')+fl('ec-exp-finish')+fl('ec-exp-other');
+  const gt=mat+lab+exp;
+  const expEl=document.getElementById('ec-exp-total');
+  if(expEl) expEl.textContent=INR(exp);
+  document.getElementById('ec-grand-total').textContent=INR(gt);
+  document.getElementById('ec-footer-total').textContent=INR(gt);
+}
+
+function saveEstCosting(){
+  const erId=document.getElementById('ec-er-id').value;
+  const er=DB.estimationRequests.find(x=>x.id===erId);
+  if(!er) return;
+  const fl=id=>parseFloat(document.getElementById(id)?.value)||0;
+
+  const materials=[];
+  document.querySelectorAll('[id^="ecm-qty-"]').forEach(el=>{
+    const id=el.id.replace('ecm-qty-','');
+    const qty=parseFloat(el.value)||0;
+    const rate=parseFloat(document.getElementById('ecm-rate-'+id)?.value)||0;
+    if(!qty&&!rate) return;
+    const sel=document.getElementById('ecm-item-'+id);
+    const nameInp=document.getElementById('ecm-name-'+id);
+    const isCustom=!sel?.value||sel.value==='__custom__';
+    const itemId=isCustom?'':sel?.value||'';
+    const itemName=isCustom?(nameInp?.value||''):(sel?.options[sel.selectedIndex]?.text||'');
+    if(!itemName) return;
+    const waste=parseFloat(document.getElementById('ecm-waste-'+id)?.value)||0;
+    const netQty=qty*(1+waste/100);
+    materials.push({
+      id:'BM'+uid(), itemId, itemName,
+      unit:document.getElementById('ecm-unit-'+id)?.value||'',
+      qty, wastage:waste, netQty:parseFloat(netQty.toFixed(3)),
+      rate, amount:parseFloat((netQty*rate).toFixed(2)),
+      remarks:document.getElementById('ecm-rem-'+id)?.value||''
+    });
+  });
+
+  const labour=[];
+  document.querySelectorAll('[id^="ecl-amt-"]').forEach(el=>{
+    const id=el.id.replace('ecl-amt-','');
+    const amount=parseFloat(el.value)||0;
+    if(!amount) return;
+    const wcSel=document.getElementById('ecl-wc-'+id);
+    const wcCustom=document.getElementById('ecl-wc-custom-'+id);
+    const workCenter=wcSel?.value==='__custom__'?(wcCustom?.value||'Custom'):(wcSel?.value||'');
+    labour.push({
+      id:'BL'+uid(), workCenter,
+      type:document.getElementById('ecl-type-'+id)?.value||'Factory',
+      hours:parseFloat(document.getElementById('ecl-hrs-'+id)?.value)||0,
+      rate:parseFloat(document.getElementById('ecl-rate-'+id)?.value)||0,
+      amount, remarks:document.getElementById('ecl-rem-'+id)?.value||''
+    });
+  });
+
+  const expenses={
+    transport:fl('ec-exp-transport'), install:fl('ec-exp-install'),
+    finish:fl('ec-exp-finish'), other:fl('ec-exp-other')
+  };
+  const expTotal=Object.values(expenses).reduce((s,v)=>s+v,0);
+  const matTotal=materials.reduce((s,m)=>s+m.amount,0);
+  const labTotal=labour.reduce((s,l)=>s+l.amount,0);
+  const grandTotal=matTotal+labTotal+expTotal;
+
+  const isFirstSave=!er.costing;
+  er.costing={materials, labour, expenses, matTotal, labTotal, expTotal, grandTotal, updatedAt:new Date().toISOString()};
+
+  logActivity('estimationRequest', er.id, isFirstSave?'Costing Prepared':'Costing Updated',
+    `${materials.length} materials, ${labour.length} labour lines — total ${INR(grandTotal)}`);
+
+  closeEstCosting();
+  toast(`Costing saved — ${INR(grandTotal)}`,'ok');
+  renderEstimatorDash();
 }
 
 // QUOTATIONS
@@ -4626,7 +5165,7 @@ const MODAL_FORMS={
   lead:`
     <div class="f2">
       <div class="fg"><label class="fl">Date</label><input class="inp" type="date" id="f-ld-date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="fg"><label class="fl">Status</label><select class="inp" id="f-ld-status"><option>New</option><option>Contacted</option><option>Site Visit</option><option>Quoted</option><option>Won</option><option>Lost</option></select></div>
+      <div class="fg"><label class="fl">Status</label><select class="inp" id="f-ld-status"><option>New</option><option>Contacted</option><option>Site Visit</option><option>Quotation Requested</option><option>Quoted</option><option>Won</option><option>Lost</option></select></div>
     </div>
     <div class="f2">
       <div class="fg"><label class="fl">Client Name</label><input class="inp" id="f-ld-name" placeholder="Name"></div>
@@ -5039,6 +5578,103 @@ function saveQC(){
   closeModal();toast('QC entry saved ✓','ok');renderQC();
 }
 
+// Permanent per-entity activity timeline — additive, never mutates the
+// entity itself. entityType/entityId let any module render a history
+// (e.g. all activity for a given Lead or Estimation Request).
+function logActivity(entityType, entityId, action, notes){
+  if(!DB.activityLog) DB.activityLog=[];
+  DB.activityLog.push({id:'AL'+uid(), entityType, entityId, action, notes:notes||'',
+    by:(typeof _currentUser!=='undefined'&&_currentUser)?_currentUser.name:'System',
+    role:(typeof _currentUser!=='undefined'&&_currentUser)?_currentUser.role:'',
+    date:new Date().toISOString()});
+}
+
+// In-app notifications — targeted either at a role (e.g. every Estimator)
+// or a specific user. Read state is tracked per-notification, not per-user,
+// which is sufficient while notifications are role-broadcast rather than
+// individually addressed.
+function pushNotification({forRole,forUser,title,message,link}){
+  if(!DB.notifications) DB.notifications=[];
+  DB.notifications.push({id:'NT'+uid(), forRole:forRole||'', forUser:forUser||'',
+    title, message:message||'', link:link||null, read:false, date:new Date().toISOString()});
+  renderNotifBell();
+}
+
+// Notifications addressed to the signed-in user: either a direct forUser
+// match, or a forRole broadcast to their role. CEO/Admin also see anything
+// broadcast to CEO/Admin so nothing raised for management goes unseen.
+function getMyNotifications(){
+  if(!DB.notifications) DB.notifications=[];
+  if(typeof _currentUser==='undefined'||!_currentUser) return [];
+  const role=_currentUser.role, name=_currentUser.name;
+  return DB.notifications.filter(n=>{
+    if(n.forUser && n.forUser===name) return true;
+    if(n.forRole && n.forRole===role) return true;
+    if(n.forRole && (role==='CEO'||role==='Admin') && (n.forRole==='CEO'||n.forRole==='Admin')) return true;
+    return false;
+  }).sort((a,b)=>new Date(b.date)-new Date(a.date));
+}
+
+function renderNotifBell(){
+  const badge=document.getElementById('notif-badge');
+  const list=document.getElementById('notif-list');
+  if(!badge||!list) return;
+  const mine=getMyNotifications();
+  const unread=mine.filter(n=>!n.read).length;
+  badge.textContent=unread>9?'9+':String(unread);
+  badge.classList.toggle('show', unread>0);
+  list.innerHTML = mine.length ? mine.slice(0,30).map(n=>`<div class="notif-item ${n.read?'':'unread'}" onclick="openNotification('${n.id}')">
+    <div class="ni-title">${escHtml(n.title)}</div>
+    <div class="ni-msg">${escHtml(n.message)}</div>
+    <div class="ni-time">${new Date(n.date).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+  </div>`).join('') : `<div class="notif-empty">No notifications yet</div>`;
+}
+
+function toggleNotifMenu(){
+  renderNotifBell();
+  document.getElementById('notif-panel').classList.toggle('open');
+}
+
+function openNotification(id){
+  const n=DB.notifications.find(x=>x.id===id);
+  if(!n) return;
+  n.read=true;
+  document.getElementById('notif-panel').classList.remove('open');
+  if(n.link&&n.link.page) nav(n.link.page,null);
+  renderNotifBell();
+}
+
+function markAllNotifsRead(){
+  getMyNotifications().forEach(n=>n.read=true);
+  renderNotifBell();
+}
+document.addEventListener('click',e=>{
+  const panel=document.getElementById('notif-panel');
+  const bell=document.getElementById('notif-bell');
+  if(panel&&bell&&!panel.contains(e.target)&&!bell.contains(e.target)) panel.classList.remove('open');
+});
+
+// Lead → Estimation Request handoff. Fires once per lead the first time its
+// status becomes "Quotation Requested" — guarded against re-creating a
+// duplicate request if the lead is saved again while still in that status
+// (e.g. editing phone number after the request was already raised).
+function maybeCreateEstimationRequest(lead){
+  if(!lead || lead.status!=='Quotation Requested') return;
+  if(!DB.estimationRequests) DB.estimationRequests=[];
+  const existing = DB.estimationRequests.find(er=>er.leadId===lead.id);
+  if(existing) return;
+  const er = {id:'ER'+uid(), leadId:lead.id, customerName:lead.name, phone:lead.phone||'',
+    location:lead.location||'', estimatedValue:lead.value||0,
+    requestedBy:(typeof _currentUser!=='undefined'&&_currentUser)?_currentUser.name:'System',
+    requestedDate:new Date().toISOString().slice(0,10), status:'Pending Estimation', assignedEstimator:''};
+  DB.estimationRequests.push(er);
+  logActivity('lead', lead.id, 'Quotation Requested', `Estimation request ${er.id} raised for ${lead.name}`);
+  logActivity('estimationRequest', er.id, 'Created', `Raised from lead ${lead.id} (${lead.name})`);
+  pushNotification({forRole:'Estimator', title:'New Estimation Request',
+    message:`${lead.name}${lead.location?' — '+lead.location:''}`,
+    link:{page:'estimatordash', entityId:er.id}});
+}
+
 function saveLead(){
   if(_editingId){
     const r=DB.leads.find(x=>x.id===_editingId);
@@ -5046,11 +5682,15 @@ function saveLead(){
       r.date=g('f-ld-date');r.name=g('f-ld-name')||r.name;r.phone=g('f-ld-phone');
       r.location=g('f-ld-loc');r.status=g('f-ld-status')||r.status;
       r.source=g('f-ld-src');r.value=+g('f-ld-val')||r.value;
+      maybeCreateEstimationRequest(r);
       closeModal();toast('Lead updated ✓','ok');renderLeads();
     }return;
   }
   const name=g('f-ld-name');if(!name){toast('Name required','err');return;}
-  DB.leads.push({id:'LD'+uid(),date:g('f-ld-date'),name,phone:g('f-ld-phone'),location:g('f-ld-loc'),status:g('f-ld-status'),source:g('f-ld-src'),value:+g('f-ld-val')||0});
+  const newLead={id:'LD'+uid(),date:g('f-ld-date'),name,phone:g('f-ld-phone'),location:g('f-ld-loc'),status:g('f-ld-status'),source:g('f-ld-src'),value:+g('f-ld-val')||0};
+  DB.leads.push(newLead);
+  logActivity('lead', newLead.id, 'Lead Created', `Source: ${newLead.source||'—'}`);
+  maybeCreateEstimationRequest(newLead);
   closeModal();toast('Lead added ✓','ok');renderLeads();
 }
 
@@ -5935,7 +6575,8 @@ async function doLogin(){
   document.getElementById('um-role').textContent=user.role;
   applyRoleNav(user.role);
   updateNavPendingBadge();
-  const landingPage={'CEO':'ceodash','Factory Supervisor':'factorydash','Site Supervisor':'sitedash','Accounts':'invoices','Sales':'leads','Procurement':'purchases','Admin':'dashboard'}[user.role]||'dashboard';
+  renderNotifBell();
+  const landingPage={'CEO':'ceodash','Factory Supervisor':'factorydash','Site Supervisor':'sitedash','Accounts':'invoices','Sales':'leads','Estimator':'estimatordash','Procurement':'purchases','Admin':'dashboard'}[user.role]||'dashboard';
   nav(landingPage,document.querySelector(`[data-pg="${landingPage}"]`));
 }
 
@@ -5945,6 +6586,8 @@ function doLogout(){
   document.getElementById('login-pass').value='';
   document.getElementById('login-screen').classList.remove('hidden');
   document.getElementById('user-menu').classList.remove('open');
+  document.getElementById('notif-panel').classList.remove('open');
+  renderNotifBell();
 }
 
 let _lastActivity=Date.now();
@@ -10027,7 +10670,7 @@ ${clientList?`<br>Active clients: ${clientList}`:''}
 // Order here is also the canonical column order for the Role Access
 // Matrix — keep ROLE_ORDER (below) and this list in sync with any HTML
 // table headers that display them.
-const ALL_MODULES = ['Overview','CRM & Sales','Projects','Operations','Inventory','Finance','Reports','Site & Installation','Factory / MES','HR & Payroll','Master Data'];
+const ALL_MODULES = ['Overview','CRM & Sales','Estimation','Projects','Operations','Inventory','Finance','Reports','Site & Installation','Factory / MES','HR & Payroll','Master Data'];
 
 // Fixed role display order — MUST match the Role Access Matrix table
 // header exactly. A previous bug had the header (CEO, Accounts, Factory
@@ -10035,7 +10678,7 @@ const ALL_MODULES = ['Overview','CRM & Sales','Projects','Operations','Inventory
 // the body was generated in (CEO, Factory Supervisor, Site Supervisor,
 // Accounts, ...), silently shifting every column after CEO by one and
 // showing each role's permissions under the wrong name.
-const ROLE_ORDER = ['CEO','Accounts','Factory Supervisor','Site Supervisor','Sales','Procurement','Admin'];
+const ROLE_ORDER = ['CEO','Accounts','Factory Supervisor','Site Supervisor','Sales','Estimator','Procurement','Admin'];
 
 // Default permissions — the single source of truth for both what's shown
 // in the matrix AND what applyRoleNav() actually enforces in the sidebar
@@ -10051,6 +10694,7 @@ const DEFAULT_ROLE_PERMISSIONS = {
   'Site Supervisor':    ['Overview','Projects','Site & Installation','Operations'],
   'Accounts':           ['Overview','Finance','Reports','Projects'],
   'Sales':              ['Overview','CRM & Sales','Projects'],
+  'Estimator':          ['Overview','Estimation','Projects'],
   'Procurement':        ['Overview','Inventory','Projects','Master Data'],
 };
 
@@ -10117,7 +10761,7 @@ const ROLE_MODULES = new Proxy({}, {
 const ROLE_LANDING = {
   'CEO':'CEO Dashboard','Factory Supervisor':'Factory Dashboard',
   'Site Supervisor':'Site Dashboard','Accounts':'Sales Invoices',
-  'Sales':'Leads & Enquiries','Procurement':'Purchases',
+  'Sales':'Leads & Enquiries','Estimator':'Estimator Dashboard','Procurement':'Purchases',
   'Admin':'Dashboard',
 };
 
@@ -12471,7 +13115,8 @@ function seedVendorLists(){
     bankEntries:'bank_entries', vendorMaster:'vendor_master',
     purchaseOrders:'purchase_orders', siteDeliveries:'site_deliveries',
     mfgJobs:'mfg_jobs', mfgOps:'mfg_ops', pendingUsers:'pending_users',
-    qcChecklist:'qc_checklist', rolePermissions:'role_permissions'
+    qcChecklist:'qc_checklist', rolePermissions:'role_permissions',
+    estimationRequests:'estimation_requests', activityLog:'activity_log'
   };
   const sbTable = k => SB_TABLE[k] || k;
 
@@ -12482,7 +13127,8 @@ function seedVendorLists(){
     'customers','workers','items','vendorMaster','deliveries','installation',
     'employees','attendance','payroll','advances','purchaseOrders','milestones',
     'siteDeliveries','installations','machines','mfgJobs','mfgOps','accounts',
-    'pendingUsers','dispatch','qcChecklist','rolePermissions'
+    'pendingUsers','dispatch','qcChecklist','rolePermissions',
+    'estimationRequests','notifications','activityLog'
   ];
 
   // Debounced sync
@@ -12634,9 +13280,10 @@ function seedVendorLists(){
     document.getElementById('um-role').textContent=_currentUser.role;
     applyRoleNav(_currentUser.role);
     updateNavPendingBadge();
+    renderNotifBell();
     const landing={
       'CEO':'ceodash','Factory Supervisor':'factorydash','Site Supervisor':'sitedash',
-      'Accounts':'invoices','Sales':'leads','Procurement':'purchases','Admin':'dashboard'
+      'Accounts':'invoices','Sales':'leads','Estimator':'estimatordash','Procurement':'purchases','Admin':'dashboard'
     }[_currentUser.role]||'dashboard';
     nav(landing,document.querySelector(`[data-pg="${landing}"]`));
   }
