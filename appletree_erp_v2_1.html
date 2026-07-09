@@ -32,6 +32,28 @@
   --shadow-md:0 4px 16px rgba(28,28,26,.1);
   --shadow-lg:0 8px 36px rgba(28,28,26,.15);
   --r:8px; --r-sm:5px; --r-lg:12px;
+  /* Always-dark decorative panels (sidebar, dark-gold accent blocks) — a
+     brand element, not a light/dark-mode concern, so this stays constant
+     in both themes rather than being derived from --dark (which flips). */
+  --dark-accent:#1C1C1A;
+}
+
+/* ── DARK MODE ──
+   Only the light-surface tokens flip; --dark-accent (sidebar, brand
+   accent blocks) stays constant in both themes by design. --dark itself
+   flips too since ~30 places use it purely as body text color on cards —
+   those cards' backgrounds (--white/--bg) also flip, so text needs to
+   flip with them for contrast. */
+html[data-theme="dark"] {
+  --dark:#EDEBE6; --dark2:#D8D5CE; --dark3:#C5C2BA;
+  --mid:#B8B4AA; --muted:#8C887E; --faint:#5A5750;
+  --border:#3A3835; --border2:#2E2C29;
+  --bg:#161514; --white:#201F1C;
+  --gold-pale:#3A331A;
+  --red-l:#3A2320; --green-l:#1B3324; --blue-l:#1A2A38; --amber-l:#3A2E14; --violet-l:#2A2035; --teal-l:#153330;
+  --shadow:0 1px 4px rgba(0,0,0,.3);
+  --shadow-md:0 4px 16px rgba(0,0,0,.35);
+  --shadow-lg:0 8px 36px rgba(0,0,0,.45);
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
@@ -41,7 +63,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--dark);dis
 /* ── LOGIN ── */
 #login-screen{
   position:fixed;inset:0;z-index:9999;
-  background:var(--dark);
+  background:var(--dark-accent);
   display:flex;align-items:center;justify-content:center;
 }
 #login-screen.hidden{display:none}
@@ -73,7 +95,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--dark);dis
 .login-err{color:var(--red);font-size:12px;margin-top:-8px;margin-bottom:12px;display:none;}
 /* ── BOQ BUILDER ── */
 .boq-room{background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);margin-bottom:16px;overflow:hidden;}
-.boq-room-hd{background:var(--dark);padding:12px 16px;display:flex;align-items:center;gap:10px;cursor:grab;}
+.boq-room-hd{background:var(--dark-accent);padding:12px 16px;display:flex;align-items:center;gap:10px;cursor:grab;}
 .boq-room-name{font-family:'Manrope',sans-serif;font-size:15px;font-weight:600;color:var(--gold);flex:1;background:transparent;border:none;outline:none;}
 .boq-room-name::placeholder{color:rgba(195,177,81,.4);}
 .boq-item-row{display:grid;grid-template-columns:2fr 80px 80px 100px 110px 36px;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border2);align-items:center;}
@@ -83,7 +105,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--dark);dis
 .boq-inp:focus{border-color:var(--gold);}
 .boq-amt{font-weight:600;font-size:13px;color:var(--dark);font-family:'JetBrains Mono',monospace;text-align:right;}
 .boq-room-total{display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:10px 16px;background:var(--gold-pale);border-top:1px solid var(--border);}
-.boq-grand-total{background:var(--dark);color:var(--gold);padding:16px 20px;border-radius:var(--r-lg);display:flex;justify-content:space-between;align-items:center;margin-top:16px;}
+.boq-grand-total{background:var(--dark-accent);color:var(--gold);padding:16px 20px;border-radius:var(--r-lg);display:flex;justify-content:space-between;align-items:center;margin-top:16px;}
 /* Print styles */
 @media print{
   #sidebar,#topbar,#login-screen,.btn,button,.boq-del-btn{display:none!important}
@@ -149,7 +171,7 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--dark);dis
 
 /* ── SIDEBAR ── */
 #sidebar{
-  width:220px;min-width:220px;background:var(--dark);
+  width:220px;min-width:220px;background:var(--dark-accent);
   display:flex;flex-direction:column;height:100vh;
   overflow:hidden;transition:width .2s;
   border-right:1px solid rgba(195,177,81,.15);
@@ -448,7 +470,7 @@ select.inp{cursor:pointer;appearance:none;
 .tag-violet{background:var(--violet-l);color:var(--violet);}
 .tag-teal{background:var(--teal-l);color:var(--teal);}
 .tag-grey{background:var(--border2);color:var(--mid);}
-.tag-dark{background:var(--dark);color:var(--gold);}
+.tag-dark{background:var(--dark-accent);color:var(--gold);}
 
 /* ── MONO ── */
 .mono{font-family:'JetBrains Mono',monospace;font-size:11px;}
@@ -546,7 +568,7 @@ textarea.inp{resize:vertical;min-height:72px;}
   display:flex;flex-direction:column;gap:8px;pointer-events:none;
 }
 .toast-item{
-  background:var(--dark);color:var(--gold);padding:10px 16px;
+  background:var(--dark-accent);color:var(--gold);padding:10px 16px;
   border-radius:var(--r);font-size:12px;font-weight:600;
   box-shadow:var(--shadow-lg);animation:tIn .2s ease;
   border-left:3px solid var(--gold);
@@ -588,7 +610,7 @@ textarea.inp{resize:vertical;min-height:72px;}
 <body>
 
 <!-- SUPABASE LOADING OVERLAY -->
-<div id="sb-loading" style="display:flex;position:fixed;inset:0;background:var(--dark);z-index:99999;flex-direction:column;align-items:center;justify-content:center;gap:20px">
+<div id="sb-loading" style="display:flex;position:fixed;inset:0;background:var(--dark-accent);z-index:99999;flex-direction:column;align-items:center;justify-content:center;gap:20px">
   <img src="logo.png" alt="Apple Tree" style="width:80px;height:auto">
   <div style="color:var(--faint);font-size:13px;letter-spacing:.06em;font-family:'Manrope',sans-serif" id="sb-loading-msg">Connecting to Appletree ERP…</div>
   <div style="width:220px;height:2px;background:rgba(195,177,81,.12);border-radius:1px;overflow:hidden"><div style="height:100%;background:var(--gold);border-radius:1px;animation:_sbp 1.6s ease-in-out infinite"></div></div>
@@ -768,6 +790,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="tb-breadcrumb" id="pageCrumb"></div>
     </div>
     <div class="tb-right" id="topbarActions">
+      <button class="btn btn-outline btn-sm" onclick="toggleDarkMode()" title="Toggle dark mode" id="dark-mode-toggle">🌙</button>
       <button class="btn btn-outline btn-sm" onclick="exportPage()">⬇ Export</button>
       <button class="btn btn-outline btn-sm" style="color:var(--red);border-color:var(--red-b)" onclick="doLogout()" title="Sign Out">🔒 Sign Out</button>
       <div id="user-avatar" onclick="toggleUserMenu()" title="Account">A</div>
@@ -1781,7 +1804,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <span>Item / Description</span><span>Unit</span><span style="text-align:right">Qty</span><span style="text-align:right">Rate ₹</span><span style="text-align:right">Amount ₹</span><span></span>
     </div>
     <div id="po-items-container"></div>
-    <div style="display:flex;justify-content:flex-end;align-items:center;gap:16px;padding:12px 16px;background:var(--dark);border-radius:0 0 var(--r) var(--r)">
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:16px;padding:12px 16px;background:var(--dark-accent);border-radius:0 0 var(--r) var(--r)">
       <span style="font-size:12px;color:var(--muted)" id="po-item-count">0 items</span>
       <span style="font-size:20px;font-weight:800;color:var(--gold)" id="po-total-val">₹0</span>
     </div>
@@ -2581,6 +2604,33 @@ textarea.inp{resize:vertical;min-height:72px;}
 <div id="toast"></div>
 
 <script>
+// ═══════════════════════════════════════════
+//  DARK MODE — applied immediately (before login/data load) so the
+//  login screen itself also respects the saved preference.
+// ═══════════════════════════════════════════
+(function _initTheme(){
+  try{
+    const saved = localStorage.getItem('at_theme');
+    if(saved==='dark') document.documentElement.setAttribute('data-theme','dark');
+  }catch(e){}
+})();
+function toggleDarkMode(){
+  const isDark = document.documentElement.getAttribute('data-theme')==='dark';
+  if(isDark){
+    document.documentElement.removeAttribute('data-theme');
+    try{ localStorage.setItem('at_theme','light'); }catch(e){}
+  } else {
+    document.documentElement.setAttribute('data-theme','dark');
+    try{ localStorage.setItem('at_theme','dark'); }catch(e){}
+  }
+  const btn = document.getElementById('dark-mode-toggle');
+  if(btn) btn.textContent = document.documentElement.getAttribute('data-theme')==='dark' ? '☀️' : '🌙';
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btn = document.getElementById('dark-mode-toggle');
+  if(btn) btn.textContent = document.documentElement.getAttribute('data-theme')==='dark' ? '☀️' : '🌙';
+});
+
 // ═══════════════════════════════════════════
 //  DATA STORE
 // ═══════════════════════════════════════════
@@ -6132,7 +6182,7 @@ function renderCEODash(){
     const profitColor = projProfit>=0?'var(--green)':'var(--red)';
     return `<div style="background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;cursor:pointer" onclick="nav('projects',null)">
       <!-- Header -->
-      <div style="background:var(--dark);padding:14px 16px;display:flex;justify-content:space-between;align-items:flex-start">
+      <div style="background:var(--dark-accent);padding:14px 16px;display:flex;justify-content:space-between;align-items:flex-start">
         <div>
           <div style="font-family:'Manrope',sans-serif;font-size:15px;color:var(--gold)">${proj.client}</div>
           <div style="font-size:10px;color:var(--muted);margin-top:2px">${proj.code} · ${proj.location||'—'}</div>
