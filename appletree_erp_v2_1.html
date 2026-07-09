@@ -699,6 +699,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="nav-item" data-pg="labour" onclick="nav('labour',this)"><span class="ni">👷</span> Labour & Wages</div>
       <div class="nav-item" data-pg="expenses" onclick="nav('expenses',this)"><span class="ni">💰</span> Project Expenses</div>
       <div class="nav-item" data-pg="qc" onclick="nav('qc',this)"><span class="ni">✅</span> QC Checklist</div>
+      <div class="nav-item" data-pg="qcdashboard" onclick="nav('qcdashboard',this)"><span class="ni">📋</span> QC Dashboard</div>
       <div class="nav-item" data-pg="matrequest" onclick="nav('matrequest',this)"><span class="ni">📋</span> Material Requests</div>
     </div>
     <div class="nav-grp">
@@ -1041,6 +1042,28 @@ textarea.inp{resize:vertical;min-height:72px;}
       <select class="inp inp-sm" id="qc-proj-f" onchange="renderQC()"><option value="">All Projects</option></select>
     </div>
     <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Project</th><th>Product</th><th>Stage</th><th>Inspector</th><th>Result</th><th>Remarks</th><th>Actions</th></tr></thead><tbody id="tb-qc"></tbody></table></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: QC DASHBOARD
+══════════════════════════════════════════════ -->
+<div id="pg-qcdashboard" class="page">
+  <div class="sec-hd"><div class="sec-title">QC Dashboard</div></div>
+  <div class="kpi-row c5" id="qcd-kpis" style="margin-bottom:16px"></div>
+  <div class="g2" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-hd"><div class="card-title">Pass / Fail / Pending Split</div></div>
+      <div style="padding:12px 16px;height:220px"><canvas id="qcd-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><div><div class="card-title">Project QC Progress</div><div class="card-sub">Lowest completion first</div></div></div>
+      <div id="qcd-project-bars" style="padding:8px 16px;max-height:260px;overflow-y:auto"></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-hd"><div><div class="card-title">⚠️ Overdue QC Tasks</div><div class="card-sub">Pending more than 7 days</div></div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Project</th><th>Checklist Item</th><th>Pending For</th><th>Actions</th></tr></thead><tbody id="qcd-overdue-tb"></tbody></table></div>
   </div>
 </div>
 
@@ -2574,6 +2597,7 @@ const DB = {
   mfgJobs:[],
   mfgOps:[],
   accounts:[],
+  qcChecklist:[],
 };
 
 // Counters
@@ -2606,7 +2630,7 @@ function delBtn(fn,id){return `<button class="btn btn-ghost btn-xs" onclick="${f
 const PAGE_TITLES={
   dashboard:'Dashboard',leads:'Leads & Enquiries',quotations:'Quotations / BOQ',
   customers:'Customers',projects:'Projects',products:'Products / Furniture Items',
-  labour:'Labour & Wages',expenses:'Project Expenses',qc:'QC Checklist',
+  labour:'Labour & Wages',expenses:'Project Expenses',qc:'QC Checklist',qcdashboard:'QC Dashboard',
   warehouse:'Warehouse Stock',purchases:'Purchases',issues:'Material Issues',
   returns:'Material Returns',invoices:'Sales Invoices',receipts:'Receipts & Payments',
   vendors:'Vendor Bills',accounts:'Chart of Accounts',banking:'Banking & Petty Cash',
@@ -2664,7 +2688,7 @@ function renderPage(pg){
     accounts:renderAccounts,banking:renderBanking,
     jobanalysis:renderJobAnalysis,profitloss:renderPL,
     productcosting:renderProductCosting,stockreport:renderStockReportPage,
-    qc:renderQC,
+    qc:renderQC,qcdashboard:renderQcDashboard,
     factorydash:renderFactoryDash,mfgjobs:renderMfgJobs,machines:renderMachines,jobops:renderJobOps,jobcards:renderJobCards,
     sitedash:renderSiteDash,deliveries:renderDeliveries,installation:renderInstallation,
     milestones:renderMilestones,
@@ -2833,6 +2857,7 @@ function renderProjects(){
       <button class="btn btn-outline btn-xs" onclick="nav('products',null);document.getElementById('prod-proj-filter').value='${p.id}';renderProducts()">Products</button>
       <button class="btn btn-outline btn-xs" onclick="nav('productcosting',null);document.getElementById('pc-proj-sel').value='${p.id}';renderProductCosting()">Costing</button>
       <button class="btn btn-xs ${DB.projectBudgets.find(b=>b.projectId===p.id)?'btn-gold':'btn-outline'}" onclick="openBudgetOverlay('${p.id}')" title="Project Budget / BOM">${DB.projectBudgets.find(b=>b.projectId===p.id)?'📊 Budget':'📋 Set Budget'}</button>
+      <button class="btn btn-outline btn-xs" onclick="openQcChecklist('${p.id}')" title="QC Checklist">✅ QC ${(()=>{const s=qcProjectStats(p.id);return s.total?`(${s.pass}/${s.total})`:'';})()}</button>
       ${editBtn('editProject',p.id)}
     </td>
   </tr>`).join('');
@@ -3118,6 +3143,171 @@ function renderQC(){
     <td class="small muted">${escHtml(q.remarks)||'—'}</td>
     <td>${editBtn('editQC',q.id)}</td>
   </tr>`).join('');
+}
+
+// ═══════════════════════════════════════════
+//  QC CHECKLIST & QC DASHBOARD MODULE
+//  A structured, per-project checklist — separate from the free-form
+//  QC page above (DB.qc), which stays untouched so nothing breaks.
+// ═══════════════════════════════════════════
+const QC_CHECKLIST_TEMPLATE = [
+  'Design Approval','Material Approval','Material Delivered',
+  'Carpentry Completed','Painting Completed','Electrical Checked',
+  'Plumbing Checked','Hardware Installed','Cleaning Completed',
+  'Snag List Closed','Final Inspection','Handover Completed'
+];
+const QC_OVERDUE_DAYS = 7; // an item still Pending this many days after checklist creation counts as overdue
+
+// Creates the 12 default checklist items for a project the first time it's
+// opened. Safe to call repeatedly — does nothing if items already exist.
+function ensureQcChecklist(projectId){
+  if(!DB.qcChecklist) DB.qcChecklist=[];
+  const existing = DB.qcChecklist.filter(c=>c.projectId===projectId);
+  if(existing.length) return;
+  const today = new Date().toISOString().slice(0,10);
+  QC_CHECKLIST_TEMPLATE.forEach((item,i)=>{
+    DB.qcChecklist.push({
+      id:'QCC'+uid(), projectId, item, sortOrder:i,
+      status:'Pending', remarks:'', photo:'',
+      checkedBy:'', checkedDate:'', createdDate:today
+    });
+  });
+  saveDB();
+}
+
+function qcProjectStats(projectId){
+  const items = (DB.qcChecklist||[]).filter(c=>c.projectId===projectId);
+  const pass = items.filter(i=>i.status==='Pass').length;
+  const fail = items.filter(i=>i.status==='Fail').length;
+  const pending = items.filter(i=>i.status==='Pending').length;
+  const total = items.length;
+  const pct = total ? Math.round((pass/total)*100) : 0;
+  return {total, pass, fail, pending, pct};
+}
+
+function openQcChecklist(projectId){
+  ensureQcChecklist(projectId);
+  const proj = DB.projects.find(p=>p.id===projectId);
+  window._qcChecklistProjId = projectId;
+  document.getElementById('modal-title').textContent = `✅ QC Checklist — ${proj?proj.client:''}`;
+  document.getElementById('modal-save-btn').style.display='none';
+  document.getElementById('modal-body').innerHTML = `<div id="qc-checklist-body"></div>`;
+  renderQcChecklistBody();
+  openOverlay();
+}
+
+function renderQcChecklistBody(){
+  const projectId = window._qcChecklistProjId;
+  const items = (DB.qcChecklist||[]).filter(c=>c.projectId===projectId).sort((a,b)=>a.sortOrder-b.sortOrder);
+  const stColor = {Pass:'var(--green)',Fail:'var(--red)',Pending:'var(--amber)'};
+  const stBg    = {Pass:'var(--green-l)',Fail:'var(--red-l)',Pending:'var(--amber-l)'};
+  document.getElementById('qc-checklist-body').innerHTML = items.map(c=>`
+    <div style="border:1px solid var(--border);border-radius:var(--r-sm);padding:12px 14px;margin-bottom:8px;background:${stBg[c.status]||'var(--white)'}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <strong style="font-size:13px">${escHtml(c.item)}</strong>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-xs ${c.status==='Pass'?'btn-gold':'btn-outline'}" style="${c.status==='Pass'?'':'color:var(--green)'}" onclick="setQcItemStatus('${c.id}','Pass')">✓ Pass</button>
+          <button class="btn btn-xs ${c.status==='Fail'?'btn-gold':'btn-outline'}" style="${c.status==='Fail'?'':'color:var(--red)'}" onclick="setQcItemStatus('${c.id}','Fail')">✕ Fail</button>
+          <button class="btn btn-xs ${c.status==='Pending'?'btn-gold':'btn-outline'}" onclick="setQcItemStatus('${c.id}','Pending')">⏳ Pending</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:8px;margin-top:8px">
+        <input class="inp inp-sm" placeholder="Remarks" value="${escHtml(c.remarks)}" onchange="setQcItemField('${c.id}','remarks',this.value)">
+        <input class="inp inp-sm" placeholder="Checked By" value="${escHtml(c.checkedBy)}" onchange="setQcItemField('${c.id}','checkedBy',this.value)">
+        <input class="inp inp-sm" type="date" value="${c.checkedDate||''}" onchange="setQcItemField('${c.id}','checkedDate',this.value)">
+      </div>
+      ${c.status==='Pending' && _qcIsOverdue(c) ? `<div style="margin-top:6px;font-size:11px;color:var(--red)">⚠ Overdue — pending more than ${QC_OVERDUE_DAYS} days</div>`:''}
+    </div>
+  `).join('');
+}
+
+function _qcIsOverdue(item){
+  if(item.status!=='Pending' || !item.createdDate) return false;
+  const days = (new Date() - new Date(item.createdDate)) / 86400000;
+  return days > QC_OVERDUE_DAYS;
+}
+
+function setQcItemStatus(itemId, status){
+  const item = DB.qcChecklist.find(c=>c.id===itemId);
+  if(!item) return;
+  item.status = status;
+  if(status!=='Pending'){
+    item.checkedBy = item.checkedBy || _currentUser?.name || '';
+    item.checkedDate = item.checkedDate || new Date().toISOString().slice(0,10);
+  }
+  saveDB();
+  renderQcChecklistBody();
+  if(document.getElementById('pg-qcdashboard')?.classList.contains('active')) renderQcDashboard();
+}
+
+function setQcItemField(itemId, field, value){
+  const item = DB.qcChecklist.find(c=>c.id===itemId);
+  if(!item) return;
+  item[field] = value;
+  saveDB();
+}
+
+// ── QC DASHBOARD (aggregate view across all projects) ──────────────
+let _qcDashChart = null;
+
+function renderQcDashboard(){
+  DB.projects.forEach(p=>ensureQcChecklist(p.id));
+  const all = DB.qcChecklist||[];
+  const total = all.length;
+  const pass = all.filter(i=>i.status==='Pass').length;
+  const fail = all.filter(i=>i.status==='Fail').length;
+  const pending = all.filter(i=>i.status==='Pending').length;
+  const overallPct = total ? Math.round((pass/total)*100) : 0;
+  const overdue = all.filter(_qcIsOverdue);
+
+  document.getElementById('qcd-kpis').innerHTML = `
+    ${kpiBox('Total QC Items', total, '', '')}
+    ${kpiBox('Completed', pass, total?Math.round(pass/total*100)+'%':'', 'var(--green)')}
+    ${kpiBox('Pending', pending, '', 'var(--amber)')}
+    ${kpiBox('Failed', fail, '', fail>0?'var(--red)':'')}
+    ${kpiBox('Overall QC %', overallPct+'%', '', overallPct>=80?'var(--green)':overallPct>=50?'var(--amber)':'var(--red)')}
+  `;
+
+  // Doughnut chart: Pass / Fail / Pending split
+  const chartCanvas = document.getElementById('qcd-chart');
+  if(chartCanvas && window.Chart){
+    if(_qcDashChart) _qcDashChart.destroy();
+    _qcDashChart = new Chart(chartCanvas, {
+      type:'doughnut',
+      data:{ labels:['Pass','Fail','Pending'], datasets:[{
+        data:[pass,fail,pending],
+        backgroundColor:['#1E8449','#C0392B','#C3B152']
+      }]},
+      options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}}} }
+    });
+  }
+
+  // Project-wise progress bars, ranked worst-to-best so problem projects surface first
+  const projStats = DB.projects.map(p=>({p, ...qcProjectStats(p.id)})).sort((a,b)=>a.pct-b.pct);
+  document.getElementById('qcd-project-bars').innerHTML = projStats.length ? projStats.map(s=>`
+    <div style="padding:10px 4px;border-bottom:1px solid var(--border2)">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+        <strong>${escHtml(s.p.client)}</strong>
+        <span class="muted">${s.pass}/${s.total} passed ${s.fail?`· <span style="color:var(--red)">${s.fail} failed</span>`:''}</span>
+      </div>
+      <div style="background:var(--border2);border-radius:10px;height:8px;overflow:hidden">
+        <div style="width:${s.pct}%;height:100%;background:${s.pct>=80?'var(--green)':s.pct>=50?'var(--amber)':'var(--red)'}"></div>
+      </div>
+    </div>
+    <div style="text-align:right;margin-bottom:4px"><button class="btn btn-outline btn-xs" onclick="openQcChecklist('${s.p.id}')">Open Checklist</button></div>
+  `).join('') : '<div class="muted" style="padding:16px">No projects yet.</div>';
+
+  // Overdue tasks table
+  document.getElementById('qcd-overdue-tb').innerHTML = overdue.length ? overdue.map(o=>{
+    const proj = DB.projects.find(p=>p.id===o.projectId);
+    const days = Math.floor((new Date() - new Date(o.createdDate))/86400000);
+    return `<tr>
+      <td>${escHtml(proj?.client||'—')}</td>
+      <td>${escHtml(o.item)}</td>
+      <td class="mono" style="color:var(--red)">${days} days</td>
+      <td><button class="btn btn-outline btn-xs" onclick="openQcChecklist('${o.projectId}')">Review</button></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">✅ Nothing overdue</td></tr>';
 }
 
 // INVOICES
@@ -11735,7 +11925,8 @@ function seedVendorLists(){
     projectBudgets:'project_budgets', materialRequests:'material_requests',
     bankEntries:'bank_entries', vendorMaster:'vendor_master',
     purchaseOrders:'purchase_orders', siteDeliveries:'site_deliveries',
-    mfgJobs:'mfg_jobs', mfgOps:'mfg_ops', pendingUsers:'pending_users'
+    mfgJobs:'mfg_jobs', mfgOps:'mfg_ops', pendingUsers:'pending_users',
+    qcChecklist:'qc_checklist'
   };
   const sbTable = k => SB_TABLE[k] || k;
 
@@ -11746,7 +11937,7 @@ function seedVendorLists(){
     'customers','workers','items','vendorMaster','deliveries','installation',
     'employees','attendance','payroll','advances','purchaseOrders','milestones',
     'siteDeliveries','installations','machines','mfgJobs','mfgOps','accounts',
-    'pendingUsers','dispatch'
+    'pendingUsers','dispatch','qcChecklist'
   ];
 
   // Debounced sync
