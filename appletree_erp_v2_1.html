@@ -1131,11 +1131,12 @@ textarea.inp{resize:vertical;min-height:72px;}
   <div class="sec-hd"><div class="sec-title">Material Issues</div>
     <button class="btn btn-gold" onclick="nav('matrequest',null)">+ New Material Request</button>
   </div>
-  <div class="alert alert-info">📤 All material issues are created through <strong>Material Requests</strong>. Raise a request — it auto-approves if within BOM budget, or goes to CEO for approval.</div>
-  <div class="kpi-row c3">
+  <div class="alert alert-info">📤 All material issues are created through <strong>Material Requests</strong>. Raise a request — it auto-approves if within BOM budget, or goes to CEO for approval. Stock only leaves the warehouse once the receiving site/engineer <strong>accepts</strong> the issue below.</div>
+  <div class="kpi-row c4">
     <div class="kpi"><div class="kpi-label">Total Issued</div><div class="kpi-val" id="iss-total-amt">₹0</div><div class="kpi-sub">All time value</div></div>
     <div class="kpi r"><div class="kpi-label">Returned</div><div class="kpi-val" id="iss-returned">₹0</div><div class="kpi-sub">Net reduction</div></div>
     <div class="kpi g"><div class="kpi-label">Net Consumed</div><div class="kpi-val" id="iss-net">₹0</div><div class="kpi-sub">Issued minus returns</div></div>
+    <div class="kpi" style="border-color:var(--amber-b)"><div class="kpi-label">Pending Acceptance</div><div class="kpi-val" id="iss-pending" style="color:var(--amber)">0</div><div class="kpi-sub">Awaiting receiver confirmation</div></div>
   </div>
   <div class="card">
     <div class="tbl-toolbar">
@@ -1143,7 +1144,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <select class="inp inp-sm" id="iss-proj-f" onchange="filterCol('tb-issues',3,this.value)"><option value="">All Projects</option></select>
       <select class="inp inp-sm" id="iss-prod-f" onchange="filterCol('tb-issues',4,this.value)"><option value="">All Products</option></select>
     </div>
-    <div class="tbl-wrap"><table><thead><tr><th>Issue No.</th><th>Date</th><th>Item</th><th>Project</th><th>Product</th><th>Qty</th><th>Unit</th><th>Rate ₹</th><th class="right">Amount ₹</th><th>Ret'd</th><th>Actions</th></tr></thead><tbody id="tb-issues"></tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Issue No.</th><th>Date</th><th>Item</th><th>Project</th><th>Product</th><th>Qty</th><th>Unit</th><th>Rate ₹</th><th class="right">Amount ₹</th><th>Status</th><th>Ret'd</th><th>Actions</th></tr></thead><tbody id="tb-issues"></tbody></table></div>
   </div>
 </div>
 
@@ -1152,13 +1153,16 @@ textarea.inp{resize:vertical;min-height:72px;}
 ══════════════════════════════════════════════ -->
 <div id="pg-returns" class="page">
   <div class="sec-hd"><div class="sec-title">Material Returns</div><button class="btn btn-gold" onclick="openModal('return')">↩ Return Material</button></div>
-  <div class="alert alert-ok">↩ Returned materials go back into <strong>Warehouse stock</strong> and reduce the product's material cost.</div>
+  <div class="alert alert-ok">↩ Returned materials go back into <strong>Warehouse stock</strong> once the store <strong>accepts</strong> the return below, and reduce the product's material cost.</div>
+  <div class="kpi-row c2" style="margin-bottom:16px">
+    <div class="kpi" style="border-color:var(--amber-b)"><div class="kpi-label">Pending Acceptance</div><div class="kpi-val" id="ret-pending" style="color:var(--amber)">0</div><div class="kpi-sub">Awaiting store confirmation</div></div>
+  </div>
   <div class="card">
     <div class="tbl-toolbar">
       <input class="inp inp-search" placeholder="Search…" style="width:200px" oninput="filterTbl('tb-returns',this.value)">
       <select class="inp inp-sm" id="ret-proj-f" onchange="filterCol('tb-returns',3,this.value)"><option value="">All Projects</option></select>
     </div>
-    <div class="tbl-wrap"><table><thead><tr><th>Return No.</th><th>Date</th><th>Ref Issue</th><th>Project</th><th>Product</th><th>Item</th><th>Returned Qty</th><th>Rate ₹</th><th class="right">Value ₹</th><th>Reason</th></tr></thead><tbody id="tb-returns"></tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Return No.</th><th>Date</th><th>Ref Issue</th><th>Project</th><th>Product</th><th>Item</th><th>Returned Qty</th><th>Rate ₹</th><th class="right">Value ₹</th><th>Status</th><th>Reason</th><th>Actions</th></tr></thead><tbody id="tb-returns"></tbody></table></div>
   </div>
 </div>
 
@@ -1248,8 +1252,21 @@ textarea.inp{resize:vertical;min-height:72px;}
 <div id="pg-profitloss" class="page">
   <div class="sec-hd">
     <div class="sec-title">Project P&L Report</div>
-    <select class="inp inp-sm" id="pl-proj-sel" onchange="renderPL()"><option value="">All Projects</option></select>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select class="inp inp-sm" id="pl-proj-sel" onchange="renderPL()"><option value="">All Projects</option></select>
+      <select class="inp inp-sm" id="pl-scope-sel" onchange="renderPL()" title="Which projects count toward profitability">
+        <option value="completed_or_milestone">Completed / Milestone-Reached Only</option>
+        <option value="completed">Completed Only</option>
+        <option value="all">All Projects (incl. ongoing)</option>
+      </select>
+      <span id="pl-threshold-wrap" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">
+        Billed ≥ <input class="inp inp-sm" type="number" id="pl-threshold" value="80" min="0" max="100" style="width:60px" onchange="renderPL()">%
+      </span>
+      <input class="inp inp-sm" type="date" id="pl-date-from" onchange="renderPL()" title="Project start date from">
+      <input class="inp inp-sm" type="date" id="pl-date-to" onchange="renderPL()" title="Project start date to">
+    </div>
   </div>
+  <div class="alert alert-info" id="pl-scope-note"></div>
   <div id="pl-content"></div>
 </div>
 
@@ -1269,12 +1286,37 @@ textarea.inp{resize:vertical;min-height:72px;}
      PAGE: STOCK REPORT
 ══════════════════════════════════════════════ -->
 <div id="pg-stockreport" class="page">
-  <div class="sec-hd"><div class="sec-title">Stock Ledger Report</div></div>
-  <div class="card">
-    <div class="tbl-toolbar">
-      <select class="inp inp-sm" id="sr-item-sel" onchange="renderStockReport()"><option value="">— Select Item —</option></select>
+  <div class="sec-hd"><div class="sec-title">Stock Report</div></div>
+
+  <!-- Overall Stock Report (default view) -->
+  <div id="sr-overall-section">
+    <div class="kpi-row c4" id="sr-overall-kpis" style="margin-bottom:16px"></div>
+    <div class="card">
+      <div class="tbl-toolbar">
+        <input class="inp inp-search" placeholder="Search item…" style="width:220px" oninput="renderStockReportOverall()" id="sr-search">
+        <select class="inp inp-sm" id="sr-category-f" onchange="renderStockReportOverall()"><option value="">All Categories</option></select>
+        <select class="inp inp-sm" id="sr-stocklevel-f" onchange="renderStockReportOverall()">
+          <option value="">All Stock Levels</option>
+          <option value="low">Below Reorder Level</option>
+          <option value="zero">Zero Stock</option>
+        </select>
+      </div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Item</th><th>Category</th><th>Unit</th><th class="right">Current Stock</th><th class="right">Reserved</th><th class="right">Available</th><th class="right">Avg Cost ₹</th><th class="right">Stock Value ₹</th><th>Actions</th></tr></thead>
+        <tbody id="sr-overall-tb"></tbody>
+      </table></div>
     </div>
-    <div id="sr-content"></div>
+  </div>
+
+  <!-- Per-item ledger drill-down -->
+  <div id="sr-ledger-section" style="display:none">
+    <div style="margin-bottom:12px"><button class="btn btn-outline btn-sm" onclick="closeStockLedger()">← Back to Overall Stock Report</button></div>
+    <div class="card">
+      <div class="tbl-toolbar">
+        <select class="inp inp-sm" id="sr-item-sel" onchange="renderStockReport()"><option value="">— Select Item —</option></select>
+      </div>
+      <div id="sr-content"></div>
+    </div>
   </div>
 </div>
 
@@ -2621,7 +2663,7 @@ function renderPage(pg){
     receipts:renderReceipts,vendors:renderVendorBills,
     accounts:renderAccounts,banking:renderBanking,
     jobanalysis:renderJobAnalysis,profitloss:renderPL,
-    productcosting:renderProductCosting,stockreport:renderStockReport,
+    productcosting:renderProductCosting,stockreport:renderStockReportPage,
     qc:renderQC,
     factorydash:renderFactoryDash,mfgjobs:renderMfgJobs,machines:renderMachines,jobops:renderJobOps,jobcards:renderJobCards,
     sitedash:renderSiteDash,deliveries:renderDeliveries,installation:renderInstallation,
@@ -2969,9 +3011,9 @@ function renderPurchases(){
   const tb=document.getElementById('tb-purchases');
   tb.innerHTML=DB.purchases.map(p=>`<tr>
     <td>${fmtDate(p.date)}</td>
-    <td class="mono">${p.vchNo}</td>
-    <td><strong>${p.vendor}</strong></td>
-    <td class="small">${p.lineItems?p.lineItems.map(i=>i.description).join(', '):p.items} ${p.lineItems?'<span class="muted">('+p.lineItems.length+' items)</span>':''}</td>
+    <td class="mono">${escHtml(p.vchNo)}</td>
+    <td><strong>${escHtml(p.vendor)}</strong></td>
+    <td class="small">${p.lineItems?escHtml(p.lineItems.map(i=>i.description).join(', ')):escHtml(p.items)} ${p.lineItems?'<span class="muted">('+p.lineItems.length+' items)</span>':''}</td>
     <td>${p.destination==='Warehouse'?'<span class="tag tag-teal">Warehouse</span>':'<span class="tag tag-violet">Project Direct</span>'}</td>
     <td class="small">${p.projectId?projName(p.projectId):'—'}</td>
     <td><span class="tag tag-grey">${p.vchType}</span></td>
@@ -2981,27 +3023,46 @@ function renderPurchases(){
 }
 
 // ISSUES
+function _acceptanceTag(status){
+  const map={
+    'Pending Acceptance': {c:'var(--amber)',bg:'var(--amber-l)',b:'var(--amber-b)',icon:'⏳'},
+    'Accepted':           {c:'var(--green)',bg:'var(--green-l)',b:'var(--green-b)',icon:'✅'},
+    'Partially Accepted': {c:'var(--blue)', bg:'var(--blue-l)', b:'var(--blue-b)', icon:'◐'},
+    'Rejected':           {c:'var(--red)',  bg:'var(--red-l)',  b:'var(--red-b)',  icon:'✕'},
+  };
+  const s = map[status] || map['Pending Acceptance'];
+  return `<span class="tag" style="color:${s.c};background:${s.bg};border:1px solid ${s.b}">${s.icon} ${status||'Pending Acceptance'}</span>`;
+}
+
 function renderIssues(){
   const tb=document.getElementById('tb-issues');
-  let totalIss=0,totalRet=0;
+  let totalIss=0,totalRet=0,pendingCount=0;
   tb.innerHTML=DB.issues.map(i=>{
+    const status = i.status || 'Accepted'; // legacy issues created before this workflow existed
     totalIss+=i.amount;
+    if(status==='Pending Acceptance') pendingCount++;
     const retQty=DB.returns.filter(r=>r.issueId===i.id).reduce((s,r)=>s+r.returnQty,0);
     const retAmt=DB.returns.filter(r=>r.issueId===i.id).reduce((s,r)=>s+r.value,0);
     totalRet+=retAmt;
+    const canReturn = status==='Accepted' || status==='Partially Accepted';
     return `<tr>
       <td class="mono">${i.issueNo}</td>
       <td>${fmtDate(i.date)}</td>
-      <td><strong>${i.itemName}</strong></td>
+      <td><strong>${escHtml(i.itemName)}</strong></td>
       <td class="small">${projName(i.projectId)}</td>
       <td class="small">${prodName(i.productId)}</td>
       <td class="mono">${i.qty}</td>
       <td>${i.unit}</td>
       <td class="mono">${INR(i.rate)}</td>
       <td class="mono right">${INR(i.amount)}</td>
+      <td>${_acceptanceTag(status)}</td>
       <td class="mono ${retQty>0?'stock-low':''}">${retQty>0?retQty:''}</td>
       <td style="white-space:nowrap">
-        <button class="btn btn-outline btn-xs" onclick="quickReturn('${i.id}')">↩ Ret</button>
+        ${status==='Pending Acceptance'?`
+          <button class="btn btn-gold btn-xs" onclick="acceptIssue('${i.id}')">✓ Accept</button>
+          <button class="btn btn-outline btn-xs" style="color:var(--red)" onclick="rejectIssue('${i.id}')">✕</button>
+        `:''}
+        ${canReturn?`<button class="btn btn-outline btn-xs" onclick="quickReturn('${i.id}')">↩ Ret</button>`:''}
         ${editBtn('editIssue',i.id)}
       </td>
     </tr>`;
@@ -3009,23 +3070,39 @@ function renderIssues(){
   document.getElementById('iss-total-amt').textContent=INR(totalIss);
   document.getElementById('iss-returned').textContent=INR(totalRet);
   document.getElementById('iss-net').textContent=INR(totalIss-totalRet);
+  const pendEl=document.getElementById('iss-pending');
+  if(pendEl) pendEl.textContent=pendingCount;
 }
 
 // RETURNS
 function renderReturns(){
   const tb=document.getElementById('tb-returns');
-  tb.innerHTML=DB.returns.map(r=>`<tr>
+  let pendingCount=0;
+  tb.innerHTML=DB.returns.map(r=>{
+    const status = r.status || 'Accepted'; // legacy returns created before this workflow existed
+    if(status==='Pending Acceptance') pendingCount++;
+    return `<tr>
     <td class="mono">${r.returnNo}</td>
     <td>${fmtDate(r.date)}</td>
     <td class="mono small">${r.issueNo}</td>
     <td class="small">${projName(r.projectId)}</td>
     <td class="small">${prodName(r.productId)}</td>
-    <td><strong>${r.itemName}</strong></td>
+    <td><strong>${escHtml(r.itemName)}</strong></td>
     <td class="mono">${r.returnQty}</td>
     <td class="mono">${INR(r.rate)}</td>
     <td class="mono right" style="color:var(--red)">${INR(r.value)}</td>
-    <td class="small muted">${r.reason||'—'}</td>
-  </tr>`).join('');
+    <td>${_acceptanceTag(status)}</td>
+    <td class="small muted">${escHtml(r.reason)||'—'}</td>
+    <td style="white-space:nowrap">
+      ${status==='Pending Acceptance'?`
+        <button class="btn btn-gold btn-xs" onclick="acceptReturn('${r.id}')">✓ Accept</button>
+        <button class="btn btn-outline btn-xs" style="color:var(--red)" onclick="rejectReturn('${r.id}')">✕</button>
+      `:''}
+    </td>
+  </tr>`;
+  }).join('');
+  const pendEl=document.getElementById('ret-pending');
+  if(pendEl) pendEl.textContent=pendingCount;
 }
 
 // QC
@@ -3035,10 +3112,10 @@ function renderQC(){
     <td>${fmtDate(q.date)}</td>
     <td class="small">${projName(q.projectId)}</td>
     <td class="small">${prodName(q.productId)}</td>
-    <td><span class="tag tag-blue">${q.stage}</span></td>
-    <td>${q.inspector}</td>
+    <td><span class="tag tag-blue">${escHtml(q.stage)}</span></td>
+    <td>${escHtml(q.inspector)}</td>
     <td>${statusTag(q.result)}</td>
-    <td class="small muted">${q.remarks||'—'}</td>
+    <td class="small muted">${escHtml(q.remarks)||'—'}</td>
     <td>${editBtn('editQC',q.id)}</td>
   </tr>`).join('');
 }
@@ -3117,10 +3194,10 @@ function saveEditReceipt(id){
 function renderVendorBills(){
   const tb=document.getElementById('tb-vendors');
   tb.innerHTML=DB.bills.map(b=>`<tr>
-    <td class="mono"><strong>${b.billNo}</strong></td>
+    <td class="mono"><strong>${escHtml(b.billNo)}</strong></td>
     <td>${fmtDate(b.date)}</td>
-    <td><strong>${b.vendor}</strong></td>
-    <td class="small">${b.items?b.items.map(i=>i.description).join(', '):b.description} <span class="muted">${b.items?'('+b.items.length+' items)':''}</span></td>
+    <td><strong>${escHtml(b.vendor)}</strong></td>
+    <td class="small">${b.items?escHtml(b.items.map(i=>i.description).join(', ')):escHtml(b.description)} <span class="muted">${b.items?'('+b.items.length+' items)':''}</span></td>
     <td>${statusTag(b.status)}</td>
     <td class="mono right">${INR(b.amount)}</td>
     <td class="mono right" style="color:var(--green)">${INR(b.paid)}</td>
@@ -3539,6 +3616,89 @@ function renderProductCosting(){
 }
 
 // STOCK REPORT
+// Reserved stock = qty on issues still awaiting acceptance (physically
+// still in the warehouse, but earmarked to leave once accepted). Ties the
+// stock report directly into the Material Issue acceptance workflow.
+function _reservedQty(itemId){
+  return DB.issues.filter(i=>i.itemId===itemId && i.status==='Pending Acceptance').reduce((s,i)=>s+i.qty,0);
+}
+
+// Entry point when navigating to the Stock Report page — always resets to
+// the Overall Stock Report view (drill-down is reached via its "Ledger"
+// button, matching how every other list→detail page in this app works).
+function renderStockReportPage(){
+  closeStockLedger();
+  renderStockReportOverall();
+}
+
+function openStockLedger(itemId){
+  document.getElementById('sr-overall-section').style.display='none';
+  document.getElementById('sr-ledger-section').style.display='';
+  const sel=document.getElementById('sr-item-sel');
+  if(sel) sel.value=itemId;
+  renderStockReport();
+}
+function closeStockLedger(){
+  document.getElementById('sr-ledger-section').style.display='none';
+  document.getElementById('sr-overall-section').style.display='';
+}
+
+function renderStockReportOverall(){
+  const catSel=document.getElementById('sr-category-f');
+  if(catSel && catSel.options.length<=1){
+    [...new Set(DB.warehouse.map(w=>w.category).filter(Boolean))].sort().forEach(c=>{
+      const o=document.createElement('option'); o.value=c; o.textContent=c; catSel.appendChild(o);
+    });
+  }
+  const q = (document.getElementById('sr-search')?.value||'').toLowerCase();
+  const cat = document.getElementById('sr-category-f')?.value||'';
+  const levelFilter = document.getElementById('sr-stocklevel-f')?.value||'';
+
+  let items = DB.warehouse.filter(w=>
+    (!q || w.name.toLowerCase().includes(q) || (w.code||'').toLowerCase().includes(q)) &&
+    (!cat || w.category===cat)
+  );
+  if(levelFilter==='low') items = items.filter(w=>w.qty<=w.reorder && w.qty>0);
+  if(levelFilter==='zero') items = items.filter(w=>w.qty===0);
+
+  let totalValue=0, lowCount=0, zeroCount=0, reservedValue=0;
+  DB.warehouse.forEach(w=>{
+    totalValue += w.qty*w.rate;
+    if(w.qty===0) zeroCount++; else if(w.qty<=w.reorder) lowCount++;
+    reservedValue += _reservedQty(w.id)*w.rate;
+  });
+
+  document.getElementById('sr-overall-kpis').innerHTML = `
+    ${kpiBox('Total Items', DB.warehouse.length, '', '')}
+    ${kpiBox('Total Stock Value', INR(totalValue), 'Current qty × avg cost', 'var(--gold)')}
+    ${kpiBox('Reserved Value', INR(reservedValue), 'Pending acceptance', 'var(--amber)')}
+    ${kpiBox('Below Reorder', lowCount+' low · '+zeroCount+' zero', '', lowCount+zeroCount>0?'var(--red)':'var(--green)')}
+  `;
+
+  const tb=document.getElementById('sr-overall-tb');
+  if(!items.length){
+    tb.innerHTML = `<tr><td colspan="9" class="muted" style="text-align:center;padding:24px">No items match this filter.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = items.map(w=>{
+    const reserved = _reservedQty(w.id);
+    const available = w.qty - reserved;
+    const value = w.qty*w.rate;
+    const stockColor = w.qty===0?'var(--red)':w.qty<=w.reorder?'var(--amber)':'var(--dark)';
+    return `<tr>
+      <td><strong>${escHtml(w.name)}</strong><div class="muted small">${escHtml(w.code||'')}</div></td>
+      <td><span class="tag tag-grey">${escHtml(w.category||'—')}</span></td>
+      <td>${w.unit}</td>
+      <td class="mono right" style="color:${stockColor};font-weight:600">${w.qty}</td>
+      <td class="mono right" style="color:${reserved>0?'var(--amber)':'var(--muted)'}">${reserved||'—'}</td>
+      <td class="mono right">${available}</td>
+      <td class="mono right">${INR(w.rate)}</td>
+      <td class="mono right">${INR(value)}</td>
+      <td><button class="btn btn-outline btn-xs" onclick="openStockLedger('${w.id}')">📋 Ledger</button></td>
+    </tr>`;
+  }).join('');
+}
+
 function renderStockReport(){
   const itemId=document.getElementById('sr-item-sel')?.value||'';
   const container=document.getElementById('sr-content');
@@ -4253,14 +4413,53 @@ function savePurchase(){
 function saveReturn(){
   const qty=+g('f-ret-qty');const rate=+g('f-ret-rate');
   if(!qty){toast('Quantity required','err');return;}
+  if(qty<0){toast('Quantity cannot be negative','err');return;}
   const issueId=g('f-ret-issue');
   const iss=DB.issues.find(i=>i.id===issueId);
+  if(iss && qty>iss.qty){toast(`Cannot return more than the ${iss.qty} ${iss.unit} originally issued`,'err');return;}
   const retNo='MR/'+String(++_returnSeq).padStart(3,'0');
   const val=+g('f-ret-val')||qty*rate;
-  DB.returns.push({id:'RET'+String(_returnSeq).padStart(3,'0'),returnNo:retNo,date:g('f-ret-date'),issueId,issueNo:iss?.issueNo||'',projectId:g('f-ret-proj'),productId:g('f-ret-prod'),itemName:g('f-ret-item'),returnQty:qty,rate,value:val,reason:g('f-ret-reason')});
-  // Add back to warehouse
-  if(iss){const wh=DB.warehouse.find(w=>w.id===iss.itemId);if(wh)wh.qty+=qty;}
-  closeModal();toast(`Return MR/${String(_returnSeq).padStart(3,'0')} recorded. Stock updated ✓`,'ok');renderReturns();renderWarehouse();
+  // Material Return Acceptance Workflow: stock is NOT increased here — the
+  // store must verify the physically returned quantity and accept it via
+  // acceptReturn() before it goes back into warehouse stock.
+  DB.returns.push({id:'RET'+String(_returnSeq).padStart(3,'0'),returnNo:retNo,date:g('f-ret-date'),issueId,issueNo:iss?.issueNo||'',projectId:g('f-ret-proj'),productId:g('f-ret-prod'),itemId:iss?.itemId||'',itemName:g('f-ret-item'),returnQty:qty,rate,value:val,reason:g('f-ret-reason'),
+    status:'Pending Acceptance', acceptedQty:0, acceptedBy:'', acceptedDate:'', rejectedBy:'', acceptRemarks:''});
+  closeModal();toast(`Return ${retNo} recorded — pending acceptance at store`,'ok');renderReturns();
+}
+
+// Store confirms a returned quantity was physically received back.
+// Only now does stock actually re-enter the warehouse.
+function acceptReturn(returnId){
+  const ret = DB.returns.find(r=>r.id===returnId);
+  if(!ret || ret.status!=='Pending Acceptance'){ toast('Nothing pending for this return','err'); return; }
+  const input = prompt(`Accept how many ${ret.itemName} back into stock?\n(Returned: ${ret.returnQty})`, ret.returnQty);
+  if(input===null) return;
+  const acceptedQty = +input;
+  if(!acceptedQty || acceptedQty<0 || acceptedQty>ret.returnQty){ toast('Enter a valid quantity between 0 and '+ret.returnQty,'err'); return; }
+  const remarks = prompt('Remarks (optional):','') || '';
+  const wh = ret.itemId ? DB.warehouse.find(w=>w.id===ret.itemId) : null;
+  if(wh) wh.qty += acceptedQty;
+  ret.acceptedQty = acceptedQty;
+  ret.acceptedBy = _currentUser?.name || 'Unknown';
+  ret.acceptedDate = new Date().toISOString().slice(0,10);
+  ret.acceptRemarks = remarks;
+  ret.status = acceptedQty===ret.returnQty ? 'Accepted' : 'Partially Accepted';
+  saveDB();
+  toast(`${ret.status}: ${acceptedQty} ${ret.itemName} added back to stock ✓`,'ok');
+  renderReturns(); renderWarehouse();
+}
+
+function rejectReturn(returnId){
+  const ret = DB.returns.find(r=>r.id===returnId);
+  if(!ret || ret.status!=='Pending Acceptance'){ toast('Nothing pending for this return','err'); return; }
+  const remarks = prompt('Reason for rejecting this return:','');
+  if(remarks===null) return;
+  ret.status = 'Rejected';
+  ret.rejectedBy = _currentUser?.name || 'Unknown';
+  ret.acceptRemarks = remarks;
+  saveDB();
+  toast('Return rejected — no stock movement occurred','ok');
+  renderReturns();
 }
 
 function saveInvoice(){
@@ -4325,17 +4524,21 @@ function saveLead(){
 }
 
 function saveWarehouseItem(){
+  const qtyVal=+g('f-wh-qty'), rateVal=+g('f-wh-rate'), reorderVal=+g('f-wh-reorder');
+  if(qtyVal<0){toast('Quantity cannot be negative','err');return;}
+  if(rateVal<0){toast('Rate cannot be negative','err');return;}
+  if(reorderVal<0){toast('Reorder level cannot be negative','err');return;}
   if(_editingId){
     const r=DB.warehouse.find(x=>x.id===_editingId);
     if(r){
       r.code=g('f-wh-code')||r.code;r.category=g('f-wh-cat');r.name=g('f-wh-name')||r.name;
-      r.unit=g('f-wh-unit')||r.unit;r.qty=+g('f-wh-qty');r.rate=+g('f-wh-rate')||r.rate;
-      r.reorder=+g('f-wh-reorder')||r.reorder;
+      r.unit=g('f-wh-unit')||r.unit;r.qty=qtyVal;r.rate=rateVal||r.rate;
+      r.reorder=reorderVal||r.reorder;
       closeModal();toast('Item updated ✓','ok');renderWarehouse();
     }return;
   }
   const name=g('f-wh-name');if(!name){toast('Item name required','err');return;}
-  DB.warehouse.push({id:'W'+uid(),code:g('f-wh-code'),name,category:g('f-wh-cat'),unit:g('f-wh-unit'),qty:+g('f-wh-qty')||0,rate:+g('f-wh-rate')||0,reorder:+g('f-wh-reorder')||5});
+  DB.warehouse.push({id:'W'+uid(),code:g('f-wh-code'),name,category:g('f-wh-cat'),unit:g('f-wh-unit'),qty:qtyVal||0,rate:rateVal||0,reorder:reorderVal||5});
   closeModal();toast('Warehouse item added ✓','ok');renderWarehouse();
 }
 
@@ -4818,10 +5021,10 @@ function renderPurchaseOrders(){
     const stColor = {Draft:'tag-grey',Sent:'tag-blue','Partially Received':'tag-gold',Received:'tag-green',Cancelled:'tag-red'}[po.status]||'tag-grey';
     const overdue  = po.expectedDate && new Date(po.expectedDate)<new Date() && po.status!=='Received'&&po.status!=='Cancelled';
     return `<tr>
-      <td><span class="tag tag-dark">${po.poNo}</span></td>
+      <td><span class="tag tag-dark">${escHtml(po.poNo)}</span></td>
       <td>${fmtDate(po.date)}</td>
-      <td><strong>${po.vendor}</strong></td>
-      <td>${destTag}${proj?`<div class="muted small">${proj.client}</div>`:''}</td>
+      <td><strong>${escHtml(po.vendor)}</strong></td>
+      <td>${destTag}${proj?`<div class="muted small">${escHtml(proj.client)}</div>`:''}</td>
       <td class="small muted">${(po.items||[]).length} item${(po.items||[]).length!==1?'s':''}</td>
       <td class="mono"><strong>${INR(total)}</strong>${pending>0?`<div class="small" style="color:var(--amber)">₹${Number(pending).toLocaleString('en-IN')} pending</div>`:''}</td>
       <td><span class="tag ${stColor}">${po.status}</span></td>
@@ -5122,7 +5325,7 @@ function poPrintById(poId){
     <table style="margin-bottom:20px"><tr>
       <td style="width:50%;vertical-align:top;padding-right:20px">
         <div style="font-size:10px;font-weight:700;color:#9C8E7A;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Vendor</div>
-        <div style="font-size:15px;font-weight:700">${po.vendor}</div>
+        <div style="font-size:15px;font-weight:700">${escHtml(po.vendor)}</div>
       </td>
       <td style="width:50%;vertical-align:top">
         <div style="font-size:10px;font-weight:700;color:#9C8E7A;text-transform:uppercase;letter-spacing:.1em;margin-bottom:6px">Deliver To</div>
@@ -5593,9 +5796,9 @@ function renderQuotations(){
     const roomCount= (q.rooms||[]).length;
     const itemCount= (q.rooms||[]).reduce((s,r)=>s+(r.items||[]).length,0);
     return `<tr>
-      <td><span class="tag tag-dark">${q.refNo}</span></td>
+      <td><span class="tag tag-dark">${escHtml(q.refNo)}</span></td>
       <td>${fmtDate(q.date)}</td>
-      <td><strong>${q.customer}</strong><div class="muted small">${q.site||''}</div></td>
+      <td><strong>${escHtml(q.customer)}</strong><div class="muted small">${escHtml(q.site)||''}</div></td>
       <td>${statusTag(q.status)}</td>
       <td class="small muted">${roomCount} room${roomCount!==1?'s':''} · ${itemCount} items</td>
       <td class="mono right"><strong>${INR(total)}</strong></td>
@@ -5970,7 +6173,7 @@ function _quotHTML(q, tpl){
   const terms    = _quotTerms(q, tpl);
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
-  <title>${q.refNo} — ${q.customer}</title>
+  <title>${escHtml(q.refNo)} — ${escHtml(q.customer)}</title>
   <style>${styles}</style>
   </head><body>
   ${header}
@@ -6106,8 +6309,8 @@ function _quotClientBlock(q, tpl){
   return `<div class="client-block">
     <div>
       <div class="cl">Client</div>
-      <div class="cv">${q.customer}</div>
-      ${q.site?`<div class="cv-sm">${q.site}</div>`:''}
+      <div class="cv">${escHtml(q.customer)}</div>
+      ${q.site?`<div class="cv-sm">${escHtml(q.site)}</div>`:''}
     </div>
     ${q.designer?`<div>
       <div class="cl">Designer / Architect</div>
@@ -6291,7 +6494,7 @@ function boqPrint(){
 
   const printWin = window.open('','_blank','width=900,height=700');
   printWin.document.write(`<!DOCTYPE html><html><head>
-    <title>${q.refNo} — ${q.customer}</title>
+    <title>${escHtml(q.refNo)} — ${escHtml(q.customer)}</title>
     <style>
       *{box-sizing:border-box;margin:0;padding:0}
       body{font-family:'Segoe UI',Arial,sans-serif;color:#1A1612;background:#fff;padding:32px;}
@@ -6321,8 +6524,8 @@ function boqPrint(){
     <table style="margin-bottom:20px;width:100%"><tr>
       <td style="width:50%;vertical-align:top;padding-right:20px">
         <div style="font-size:10px;font-weight:700;color:#9C8E7A;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">Client</div>
-        <div style="font-size:15px;font-weight:700">${q.customer}</div>
-        ${q.site?`<div style="font-size:12px;color:#6B5E48">${q.site}</div>`:''}
+        <div style="font-size:15px;font-weight:700">${escHtml(q.customer)}</div>
+        ${q.site?`<div style="font-size:12px;color:#6B5E48">${escHtml(q.site)}</div>`:''}
       </td>
       ${q.designer?`<td style="width:50%;vertical-align:top">
         <div style="font-size:10px;font-weight:700;color:#9C8E7A;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">Designer</div>
@@ -9220,7 +9423,7 @@ function renderUserMgmt(){
   const roles = Object.keys(ROLE_MODULES);
   document.getElementById('tb-role-matrix-body').innerHTML = modules.map(m=>`<tr>
     <td style="font-weight:500">${m}</td>
-    ${roles.map(r=>`<td style="text-align:center">${(r==='CEO'||ROLE_MODULES[r].includes(m))?'<span style="color:var(--green);font-size:14px">✓</span>':'<span style="color:var(--border);font-size:14px">—</span>'}</td>`).join('')}
+    ${roles.map(r=>`<td style="text-align:center">${(!ROLE_MODULES[r]||ROLE_MODULES[r].includes(m))?'<span style="color:var(--green);font-size:14px">✓</span>':'<span style="color:var(--border);font-size:14px">—</span>'}</td>`).join('')}
   </tr>`).join('');
 
   // Users table
@@ -9450,17 +9653,59 @@ function resetPassword(userId){
 // ============================================================
 
 // ── ENHANCED P&L ─────────────────────────────────────────────
+// A project "counts" toward profitability once it's genuinely finished
+// enough that its costs are stable — otherwise an ongoing project with
+// heavy up-front material spend but little invoiced yet shows as a huge
+// loss and distorts the overall P&L. "Reached milestones" = the % of
+// contract value already billed via invoiced/received milestones meets
+// the configured threshold (default 80%).
+function _plBilledPct(p){
+  const ms = DB.milestones.filter(m=>m.projectId===p.id);
+  const billed = ms.filter(m=>m.status==='Invoiced'||m.status==='Received').reduce((s,m)=>s+m.amount,0);
+  if(billed>0 && p.contractValue>0) return billed/p.contractValue*100;
+  // Fall back to invoiced-vs-contract if no milestones are set up at all
+  const invoiced = DB.invoices.filter(i=>i.projectId===p.id).reduce((s,i)=>s+i.amount,0);
+  return p.contractValue>0 ? invoiced/p.contractValue*100 : 0;
+}
+
 function renderPL(){
   if(!requireRole('CEO','Admin')){_accessDenied();return;}
   const sel = document.getElementById('pl-proj-sel');
   const projId = sel ? sel.value : '';
+  const scope = document.getElementById('pl-scope-sel')?.value || 'completed_or_milestone';
+  const threshold = +document.getElementById('pl-threshold')?.value || 80;
+  const dateFrom = document.getElementById('pl-date-from')?.value || '';
+  const dateTo   = document.getElementById('pl-date-to')?.value || '';
 
   // Seed project selector if empty
   if(sel && sel.options.length <= 1){
     DB.projects.forEach(p=>{ const o=document.createElement('option'); o.value=p.id; o.textContent=p.client; sel.appendChild(o); });
   }
 
-  const projects = projId ? DB.projects.filter(p=>p.id===projId) : DB.projects;
+  let projects = projId ? DB.projects.filter(p=>p.id===projId) : DB.projects;
+  const excludedCount = { total: projects.length };
+
+  if(scope==='completed'){
+    projects = projects.filter(p=>p.status==='Completed');
+  } else if(scope==='completed_or_milestone'){
+    projects = projects.filter(p=>p.status==='Completed' || _plBilledPct(p)>=threshold);
+  }
+  if(dateFrom) projects = projects.filter(p=>!p.startDate || p.startDate>=dateFrom);
+  if(dateTo)   projects = projects.filter(p=>!p.startDate || p.startDate<=dateTo);
+  excludedCount.shown = projects.length;
+
+  const threshEl = document.getElementById('pl-threshold-wrap');
+  if(threshEl) threshEl.style.display = scope==='completed_or_milestone' ? '' : 'none';
+
+  const noteEl = document.getElementById('pl-scope-note');
+  if(noteEl){
+    if(scope==='all'){
+      noteEl.innerHTML = `ℹ️ Showing all projects, including ongoing ones. Costs on unfinished projects can distort margins — switch to "Completed / Milestone-Reached Only" for a truer profitability picture.`;
+    } else {
+      const hidden = excludedCount.total - excludedCount.shown;
+      noteEl.innerHTML = `ℹ️ Showing ${excludedCount.shown} of ${excludedCount.total} project${excludedCount.total===1?'':'s'} that ${scope==='completed'?'are marked Completed':`are Completed or ≥${threshold}% billed against contract value`}.${hidden>0?` ${hidden} ongoing project${hidden===1?' is':'s are'} excluded so partial costs don't distort profitability.`:''}`;
+    }
+  }
 
   const rows = projects.map(p=>{
     const issued  = DB.issues.filter(i=>i.projectId===p.id).reduce((s,i)=>s+i.amount,0);
@@ -9485,6 +9730,11 @@ function renderPL(){
     outstanding:acc.outstanding+r.outstanding
   }), {invoiced:0,cost:0,profit:0,labour:0,mat:0,exp:0,outstanding:0});
   const avgMargin = T.invoiced ? ((T.profit/T.invoiced)*100).toFixed(1) : 0;
+
+  if(!rows.length){
+    document.getElementById('pl-content').innerHTML = `<div class="empty"><div class="ei">📊</div><p>No projects match this filter yet.${scope!=='all'?' Try "All Projects" to see ongoing work, or mark a project Completed.':''}</p></div>`;
+    return;
+  }
 
   document.getElementById('pl-content').innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px">
@@ -9741,9 +9991,9 @@ function renderPurchaseReport(){
           ${pos.map(p=>{
             const val = p.items.reduce((s,i)=>s+i.amount,0);
             return `<tr>
-              <td class="mono">${p.poNo}</td>
-              <td>${p.vendor}</td>
-              <td>${p.date}</td>
+              <td class="mono">${escHtml(p.poNo)}</td>
+              <td>${escHtml(p.vendor)}</td>
+              <td>${fmtDate(p.date)}</td>
               <td class="mono right">${INR(val)}</td>
               <td><span class="tag" style="color:${statusColor[p.status]||'var(--muted)'};background:${statusColor[p.status]||'var(--muted)'}18;border:1px solid ${statusColor[p.status]||'var(--muted)'}44">${p.status}</span></td>
             </tr>`;
@@ -10833,6 +11083,7 @@ function saveIssue(){
   }
   const itemId=g('f-iss-item');const qty=+g('f-iss-qty');
   if(!itemId||!qty){showToast('Select item and qty','err');return;}
+  if(qty<0){showToast('Quantity cannot be negative','err');return;}
   const w=DB.warehouse.find(x=>x.id===itemId);
   if(!w||w.qty<qty){showToast('Insufficient stock','err');return;}
 
@@ -10866,14 +11117,14 @@ function saveIssue(){
     }
   }
 
-  // Normal issue
+  // Normal issue — stock moves only on acceptance, see acceptIssue()
   const rate=+g('f-iss-rate')||w.rate;
   const seq=++_issueSeq;
   DB.issues.push({id:'ISS'+uid(),issueNo:'ISS/'+String(seq).padStart(3,'0'),
     date:g('f-iss-date'),itemId,itemName:w.name,qty,unit:w.unit,rate,amount:qty*rate,
-    projectId:projId,productId:g('f-iss-prod'),notes:g('f-iss-notes')});
-  w.qty-=qty;
-  closeModal();showToast(`Issued ${qty} ${w.unit} of ${w.name} ✓`,'ok');renderIssues();renderWarehouse();
+    projectId:projId,productId:g('f-iss-prod'),notes:g('f-iss-notes'),
+    status:'Pending Acceptance', acceptedQty:0, acceptedBy:'', acceptedDate:'', rejectedBy:'', acceptRemarks:''});
+  closeModal();showToast(`Issue created — pending acceptance (${qty} ${w.unit} of ${w.name})`,'ok');renderIssues();renderWarehouse();
 }
 
 // ── MATERIAL REQUESTS ────────────────────────────────────────
@@ -10884,8 +11135,11 @@ function mrRemainingQty(productId, itemId){
   const pbom   = budget?.productBOMs?.find(b => b.productId === productId);
   const bomMat = pbom?.materials?.find(m => m.itemId === itemId);
   const budgetQty = bomMat?.netQty || 0;
-  const issued = DB.issues.filter(i=>i.productId===productId&&i.itemId===itemId).reduce((s,i)=>s+i.qty,0);
-  const returned= DB.returns.filter(r=>r.productId===productId&&r.itemId===itemId).reduce((s,r)=>s+r.returnQty,0);
+  // Rejected issues/returns never actually moved material, so they must not
+  // count against the BOM budget — otherwise a rejection would permanently
+  // lock up budget for material that's still sitting in the warehouse.
+  const issued = DB.issues.filter(i=>i.productId===productId&&i.itemId===itemId&&i.status!=='Rejected').reduce((s,i)=>s+i.qty,0);
+  const returned= DB.returns.filter(r=>r.productId===productId&&r.itemId===itemId&&r.status!=='Rejected').reduce((s,r)=>s+r.returnQty,0);
   return { budgetQty, issuedQty: issued-returned, remainingQty: budgetQty-(issued-returned) };
 }
 
@@ -10893,6 +11147,13 @@ function _createIssueFromMR(req){
   const w = DB.warehouse.find(x=>x.id===req.itemId);
   if(!w||w.qty<req.requestedQty) return false;
   const seq=++_issueSeq;
+  // Stock is NOT reduced here — it moves to "reserved" (still physically in
+  // the warehouse) until the receiving site/engineer accepts the issue via
+  // acceptIssue(). This is the Material Issue Acceptance Workflow: stock,
+  // inventory value, and the ledger only change on acceptance, not on
+  // issue creation, so a store person can't accidentally double-issue
+  // material that's already been physically handed over but not yet
+  // confirmed received.
   DB.issues.push({
     id:'ISS'+uid(), issueNo:'ISS/'+String(seq).padStart(3,'0'),
     date:new Date().toISOString().slice(0,10),
@@ -10900,11 +11161,48 @@ function _createIssueFromMR(req){
     qty:req.requestedQty, unit:req.unit,
     rate:req.rate, amount:req.requestedQty*req.rate,
     projectId:req.projectId, productId:req.productId,
-    notes:'MR: '+req.mrNo+(req.reason?' — '+req.reason:'')
+    notes:'MR: '+req.mrNo+(req.reason?' — '+req.reason:''),
+    status:'Pending Acceptance', acceptedQty:0,
+    acceptedBy:'', acceptedDate:'', rejectedBy:'', acceptRemarks:''
   });
-  w.qty -= req.requestedQty;
   req.issueNo = 'ISS/'+String(seq).padStart(3,'0');
   return true;
+}
+
+// Site Engineer / Receiver confirms an issue was physically received.
+// Only now does stock actually leave the warehouse.
+function acceptIssue(issueId){
+  const iss = DB.issues.find(i=>i.id===issueId);
+  if(!iss || iss.status!=='Pending Acceptance'){ toast('Nothing pending for this issue','err'); return; }
+  const input = prompt(`Accept how many ${iss.unit} of "${iss.itemName}"?\n(Issued: ${iss.qty} ${iss.unit})`, iss.qty);
+  if(input===null) return;
+  const acceptedQty = +input;
+  if(!acceptedQty || acceptedQty<0 || acceptedQty>iss.qty){ toast('Enter a valid quantity between 0 and '+iss.qty,'err'); return; }
+  const w = DB.warehouse.find(x=>x.id===iss.itemId);
+  if(!w || w.qty<acceptedQty){ toast('Insufficient warehouse stock to accept this quantity','err'); return; }
+  const remarks = prompt('Remarks (optional):','') || '';
+  w.qty -= acceptedQty;
+  iss.acceptedQty = acceptedQty;
+  iss.acceptedBy = _currentUser?.name || 'Unknown';
+  iss.acceptedDate = new Date().toISOString().slice(0,10);
+  iss.acceptRemarks = remarks;
+  iss.status = acceptedQty===iss.qty ? 'Accepted' : 'Partially Accepted';
+  saveDB();
+  toast(`${iss.status}: ${acceptedQty} ${iss.unit} of ${iss.itemName} — stock updated ✓`,'ok');
+  renderIssues(); renderWarehouse();
+}
+
+function rejectIssue(issueId){
+  const iss = DB.issues.find(i=>i.id===issueId);
+  if(!iss || iss.status!=='Pending Acceptance'){ toast('Nothing pending for this issue','err'); return; }
+  const remarks = prompt('Reason for rejecting this issue:','');
+  if(remarks===null) return;
+  iss.status = 'Rejected';
+  iss.rejectedBy = _currentUser?.name || 'Unknown';
+  iss.acceptRemarks = remarks;
+  saveDB();
+  toast('Issue rejected — no stock movement occurred','ok');
+  renderIssues();
 }
 
 function renderMatRequests(){
@@ -10997,7 +11295,7 @@ function approveMatRequest(id){
   req.status='Approved';
   req.approvedBy=_currentUser?.name||'CEO';
   req.approvedDate=new Date().toISOString().slice(0,10);
-  saveDB(); toast('Approved — '+req.requestedQty+' '+req.unit+' issued ✓','ok');
+  saveDB(); toast('Approved — '+req.requestedQty+' '+req.unit+' sent for acceptance ✓','ok');
   renderMatRequests(); renderIssues(); renderWarehouse();
 }
 
@@ -11124,7 +11422,7 @@ function saveMatRequest(){
   DB.materialRequests.push(req);
   saveDB(); closeModal();
   if(req.autoApproved){
-    toast(`Auto-approved ✓ — ${qty} ${w.unit} of ${w.name} issued`,'ok');
+    toast(`Auto-approved ✓ — ${qty} ${w.unit} of ${w.name} sent for acceptance`,'ok');
     renderIssues(); renderWarehouse();
   } else {
     toast('Request submitted — awaiting approval','ok');
