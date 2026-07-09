@@ -722,6 +722,7 @@ textarea.inp{resize:vertical;min-height:72px;}
     <div class="nav-grp">
       <span class="nav-grp-label">Reports</span>
       <div class="nav-item" data-pg="profitloss" onclick="nav('profitloss',this)"><span class="ni">📉</span> Project P&L</div>
+      <div class="nav-item" data-pg="wip" onclick="nav('wip',this)"><span class="ni">🏗️</span> Work In Progress</div>
       <div class="nav-item" data-pg="receivables" onclick="nav('receivables',this)"><span class="ni">🧾</span> Receivables Aging</div>
       <div class="nav-item" data-pg="payrollreport" onclick="nav('payrollreport',this)"><span class="ni">💰</span> Payroll Summary</div>
       <div class="nav-item" data-pg="purchasereport" onclick="nav('purchasereport',this)"><span class="ni">🛒</span> Purchase & Vendor</div>
@@ -1291,6 +1292,15 @@ textarea.inp{resize:vertical;min-height:72px;}
   </div>
   <div class="alert alert-info" id="pl-scope-note"></div>
   <div id="pl-content"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: WORK IN PROGRESS (WIP)
+══════════════════════════════════════════════ -->
+<div id="pg-wip" class="page">
+  <div class="sec-hd"><div class="sec-title">Work In Progress (WIP)</div></div>
+  <div class="kpi-row c4" id="wip-kpis" style="margin-bottom:16px"></div>
+  <div id="wip-content"></div>
 </div>
 
 <!-- ══════════════════════════════════════════════
@@ -2634,7 +2644,7 @@ const PAGE_TITLES={
   warehouse:'Warehouse Stock',purchases:'Purchases',issues:'Material Issues',
   returns:'Material Returns',invoices:'Sales Invoices',receipts:'Receipts & Payments',
   vendors:'Vendor Bills',accounts:'Chart of Accounts',banking:'Banking & Petty Cash',
-  jobanalysis:'Job Work Analysis',profitloss:'P&L Report',productcosting:'Product Costing',
+  jobanalysis:'Job Work Analysis',profitloss:'P&L Report',wip:'Work In Progress',productcosting:'Product Costing',
   stockreport:'Stock Ledger',workers:'Workers Master',items:'Item Master',vendormaster:'Vendor Master',
   factorydash:'Factory Dashboard',mfgjobs:'Manufacturing Jobs',jobops:'Job Operations',jobcards:'Job Cards',machines:'Machines',
   sitedash:'Site Dashboard',deliveries:'Site Deliveries',installation:'Installation',
@@ -2686,7 +2696,7 @@ function renderPage(pg){
     customers:renderCustomers,invoices:renderInvoices,
     receipts:renderReceipts,vendors:renderVendorBills,
     accounts:renderAccounts,banking:renderBanking,
-    jobanalysis:renderJobAnalysis,profitloss:renderPL,
+    jobanalysis:renderJobAnalysis,profitloss:renderPL,wip:renderWIP,
     productcosting:renderProductCosting,stockreport:renderStockReportPage,
     qc:renderQC,qcdashboard:renderQcDashboard,
     factorydash:renderFactoryDash,mfgjobs:renderMfgJobs,machines:renderMachines,jobops:renderJobOps,jobcards:renderJobCards,
@@ -5689,6 +5699,111 @@ function _monthKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStar
 function _monthLabel(key){
   const [y,m]=key.split('-');
   return new Date(+y,+m-1,1).toLocaleDateString('en-IN',{month:'short',year:'2-digit'});
+}
+
+// ═══════════════════════════════════════════
+//  WORK IN PROGRESS (WIP) — cost-to-cost % completion method
+//  Standard project-accounting WIP schedule: Revenue Earned = Contract
+//  Value × %Complete (where %Complete = Actual Cost ÷ Estimated Cost),
+//  then compared against what's actually been billed to find over/under
+//  billing — the same method SAP Business One / NetSuite Job Costing use.
+// ═══════════════════════════════════════════
+function computeProjectWIP(p){
+  const budget = DB.projectBudgets.find(b=>b.projectId===p.id);
+  let estimatedCost, hasBudget;
+  if(budget){
+    const bomTotal = (budget.bom||[]).reduce((s,i)=>s+(i.amount||0),0);
+    const labTotal = (budget.labourItems||[]).reduce((s,l)=>s+(l.amount||0),0);
+    estimatedCost = bomTotal + labTotal + (budget.expenses||0) + (budget.transport||0) + (budget.contingency||0) + (budget.other||0);
+    hasBudget = true;
+  } else {
+    // No formal BOM budget set — fall back to the sum of each product's
+    // estimated cost as a rough basis, clearly flagged as such in the UI.
+    estimatedCost = DB.products.filter(pr=>pr.projectId===p.id).reduce((s,pr)=>s+(pr.estimatedCost||0),0);
+    hasBudget = false;
+  }
+
+  const matNet   = DB.issues.filter(i=>i.projectId===p.id).reduce((s,i)=>s+i.amount,0)
+                  - DB.returns.filter(r=>r.projectId===p.id).reduce((s,r)=>s+r.value,0);
+  const dirPurch = DB.purchases.filter(x=>x.projectId===p.id&&x.destination==='Project Direct').reduce((s,x)=>s+x.amount,0);
+  const labourActual = DB.labour.filter(l=>l.projectId===p.id).reduce((s,l)=>s+l.amount,0);
+  const overheadsActual = DB.expenses.filter(e=>e.projectId===p.id).reduce((s,e)=>s+e.amount,0);
+  const actualCost = matNet + dirPurch + labourActual + overheadsActual;
+
+  const pctComplete = estimatedCost>0 ? Math.min(100, (actualCost/estimatedCost)*100) : 0;
+  const costToComplete = Math.max(0, estimatedCost - actualCost);
+  const revenueEarned = (p.contractValue||0) * (pctComplete/100);
+  const billedToDate = DB.invoices.filter(i=>i.projectId===p.id).reduce((s,i)=>s+i.amount,0);
+  const receivedToDate = DB.receipts.filter(r=>r.projectId===p.id).reduce((s,r)=>s+r.amount,0);
+  const overUnderBilling = billedToDate - revenueEarned; // + = overbilled (liability), - = underbilled (asset)
+
+  return {
+    p, hasBudget, estimatedCost, actualCost, matNet:matNet+dirPurch, labourActual, overheadsActual,
+    pctComplete, costToComplete, revenueEarned, billedToDate, receivedToDate, overUnderBilling
+  };
+}
+
+function renderWIP(){
+  if(!requireRole('CEO','Admin')){_accessDenied();return;}
+  // WIP is inherently about work still in progress — completed projects
+  // have no WIP balance (their cost-to-cost % is 100% and billing should
+  // already be fully reconciled), so they're excluded by definition here,
+  // same principle as the P&L completion filter.
+  const rows = DB.projects.filter(p=>p.status!=='Completed').map(computeProjectWIP);
+
+  const T = rows.reduce((acc,r)=>({
+    estimated:acc.estimated+r.estimatedCost, actual:acc.actual+r.actualCost,
+    costToComplete:acc.costToComplete+r.costToComplete,
+    overbilled:acc.overbilled+(r.overUnderBilling>0?r.overUnderBilling:0),
+    underbilled:acc.underbilled+(r.overUnderBilling<0?-r.overUnderBilling:0),
+  }),{estimated:0,actual:0,costToComplete:0,overbilled:0,underbilled:0});
+
+  document.getElementById('wip-kpis').innerHTML = `
+    ${kpiBox('Active Projects', rows.length, '', '')}
+    ${kpiBox('Total Cost to Complete', INR(T.costToComplete), 'Remaining estimated spend', 'var(--amber)')}
+    ${kpiBox('Total Overbilled', INR(T.overbilled), 'Billed ahead of work done', T.overbilled>0?'var(--red)':'')}
+    ${kpiBox('Total Underbilled', INR(T.underbilled), 'Work done, not yet billed', T.underbilled>0?'var(--blue)':'')}
+  `;
+
+  const content = document.getElementById('wip-content');
+  if(!rows.length){
+    content.innerHTML = `<div class="empty"><div class="ei">🏗️</div><p>No ongoing projects to show WIP for.</p></div>`;
+    return;
+  }
+
+  content.innerHTML = `
+    <div class="card">
+      <div class="tbl-wrap"><table>
+        <thead><tr>
+          <th>Project</th><th class="right">Contract ₹</th><th class="right">Est. Cost ₹</th>
+          <th class="right">Actual Cost ₹</th><th>% Complete</th><th class="right">Cost to Complete ₹</th>
+          <th class="right">Revenue Earned ₹</th><th class="right">Billed ₹</th><th>Over/(Under) Billed ₹</th>
+        </tr></thead>
+        <tbody>
+        ${rows.map(r=>`<tr>
+          <td><strong>${escHtml(r.p.client)}</strong><br><span class="muted" style="font-size:10px">${escHtml(r.p.code||'')}${!r.hasBudget?' · <span style="color:var(--amber)">no BOM budget set</span>':''}</span></td>
+          <td class="mono right">${INR(r.p.contractValue)}</td>
+          <td class="mono right">${INR(r.estimatedCost)}</td>
+          <td class="mono right">${INR(r.actualCost)}</td>
+          <td style="min-width:110px">
+            <div style="background:var(--border2);border-radius:10px;height:8px;overflow:hidden;margin-bottom:3px">
+              <div style="width:${r.pctComplete}%;height:100%;background:${r.pctComplete>=90?'var(--green)':r.pctComplete>=50?'var(--amber)':'var(--blue)'}"></div>
+            </div>
+            <span style="font-size:11px">${r.pctComplete.toFixed(1)}%</span>
+          </td>
+          <td class="mono right">${INR(r.costToComplete)}</td>
+          <td class="mono right">${INR(r.revenueEarned)}</td>
+          <td class="mono right">${INR(r.billedToDate)}</td>
+          <td class="mono right" style="color:${r.overUnderBilling>0?'var(--red)':r.overUnderBilling<0?'var(--blue)':'var(--dark)'};font-weight:600">
+            ${r.overUnderBilling>0?'+':''}${INR(r.overUnderBilling)}
+            <div class="muted" style="font-size:9px;font-weight:400">${r.overUnderBilling>0?'Overbilled':r.overUnderBilling<0?'Underbilled':'Even'}</div>
+          </td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>
+    <div class="alert alert-info" style="margin-top:12px">ℹ️ % Complete uses the cost-to-cost method: Actual Cost ÷ Estimated Cost. Revenue Earned = Contract Value × % Complete. Overbilled means you've invoiced more than the work completed justifies (a liability); Underbilled means completed work hasn't been billed yet (an asset — money you're owed but haven't invoiced).</div>
+  `;
 }
 
 function renderCEOFinancialCharts(now){
