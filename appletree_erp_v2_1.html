@@ -1496,9 +1496,11 @@ textarea.inp{resize:vertical;min-height:72px;}
     </table></div>
   </div>
 
-  <!-- Role Permissions Reference -->
+  <!-- Role Permissions Reference / Editor -->
   <div class="card" style="margin-top:16px">
-    <div class="card-hd"><div class="card-title">Role Access Matrix</div></div>
+    <div class="card-hd">
+      <div><div class="card-title">Role Access Matrix</div><div class="card-sub" id="role-matrix-sub">Which modules each role can see. CEO/Admin always have full access.</div></div>
+    </div>
     <div class="tbl-wrap"><table id="tb-role-matrix">
       <thead><tr>
         <th>Module</th>
@@ -1512,6 +1514,11 @@ textarea.inp{resize:vertical;min-height:72px;}
       </tr></thead>
       <tbody id="tb-role-matrix-body"></tbody>
     </table></div>
+    <div id="role-matrix-footer" style="display:none;justify-content:flex-end;gap:8px;padding:14px 16px;border-top:1px solid var(--border)">
+      <span id="role-matrix-dirty-note" class="muted" style="font-size:12px;align-self:center;margin-right:auto"></span>
+      <button class="btn btn-outline btn-sm" onclick="resetRolePermissionsToDefault()">Reset to Defaults</button>
+      <button class="btn btn-gold btn-sm" onclick="saveRolePermissions()">💾 Save Access Changes</button>
+    </div>
   </div>
 </div>
 
@@ -2808,6 +2815,7 @@ const DB = {
   mfgOps:[],
   accounts:[],
   qcChecklist:[],
+  rolePermissions:[],
 };
 
 // Counters
@@ -5958,16 +5966,13 @@ document.addEventListener('click',e=>{
 });
 
 function applyRoleNav(role){
-  const roleGroups = {
-    'CEO':                 null, // null = all access
-    'Factory Supervisor':  ['Overview','Projects','Operations','Inventory','Factory / MES','Master Data'],
-    'Site Supervisor':     ['Overview','Projects','Site & Installation','Operations'],
-    'Accounts':            ['Overview','Finance','Reports','Projects'],
-    'Sales':               ['Overview','CRM & Sales','Projects','Reports'],
-    'Procurement':         ['Overview','Inventory','Purchases','Projects','Master Data'],
-    'Admin':               null,
-  };
-  const allowed = roleGroups[role];
+  // Single source of truth (getRolePermissions, CEO-editable via Users &
+  // Roles) — previously this function had its own separate hardcoded
+  // permission map that had drifted from the one driving the informational
+  // matrix, which is how Reports (P&L/WIP/Payroll — all sensitive
+  // financial data) ended up actually granted to Site Supervisor and
+  // Sales in the live sidebar despite the matrix meaning to show otherwise.
+  const allowed = (role==='CEO'||role==='Admin') ? null : (getRolePermissions()[role] || []);
   if(allowed === null){ document.querySelectorAll('.nav-grp').forEach(g=>g.style.display=''); return; }
   document.querySelectorAll('.nav-grp').forEach(grp=>{
     const label = grp.querySelector('.nav-grp-label')?.textContent?.trim()||'';
@@ -10018,15 +10023,96 @@ ${clientList?`<br>Active clients: ${clientList}`:''}
 // USERS & ROLES MODULE
 // ============================================================
 
-const ROLE_MODULES = {
-  'CEO':                ['Overview','CRM & Sales','Projects','Operations','Inventory','Finance','Reports','Site & Installation','Factory / MES','HR & Payroll','Master Data'],
+// The full, fixed set of modules that can be granted/revoked per role.
+// Order here is also the canonical column order for the Role Access
+// Matrix — keep ROLE_ORDER (below) and this list in sync with any HTML
+// table headers that display them.
+const ALL_MODULES = ['Overview','CRM & Sales','Projects','Operations','Inventory','Finance','Reports','Site & Installation','Factory / MES','HR & Payroll','Master Data'];
+
+// Fixed role display order — MUST match the Role Access Matrix table
+// header exactly. A previous bug had the header (CEO, Accounts, Factory
+// Sup., Site Sup., Sales, Procurement, Admin) in a different order than
+// the body was generated in (CEO, Factory Supervisor, Site Supervisor,
+// Accounts, ...), silently shifting every column after CEO by one and
+// showing each role's permissions under the wrong name.
+const ROLE_ORDER = ['CEO','Accounts','Factory Supervisor','Site Supervisor','Sales','Procurement','Admin'];
+
+// Default permissions — the single source of truth for both what's shown
+// in the matrix AND what applyRoleNav() actually enforces in the sidebar
+// (previously these were two separate hardcoded objects that had drifted
+// apart, which is how Reports — containing P&L/WIP/Payroll, all sensitive
+// financial data — ended up granted to Site Supervisor and Sales, who
+// have no business need for it, while the matrix *display* additionally
+// had its own separate column-order bug on top of that).
+// CEO/Admin are special-cased to always see everything (see requireRole)
+// and are not stored/editable here.
+const DEFAULT_ROLE_PERMISSIONS = {
   'Factory Supervisor': ['Overview','Projects','Operations','Inventory','Factory / MES','Master Data'],
   'Site Supervisor':    ['Overview','Projects','Site & Installation','Operations'],
   'Accounts':           ['Overview','Finance','Reports','Projects'],
-  'Sales':              ['Overview','CRM & Sales','Projects','Reports'],
+  'Sales':              ['Overview','CRM & Sales','Projects'],
   'Procurement':        ['Overview','Inventory','Projects','Master Data'],
-  'Admin':              null,
 };
+
+// DB.rolePermissions is an array of {id: roleName, modules: [...]} records
+// — one row per role — matching the same array-of-records shape every
+// other table in this app uses, so it syncs to Supabase with zero special
+// casing in the existing upsert/load logic.
+function getRolePermissions(){
+  if(!DB.rolePermissions) DB.rolePermissions = [];
+  if(!DB.rolePermissions.length){
+    DB.rolePermissions = Object.entries(DEFAULT_ROLE_PERMISSIONS).map(([id,modules])=>({id, modules:[...modules]}));
+  }
+  const map = {};
+  DB.rolePermissions.forEach(r=>{ map[r.id]=r.modules; });
+  return map;
+}
+
+function setRolePermissionModules(role, modules){
+  getRolePermissions(); // ensure DB.rolePermissions is seeded
+  const rec = DB.rolePermissions.find(r=>r.id===role);
+  if(rec) rec.modules = modules;
+  else DB.rolePermissions.push({id:role, modules});
+}
+
+function markPermsDirty(){
+  const note = document.getElementById('role-matrix-dirty-note');
+  if(note) note.textContent = 'Unsaved changes — click Save to apply';
+}
+
+function saveRolePermissions(){
+  if(!requireRole('CEO','Admin')) return;
+  const editableRoles = ROLE_ORDER.filter(r=>r!=='CEO' && r!=='Admin');
+  editableRoles.forEach(role=>{
+    const modules = Array.from(document.querySelectorAll(`.role-perm-chk[data-role="${role}"]:checked`)).map(chk=>chk.getAttribute('data-module'));
+    setRolePermissionModules(role, modules);
+  });
+  saveDB();
+  const note = document.getElementById('role-matrix-dirty-note');
+  if(note) note.textContent = 'Saved ✓';
+  renderUserMgmt();
+  if(typeof applyRoleNav==='function' && _currentUser) applyRoleNav(_currentUser.role);
+}
+
+function resetRolePermissionsToDefault(){
+  if(!requireRole('CEO','Admin')) return;
+  if(!confirm('Reset all role access permissions to the default configuration? This will discard any custom changes.')) return;
+  DB.rolePermissions = Object.entries(DEFAULT_ROLE_PERMISSIONS).map(([id,modules])=>({id, modules:[...modules]}));
+  saveDB();
+  renderUserMgmt();
+  if(typeof applyRoleNav==='function' && _currentUser) applyRoleNav(_currentUser.role);
+}
+
+// Kept for any older code that still reads ROLE_MODULES directly —
+// derives from the same live, editable source so it can never drift.
+const ROLE_MODULES = new Proxy({}, {
+  get(_, role){
+    if(role==='CEO'||role==='Admin') return null;
+    return getRolePermissions()[role] || [];
+  },
+  ownKeys(){ return [...ROLE_ORDER]; },
+  getOwnPropertyDescriptor(){ return {enumerable:true, configurable:true}; }
+});
 
 const ROLE_LANDING = {
   'CEO':'CEO Dashboard','Factory Supervisor':'Factory Dashboard',
@@ -10051,13 +10137,29 @@ function renderUserMgmt(){
     ${Object.entries(roleCounts).map(([r,c])=>kpiBox(r, c, ROLE_LANDING[r]||'', 'var(--gold)')).join('')}
   `;
 
-  // Role access matrix
-  const modules = ['Overview','CRM & Sales','Projects','Operations','Inventory','Finance','Reports','Site & Installation','Factory / MES','HR & Payroll','Master Data'];
-  const roles = Object.keys(ROLE_MODULES);
-  document.getElementById('tb-role-matrix-body').innerHTML = modules.map(m=>`<tr>
+  // Role access matrix — editable by CEO/Admin (checkboxes + Save), a
+  // fixed read-only reference (✓/—) for everyone else. Uses ROLE_ORDER
+  // explicitly rather than iterating an object, so this can never again
+  // silently drift out of sync with the table's own header row.
+  const canEditPerms = requireRole('CEO','Admin');
+  const perms = getRolePermissions();
+  document.getElementById('tb-role-matrix-body').innerHTML = ALL_MODULES.map(m=>`<tr>
     <td style="font-weight:500">${m}</td>
-    ${roles.map(r=>`<td style="text-align:center">${(!ROLE_MODULES[r]||ROLE_MODULES[r].includes(m))?'<span style="color:var(--green);font-size:14px">✓</span>':'<span style="color:var(--border);font-size:14px">—</span>'}</td>`).join('')}
+    ${ROLE_ORDER.map(r=>{
+      const isUnrestricted = (r==='CEO'||r==='Admin');
+      const has = isUnrestricted || (perms[r]||[]).includes(m);
+      if(isUnrestricted){
+        return `<td style="text-align:center"><span style="color:var(--green);font-size:14px" title="Always full access">✓</span></td>`;
+      }
+      if(canEditPerms){
+        return `<td style="text-align:center"><input type="checkbox" class="role-perm-chk" data-role="${r}" data-module="${escHtml(m)}" ${has?'checked':''} onchange="markPermsDirty()"></td>`;
+      }
+      return `<td style="text-align:center">${has?'<span style="color:var(--green);font-size:14px">✓</span>':'<span style="color:var(--border);font-size:14px">—</span>'}</td>`;
+    }).join('')}
   </tr>`).join('');
+
+  const permsFooter = document.getElementById('role-matrix-footer');
+  if(permsFooter) permsFooter.style.display = canEditPerms ? 'flex' : 'none';
 
   // Users table
   document.getElementById('tb-usermgmt-body').innerHTML = users.map(u=>{
@@ -12369,7 +12471,7 @@ function seedVendorLists(){
     bankEntries:'bank_entries', vendorMaster:'vendor_master',
     purchaseOrders:'purchase_orders', siteDeliveries:'site_deliveries',
     mfgJobs:'mfg_jobs', mfgOps:'mfg_ops', pendingUsers:'pending_users',
-    qcChecklist:'qc_checklist'
+    qcChecklist:'qc_checklist', rolePermissions:'role_permissions'
   };
   const sbTable = k => SB_TABLE[k] || k;
 
@@ -12380,7 +12482,7 @@ function seedVendorLists(){
     'customers','workers','items','vendorMaster','deliveries','installation',
     'employees','attendance','payroll','advances','purchaseOrders','milestones',
     'siteDeliveries','installations','machines','mfgJobs','mfgOps','accounts',
-    'pendingUsers','dispatch','qcChecklist'
+    'pendingUsers','dispatch','qcChecklist','rolePermissions'
   ];
 
   // Debounced sync
