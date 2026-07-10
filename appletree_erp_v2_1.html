@@ -999,11 +999,13 @@ textarea.inp{resize:vertical;min-height:72px;}
       </div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-outline btn-sm" onclick="boqAddRoom()">+ Add Room</button>
-      <select class="inp inp-sm" id="boq-status" onchange="boqSave();renderBoqConvertBtn()">
+      <button class="btn btn-outline btn-sm" onclick="boqAddRoom()">+ Add Section</button>
+      <select class="inp inp-sm" id="boq-status" onchange="boqStatusChange()">
         <option value="Draft">Draft</option>
         <option value="Sent">Sent to Client</option>
         <option value="Approved">Approved</option>
+        <option value="Won">Won</option>
+        <option value="Lost">Lost</option>
         <option value="Rejected">Rejected</option>
       </select>
       <button class="btn btn-outline btn-sm" onclick="openQuotPreview()">👁 Preview / Print</button>
@@ -1016,24 +1018,39 @@ textarea.inp{resize:vertical;min-height:72px;}
   <div class="card" style="margin-bottom:16px">
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;padding:4px">
       <div class="fg"><label class="fl">Ref No.</label><input class="inp" id="boq-refno" placeholder="STR/Q/001"></div>
+      <div class="fg"><label class="fl">Revision</label><input class="inp" id="boq-revision" type="number" placeholder="1"></div>
       <div class="fg"><label class="fl">Date</label><input class="inp" type="date" id="boq-date"></div>
       <div class="fg"><label class="fl">Client Name</label><input class="inp" id="boq-client" placeholder="Client name"></div>
       <div class="fg"><label class="fl">Project / Site</label><input class="inp" id="boq-site" placeholder="Site address"></div>
       <div class="fg"><label class="fl">Designer</label><input class="inp" id="boq-designer" placeholder="Designer name"></div>
       <div class="fg"><label class="fl">Validity</label><input class="inp" id="boq-validity" placeholder="e.g. 30 days"></div>
+      <div class="fg"><label class="fl">Discount %</label><input class="inp" type="number" id="boq-discount" placeholder="0" oninput="boqUpdateTotal(DB.quotations.find(x=>x.id===_boqId))"></div>
+      <div class="fg"><label class="fl">GST %</label><input class="inp" type="number" id="boq-gst" placeholder="18" oninput="boqUpdateTotal(DB.quotations.find(x=>x.id===_boqId))"></div>
     </div>
   </div>
 
-  <!-- Rooms + Items -->
+  <!-- Sections + Items -->
   <div id="boq-rooms-container"></div>
+
+  <!-- Follow-ups -->
+  <div class="card" style="margin:16px 0">
+    <div class="card-hd"><div class="card-title">📞 Follow-ups</div></div>
+    <div style="padding:12px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+      <div class="fg" style="flex:1;min-width:200px;margin:0"><label class="fl">Note</label><input class="inp" id="boq-fu-note" placeholder="e.g. Called client, awaiting decision"></div>
+      <div class="fg" style="margin:0"><label class="fl">Next Follow-up Date</label><input class="inp" type="date" id="boq-fu-date"></div>
+      <button class="btn btn-outline btn-sm" onclick="boqAddFollowUp()">+ Add</button>
+    </div>
+    <div id="boq-fu-list" style="padding:0 16px 12px"></div>
+  </div>
 
   <!-- Grand Total -->
   <div class="boq-grand-total" id="boq-grand-total">
     <div>
       <div style="font-size:11px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase">Grand Total</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px" id="boq-room-count">0 rooms · 0 items</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px" id="boq-room-count">0 sections · 0 items</div>
     </div>
     <div style="text-align:right">
+      <div style="font-size:11px;color:var(--muted)" id="boq-subtotal-line"></div>
       <div style="font-size:28px;font-weight:700;color:var(--gold)" id="boq-grand-val">₹0</div>
     </div>
   </div>
@@ -4929,7 +4946,12 @@ function _ecRemCostedItem(idx){
   _ecRenderCostedItems();
 }
 
-function openCostedItemModal(){
+// _ciContext: 'estimation' (default, pushes into _ecCostedItems) or
+// 'quotation' (pushes into a BOQ section as a costed line item — see
+// boqAddCostedItem in the Quotations module).
+let _ciContext='estimation', _ciTargetRoomId=null;
+
+function _ciResetForm(){
   const tplOpts=DB.costingTemplates.map(t=>`<option value="${t.id}">${escHtml(t.name)}</option>`).join('');
   const matOpts=DB.costingMaterials.map(m=>`<option value="${m.id}">${escHtml(m.name)} (${m.category})</option>`).join('');
   document.getElementById('ci-template').innerHTML='<option value="">— Select —</option>'+tplOpts;
@@ -4946,6 +4968,10 @@ function openCostedItemModal(){
   document.getElementById('ci-profit').value=DB.costingSettings.defaultProfit;
   document.getElementById('ci-preview').textContent='Fill in dimensions and select a template to see the cost breakdown.';
   document.getElementById('ci-modal-overlay').style.display='flex';
+}
+function openCostedItemModal(){
+  _ciContext='estimation'; _ciTargetRoomId=null;
+  _ciResetForm();
 }
 function closeCostedItemModal(){
   document.getElementById('ci-modal-overlay').style.display='none';
@@ -4982,9 +5008,14 @@ function saveCostedItem(){
   const calc=_ciRecalc();
   if(!calc){ toast('Select a template and enter dimensions first','err'); return; }
   const tpl=DB.costingTemplates.find(t=>t.id===calc.li.templateId);
-  _ecCostedItems.push({id:'ECI'+uid(), name, templateName:tpl?.name||'', ...calc.li, result:calc.result});
+  const record={id:'ECI'+uid(), name, templateName:tpl?.name||'', ...calc.li, result:calc.result};
+  if(_ciContext==='quotation'){
+    boqAddCostedItemToRoom(_ciTargetRoomId, record);
+  } else {
+    _ecCostedItems.push(record);
+    _ecRenderCostedItems();
+  }
   closeCostedItemModal();
-  _ecRenderCostedItems();
   toast('Costed item added ✓','ok');
 }
 
@@ -7627,8 +7658,15 @@ function renderCEODash(){
 // ═══════════════════════════════════════════
 let _boqId = '';   // currently open quotation id
 
-function quotTotalAmount(q){
+function quotSubtotal(q){
   return (q.rooms||[]).reduce((s,r)=>s+(r.items||[]).reduce((ss,i)=>ss+(+i.amount||0),0),0);
+}
+function quotTotalAmount(q){
+  const sub=quotSubtotal(q);
+  const discAmt = q.discountType==='pct' ? sub*(q.discountValue||0)/100 : (q.discountValue||0);
+  const afterDisc = sub-discAmt;
+  const gstAmt = afterDisc*(q.gstPct||0)/100;
+  return Math.round((afterDisc+gstAmt)*100)/100;
 }
 
 function renderQuotations(){
@@ -7638,11 +7676,11 @@ function renderQuotations(){
     const roomCount= (q.rooms||[]).length;
     const itemCount= (q.rooms||[]).reduce((s,r)=>s+(r.items||[]).length,0);
     return `<tr>
-      <td><span class="tag tag-dark">${escHtml(q.refNo)}</span></td>
+      <td><span class="tag tag-dark">${escHtml(q.refNo)}</span>${q.revisionNo>1?` <span class="muted small">Rev ${q.revisionNo}</span>`:''}</td>
       <td>${fmtDate(q.date)}</td>
       <td><strong>${escHtml(q.customer)}</strong><div class="muted small">${escHtml(q.site)||''}</div></td>
       <td>${statusTag(q.status)}</td>
-      <td class="small muted">${roomCount} room${roomCount!==1?'s':''} · ${itemCount} items</td>
+      <td class="small muted">${roomCount} section${roomCount!==1?'s':''} · ${itemCount} items</td>
       <td class="mono right"><strong>${INR(total)}</strong></td>
       <td style="white-space:nowrap;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
         <button class="btn btn-outline btn-xs" onclick="openQuotPreviewById('${q.id}')">👁 Preview</button>
@@ -7699,8 +7737,8 @@ function convertQuotToProject(qId){
         quotedQty: +item.qty || 1,
         quotedRate: +item.rate || 0,
         quotedUnit: item.unit || 'Nos',
-        estimatedCost: 0,
-        notes: '',
+        estimatedCost: item.isCosted?(item.costingResult?.totalCost||0):0,
+        notes: item.isCosted?`Costed via ${item.templateName||'Costing Engine'}`:'',
         boqItemId: item.id
       });
     });
@@ -7718,10 +7756,12 @@ function createNewQuotation(){
   const seq   = DB.quotations.length + 1;
   const refNo = 'STR/Q/' + String(seq).padStart(3,'0');
   const newQ  = {
-    id:'Q'+uid(), refNo, date:new Date().toISOString().slice(0,10),
+    id:'Q'+uid(), refNo, revisionNo:1, date:new Date().toISOString().slice(0,10),
     customer:'', site:'', designer:'', validity:'30 days', status:'Draft',
     payment:'', warranty:'', includes:'', excludes:'', notes:'',
-    rooms:[ { id:'RM'+uid(), name:'Room 1', items:[] } ]
+    discountType:'pct', discountValue:0, gstPct:18,
+    followUps:[], lossReason:'', lossRemarks:'', wonDate:null, lostDate:null,
+    rooms:[ { id:'RM'+uid(), name:'Section 1', items:[] } ]
   };
   DB.quotations.push(newQ);
   openBOQ(newQ.id);
@@ -7740,6 +7780,7 @@ function renderBOQBuilder(){
   document.getElementById('boq-title').textContent    = q.customer || 'New Quotation';
   document.getElementById('boq-sub').textContent      = q.refNo + ' · ' + (q.status||'Draft');
   document.getElementById('boq-refno').value          = q.refNo||'';
+  document.getElementById('boq-revision').value       = q.revisionNo||1;
   document.getElementById('boq-date').value           = q.date||'';
   document.getElementById('boq-client').value         = q.customer||'';
   document.getElementById('boq-site').value           = q.site||'';
@@ -7751,9 +7792,49 @@ function renderBOQBuilder(){
   document.getElementById('boq-includes').value       = q.includes||'';
   document.getElementById('boq-excludes').value       = q.excludes||'';
   document.getElementById('boq-notes').value          = q.notes||'';
+  document.getElementById('boq-discount').value       = q.discountValue||0;
+  document.getElementById('boq-gst').value            = q.gstPct??18;
 
   boqRenderRooms(q);
+  boqRenderFollowUps(q);
   renderBoqConvertBtn();
+}
+
+function boqStatusChange(){
+  const q = DB.quotations.find(x=>x.id===_boqId); if(!q) return;
+  const newStatus = document.getElementById('boq-status').value;
+  if(newStatus==='Won' && q.status!=='Won'){
+    q.wonDate = new Date().toISOString().slice(0,10);
+  } else if(newStatus==='Lost' && q.status!=='Lost'){
+    const reason = prompt('Reason for loss (e.g. Price too high, Went with competitor, Project cancelled):','');
+    q.lossReason = reason||'';
+    q.lostDate = new Date().toISOString().slice(0,10);
+  }
+  q.status = newStatus;
+  boqSave();
+  renderBoqConvertBtn();
+}
+
+function boqAddFollowUp(){
+  const q = DB.quotations.find(x=>x.id===_boqId); if(!q) return;
+  const note = document.getElementById('boq-fu-note').value.trim();
+  if(!note){ toast('Follow-up note required','err'); return; }
+  if(!q.followUps) q.followUps=[];
+  q.followUps.push({id:'FU'+uid(), date:new Date().toISOString().slice(0,10), note, nextDate:document.getElementById('boq-fu-date').value||''});
+  document.getElementById('boq-fu-note').value='';
+  document.getElementById('boq-fu-date').value='';
+  saveDB();
+  boqRenderFollowUps(q);
+  toast('Follow-up logged ✓','ok');
+}
+
+function boqRenderFollowUps(q){
+  const list=q.followUps||[];
+  document.getElementById('boq-fu-list').innerHTML = list.length
+    ? [...list].reverse().map(f=>`<div style="padding:8px 0;border-top:1px solid var(--border);font-size:12px">
+        <strong>${fmtDate(f.date)}</strong> — ${escHtml(f.note)}${f.nextDate?` <span class="muted">(next: ${fmtDate(f.nextDate)})</span>`:''}
+      </div>`).join('')
+    : '<div class="muted" style="padding:8px 0;font-size:12px">No follow-ups logged yet.</div>';
 }
 
 function renderBoqConvertBtn(){
@@ -7772,18 +7853,19 @@ function renderBoqConvertBtn(){
 function boqRenderRooms(q){
   const container = document.getElementById('boq-rooms-container');
   if(!q.rooms || !q.rooms.length){
-    container.innerHTML = '<div class="muted" style="text-align:center;padding:32px">No rooms yet. Click "+ Add Room" to start.</div>';
+    container.innerHTML = '<div class="muted" style="text-align:center;padding:32px">No sections yet. Click "+ Add Section" to start.</div>';
     boqUpdateTotal(q); return;
   }
   container.innerHTML = q.rooms.map((room,ri)=>`
     <div class="boq-room" id="room-${room.id}">
       <div class="boq-room-hd">
         <span style="color:var(--muted);font-size:12px;font-weight:700;min-width:20px">${ri+1}</span>
-        <input class="boq-room-name" value="${room.name}" placeholder="Room Name (e.g. Kitchen)"
+        <input class="boq-room-name" value="${room.name}" placeholder="Section Name (e.g. Kitchen)"
           oninput="boqUpdateRoomName('${room.id}',this.value)">
         <span style="color:var(--muted);font-size:11px;white-space:nowrap">${INR(room.items.reduce((s,i)=>s+(+i.amount||0),0))}</span>
-        <button onclick="boqAddItem('${room.id}')" style="background:rgba(195,177,81,.2);border:none;color:var(--gold);padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;white-space:nowrap">+ Item</button>
-        <button onclick="boqDeleteRoom('${room.id}')" style="background:rgba(192,57,43,.15);border:none;color:var(--red);padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer" title="Delete room">✕</button>
+        <button onclick="boqAddCostedItem('${room.id}')" style="background:rgba(195,177,81,.2);border:none;color:var(--gold);padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;white-space:nowrap">🧮 + Costed Item</button>
+        <button onclick="boqAddItem('${room.id}')" style="background:var(--bg);border:none;color:var(--dark);padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;white-space:nowrap">+ Manual Item</button>
+        <button onclick="boqDeleteRoom('${room.id}')" style="background:rgba(192,57,43,.15);border:none;color:var(--red);padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer" title="Delete section">✕</button>
       </div>
 
       <div class="boq-item-row header">
@@ -7792,14 +7874,14 @@ function boqRenderRooms(q){
       </div>
 
       ${room.items.length ? room.items.map((item,ii)=>`
-        <div class="boq-item-row" id="item-${item.id}">
-          <input class="boq-inp" value="${item.desc||''}" placeholder="Item description…"
+        <div class="boq-item-row" id="item-${item.id}" ${item.isCosted?'title="Costed via Costing Engine — cost breakdown locked; delete and re-add via Costed Item to change"':''}>
+          <input class="boq-inp" value="${item.isCosted?'🧮 '+(item.desc||''):(item.desc||'')}" placeholder="Item description…" ${item.isCosted?'readonly style="background:var(--gold-pale)"':''}
             oninput="boqItemChange('${room.id}','${item.id}','desc',this.value)">
-          <input class="boq-inp" value="${item.unit||'Nos'}" style="text-align:center"
+          <input class="boq-inp" value="${item.unit||'Nos'}" style="text-align:center" ${item.isCosted?'readonly':''}
             oninput="boqItemChange('${room.id}','${item.id}','unit',this.value)">
-          <input class="boq-inp" type="number" value="${item.qty||''}" style="text-align:right" placeholder="0"
+          <input class="boq-inp" type="number" value="${item.qty||''}" style="text-align:right" placeholder="0" ${item.isCosted?'readonly':''}
             oninput="boqItemChange('${room.id}','${item.id}','qty',this.value)">
-          <input class="boq-inp" type="number" value="${item.rate||''}" style="text-align:right" placeholder="0"
+          <input class="boq-inp" type="number" value="${item.rate||''}" style="text-align:right" placeholder="0" ${item.isCosted?'readonly':''}
             oninput="boqItemChange('${room.id}','${item.id}','rate',this.value)">
           <div class="boq-amt" id="amt-${item.id}">${INR(item.amount||0)}</div>
           <button class="boq-del-btn" onclick="boqDeleteItem('${room.id}','${item.id}')"
@@ -7812,10 +7894,28 @@ function boqRenderRooms(q){
 
       <div class="boq-room-total">
         <span style="font-size:11px;color:var(--muted)">${room.items.length} item${room.items.length!==1?'s':''}</span>
-        <span style="font-size:13px;font-weight:700;color:var(--dark)">Room Total: ${INR(room.items.reduce((s,i)=>s+(+i.amount||0),0))}</span>
+        <span style="font-size:13px;font-weight:700;color:var(--dark)">Section Total: ${INR(room.items.reduce((s,i)=>s+(+i.amount||0),0))}</span>
       </div>
     </div>`).join('');
   boqUpdateTotal(q);
+}
+
+function boqAddCostedItem(roomId){
+  _ciContext='quotation'; _ciTargetRoomId=roomId;
+  _ciResetForm();
+}
+
+function boqAddCostedItemToRoom(roomId, record){
+  const q = DB.quotations.find(x=>x.id===_boqId); if(!q) return;
+  const r = q.rooms.find(x=>x.id===roomId); if(!r) return;
+  const qty = record.qty||1;
+  const perUnitSelling = record.result.sellingPrice/qty;
+  r.items.push({
+    id:'IT'+uid(), desc:record.name, unit:'Nos', qty,
+    rate:Math.round(perUnitSelling*100)/100, amount:record.result.sellingPrice,
+    isCosted:true, costingResult:record.result, templateName:record.templateName
+  });
+  boqRenderRooms(q);
 }
 
 function boqUpdateRoomName(roomId, name){
@@ -7846,13 +7946,19 @@ function boqItemChange(roomId, itemId, field, val){
 }
 
 function boqUpdateTotal(q){
+  if(!q) return;
+  q.discountValue = +document.getElementById('boq-discount')?.value||0;
+  q.gstPct = +document.getElementById('boq-gst')?.value||0;
+  const sub = quotSubtotal(q);
   const grand    = quotTotalAmount(q);
   const itemCount= (q.rooms||[]).reduce((s,r)=>s+(r.items||[]).length,0);
   const roomCount= (q.rooms||[]).length;
   const el = document.getElementById('boq-grand-val');
   if(el) el.textContent = INR(grand);
   const sc = document.getElementById('boq-room-count');
-  if(sc) sc.textContent = `${roomCount} room${roomCount!==1?'s':''} · ${itemCount} items`;
+  if(sc) sc.textContent = `${roomCount} section${roomCount!==1?'s':''} · ${itemCount} items`;
+  const subEl = document.getElementById('boq-subtotal-line');
+  if(subEl) subEl.textContent = `Subtotal ${INR(sub)}${q.discountValue?` − Disc ${INR(sub-sub*(1-(q.discountValue||0)/100))}`:''}${q.gstPct?` + GST ${q.gstPct}%`:''}`;
 }
 
 function boqAddRoom(){
@@ -7895,6 +8001,7 @@ function boqDeleteItem(roomId, itemId){
 function boqSave(navigateBack){
   const q = DB.quotations.find(x=>x.id===_boqId); if(!q) return;
   q.refNo    = document.getElementById('boq-refno')?.value  || q.refNo;
+  q.revisionNo=+document.getElementById('boq-revision')?.value||q.revisionNo||1;
   q.date     = document.getElementById('boq-date')?.value   || q.date;
   q.customer = document.getElementById('boq-client')?.value || q.customer;
   q.site     = document.getElementById('boq-site')?.value   || '';
@@ -7906,6 +8013,9 @@ function boqSave(navigateBack){
   q.includes = document.getElementById('boq-includes')?.value||'';
   q.excludes = document.getElementById('boq-excludes')?.value||'';
   q.notes    = document.getElementById('boq-notes')?.value  ||'';
+  q.discountType='pct';
+  q.discountValue=+document.getElementById('boq-discount')?.value||0;
+  q.gstPct   =+document.getElementById('boq-gst')?.value||0;
   document.getElementById('boq-title').textContent = q.customer || 'Quotation';
   document.getElementById('boq-sub').textContent   = q.refNo + ' · ' + q.status;
 
