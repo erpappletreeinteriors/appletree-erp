@@ -748,6 +748,7 @@ textarea.inp{resize:vertical;min-height:72px;}
     <div class="nav-grp">
       <span class="nav-grp-label">Estimation</span>
       <div class="nav-item" data-pg="estimatordash" onclick="nav('estimatordash',this)"><span class="ni">🧮</span> Estimator Dashboard</div>
+      <div class="nav-item" data-pg="costingmasters" onclick="nav('costingmasters',this)"><span class="ni">⚙️</span> Costing Masters</div>
     </div>
     <div class="nav-grp">
       <span class="nav-grp-label">Projects</span>
@@ -919,6 +920,42 @@ textarea.inp{resize:vertical;min-height:72px;}
   <div class="card" style="margin-top:16px">
     <div class="card-hd"><div class="card-title">🧮 My Assigned Requests</div><div class="card-sub">Estimation requests you have claimed</div></div>
     <div class="tbl-wrap"><table><thead><tr><th>Requested</th><th>Customer</th><th>Location</th><th>Requested By</th><th>Est. Value ₹</th><th>Costing</th><th></th></tr></thead><tbody id="ed-mine-tb"></tbody></table></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: COSTING MASTERS (Costing Engine setup —
+     ported from the Sales & Estimation Studio)
+══════════════════════════════════════════════ -->
+<div id="pg-costingmasters" class="page">
+  <div class="card">
+    <div class="card-hd"><div><div class="card-title">⚙️ Costing Engine Defaults</div><div class="card-sub">Used by calcCosting() when a line item doesn't specify its own values</div></div></div>
+    <div style="padding:16px" class="f2">
+      <div class="fg"><label class="fl">Sheet Size (sqft)</label><input class="inp" type="number" id="cs-sheetsqft" onchange="saveCostingSettings()"></div>
+      <div class="fg"><label class="fl">Default Wastage %</label><input class="inp" type="number" id="cs-wastage" onchange="saveCostingSettings()"></div>
+      <div class="fg"><label class="fl">Default Overhead %</label><input class="inp" type="number" id="cs-overhead" onchange="saveCostingSettings()"></div>
+      <div class="fg"><label class="fl">Default Profit %</label><input class="inp" type="number" id="cs-profit" onchange="saveCostingSettings()"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-hd"><div><div class="card-title">📐 Templates</div><div class="card-sub">Parametric furniture-type definitions that drive area/hardware rules</div></div><button class="btn btn-gold btn-sm" onclick="openModal('costingtemplate')">+ Add Template</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Construction Type</th><th>Doors</th><th>Drawers</th><th>Shelves</th><th>Default Wastage %</th><th></th></tr></thead><tbody id="cm-templates-tb"></tbody></table></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-hd"><div><div class="card-title">🪵 Materials</div><div class="card-sub">Core, laminate, edge-band, glass/mirror rate cards</div></div><button class="btn btn-gold btn-sm" onclick="openModal('costingmaterial')">+ Add Material</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Category</th><th>Unit</th><th>Purchase Rate ₹</th><th>Wastage %</th><th></th></tr></thead><tbody id="cm-materials-tb"></tbody></table></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-hd"><div><div class="card-title">🔩 Hardware</div><div class="card-sub">Hinges, slides, handles, soft-close, LED, etc.</div></div><button class="btn btn-gold btn-sm" onclick="openModal('costinghardware')">+ Add Hardware</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Category</th><th>Name</th><th>Purchase Rate ₹</th><th></th></tr></thead><tbody id="cm-hardware-tb"></tbody></table></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <div class="card-hd"><div><div class="card-title">👷 Labour Rates</div><div class="card-sub">Named rate card used by calcCosting() (Cutting, Edge Banding, Assembly, etc.)</div></div><button class="btn btn-gold btn-sm" onclick="openModal('costinglabourrate')">+ Add Labour Rate</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Rate ₹</th><th>Basis</th><th></th></tr></thead><tbody id="cm-labour-tb"></tbody></table></div>
   </div>
 </div>
 
@@ -2987,6 +3024,14 @@ const DB = {
   estimationRequests:[],
   notifications:[],
   activityLog:[],
+  // Costing Engine (ported from the Sales & Estimation Studio) — parametric
+  // furniture costing: templates define construction rules, materials/
+  // hardware/labour rates drive calcCosting(). See "COSTING ENGINE" section.
+  costingTemplates:[],
+  costingMaterials:[],
+  costingHardware:[],
+  costingLabourRates:[],
+  costingSettings:{sheetSqft:32, defaultWastage:8, defaultOverhead:10, defaultProfit:20},
 };
 
 // Counters
@@ -3066,6 +3111,7 @@ function openActivityTimeline(entityType, entityId){
 const PAGE_TITLES={
   dashboard:'Dashboard',leads:'Leads & Enquiries',quotations:'Quotations / BOQ',
   estimatordash:'Estimator Dashboard',
+  costingmasters:'Costing Masters',
   customers:'Customers',projects:'Projects',products:'Products / Furniture Items',
   labour:'Labour & Wages',expenses:'Project Expenses',qc:'QC Checklist',qcdashboard:'QC Dashboard',
   warehouse:'Warehouse Stock',purchases:'Purchases',issues:'Material Issues',
@@ -3121,6 +3167,7 @@ function renderPage(pg){
     items:renderItems,vendormaster:renderVendorMaster,
     leads:renderLeads,quotations:renderQuotations,
     estimatordash:renderEstimatorDash,
+    costingmasters:renderCostingMasters,
     customers:renderCustomers,invoices:renderInvoices,
     receipts:renderReceipts,vendors:renderVendorBills,
     accounts:renderAccounts,banking:renderBanking,
@@ -5309,6 +5356,8 @@ function openModal(type){
     worker:'Add Worker',item:'Add Item to Master',vendormaster:'Add Vendor',
     quotation:'New Quotation',customer:'Add Customer',bill:'Record Vendor Bill',
     stockadj:'Stock Adjustment',bankentry:'Banking Entry',
+    costingtemplate:'Add Costing Template',costingmaterial:'Add Costing Material',
+    costinghardware:'Add Costing Hardware',costinglabourrate:'Add/Update Labour Rate',
   };
   document.getElementById('modal-title').textContent=TITLES[type]||type;
   document.getElementById('modal-body').innerHTML=MODAL_FORMS[type]||'<p class="muted">Form coming soon.</p>';
@@ -5350,6 +5399,8 @@ function saveModal(){
     quotation:saveQuotation,customer:saveCustomer,bill:saveBill,
     stockadj:saveStockAdj,
     account:saveAccount,bankentry:saveBankEntry,
+    costingtemplate:saveCostingTemplate,costingmaterial:saveCostingMaterial,
+    costinghardware:saveCostingHardware,costinglabourrate:saveCostingLabourRate,
   };
   if(saves[_currentModal])saves[_currentModal]();
   else{toast('Saved ✓');closeModal();}
@@ -6160,7 +6211,370 @@ function saveBankEntry() {
   closeModal(); toast('Banking entry saved ✓', 'ok'); renderBanking();
 }
 
-// Patch saveModal to include new types
+// ═══════════════════════════════════════════════════════════════
+//  COSTING ENGINE — ported from the Sales & Estimation Studio
+//  (appletree_sales_studio.html). Templates + rate-card masters
+//  drive calcCosting(), a parametric material/hardware/labour
+//  computation for furniture line items. Not yet wired into a
+//  quotation UI — this module ships the masters + engine only;
+//  wiring it into Estimation/Quotations is a later merge step.
+// ═══════════════════════════════════════════════════════════════
+
+MODAL_FORMS['costingtemplate'] = `
+  <div class="fg"><label class="fl">Template Name</label><input class="inp" id="f-ct-name" placeholder="e.g. Wardrobe - Hinged"></div>
+  <div class="fg"><label class="fl">Construction Type</label>
+    <select class="inp" id="f-ct-constr">
+      <option value="case">Case Goods (cabinet/wardrobe)</option>
+      <option value="flatPanel">Flat Panel (single sheet)</option>
+      <option value="flatTop">Flat Top (table/counter)</option>
+    </select>
+  </div>
+  <div class="f2">
+    <div class="fg"><label class="fl">Has Doors?</label><select class="inp" id="f-ct-doors"><option value="1">Yes</option><option value="0">No</option></select></div>
+    <div class="fg"><label class="fl">Sliding Shutter?</label><select class="inp" id="f-ct-sliding"><option value="0">No</option><option value="1">Yes</option></select></div>
+  </div>
+  <div class="f2">
+    <div class="fg"><label class="fl">Has Drawers?</label><select class="inp" id="f-ct-drawers"><option value="0">No</option><option value="1">Yes</option></select></div>
+    <div class="fg"><label class="fl">Has Shelves?</label><select class="inp" id="f-ct-shelves"><option value="1">Yes</option><option value="0">No</option></select></div>
+  </div>
+  <div class="f2">
+    <div class="fg"><label class="fl">Has Back Panel?</label><select class="inp" id="f-ct-back"><option value="1">Yes</option><option value="0">No</option></select></div>
+    <div class="fg"><label class="fl">Has Table Top?</label><select class="inp" id="f-ct-top"><option value="0">No</option><option value="1">Yes</option></select></div>
+  </div>
+  <div class="f2">
+    <div class="fg"><label class="fl">CNC Required?</label><select class="inp" id="f-ct-cnc"><option value="0">No</option><option value="1">Yes</option></select></div>
+    <div class="fg"><label class="fl">Lift-Up Fitting?</label><select class="inp" id="f-ct-liftup"><option value="0">No</option><option value="1">Yes</option></select></div>
+  </div>
+  <div class="f2">
+    <div class="fg"><label class="fl">Handles per Door/Drawer</label><input class="inp" type="number" id="f-ct-handles" placeholder="1" value="1"></div>
+    <div class="fg"><label class="fl">Shelf Pins per Shelf</label><input class="inp" type="number" id="f-ct-pins" placeholder="4" value="4"></div>
+  </div>
+  <div class="fg"><label class="fl">Default Wastage % (fallback when material has none set)</label><input class="inp" type="number" id="f-ct-wastage" placeholder="8" value="8"></div>
+`;
+
+MODAL_FORMS['costingmaterial'] = `
+  <div class="fg"><label class="fl">Material Name</label><input class="inp" id="f-cma-name" placeholder="e.g. 18mm MDF Pre-lam White"></div>
+  <div class="f2">
+    <div class="fg"><label class="fl">Category</label>
+      <select class="inp" id="f-cma-cat">
+        <option>Core</option><option>Laminate</option><option>Veneer</option>
+        <option>Melamine Polish</option><option>Edge Band</option>
+        <option>Glass</option><option>Mirror</option><option>Lighting</option>
+      </select>
+    </div>
+    <div class="fg"><label class="fl">Unit</label>
+      <select class="inp" id="f-cma-unit"><option>Sheet</option><option>Sqft</option><option>Rmt</option></select>
+    </div>
+  </div>
+  <div class="f2">
+    <div class="fg"><label class="fl">Purchase Rate ₹</label><input class="inp" type="number" id="f-cma-rate" placeholder="0"></div>
+    <div class="fg"><label class="fl">Wastage % (blank = use default)</label><input class="inp" type="number" id="f-cma-wastage" placeholder="8"></div>
+  </div>
+`;
+
+MODAL_FORMS['costinghardware'] = `
+  <div class="fg"><label class="fl">Category</label>
+    <select class="inp" id="f-chw-cat">
+      <option>Sliding Track</option><option>Hinges</option><option>Drawer Slides</option>
+      <option>Handles</option><option>Shelf Pins</option><option>Soft Close Systems</option>
+      <option>Lift Up Systems</option><option>LED Profiles</option>
+    </select>
+  </div>
+  <div class="fg"><label class="fl">Item Name</label><input class="inp" id="f-chw-name" placeholder="e.g. Hettich Soft-Close Hinge"></div>
+  <div class="fg"><label class="fl">Purchase Rate ₹</label><input class="inp" type="number" id="f-chw-rate" placeholder="0"></div>
+`;
+
+MODAL_FORMS['costinglabourrate'] = `
+  <div class="fg"><label class="fl">Labour Name</label>
+    <select class="inp" id="f-clr-name">
+      <option>Cutting</option><option>Edge Banding</option><option>Assembly</option>
+      <option>Lamination</option><option>Veneering</option><option>Melamine Polish</option>
+      <option>CNC Charges</option><option>Glass Installation</option>
+      <option>Installation</option><option>Loading</option><option>Unloading</option><option>Transportation</option>
+    </select>
+  </div>
+  <div class="fg"><label class="fl">Rate ₹</label><input class="inp" type="number" id="f-clr-rate" placeholder="0"></div>
+  <div class="fg"><label class="fl">Basis (for reference)</label><input class="inp" id="f-clr-basis" placeholder="e.g. per sheet, per Rmt, per Sqft, flat"></div>
+`;
+
+function saveCostingTemplate(){
+  const name=g('f-ct-name'); if(!name){toast('Template name required','err');return;}
+  DB.costingTemplates.push({
+    id:'CT'+uid(), name, constructionType:g('f-ct-constr'),
+    hasDoors: g('f-ct-doors')==='1', slidingShutter: g('f-ct-sliding')==='1',
+    hasDrawers: g('f-ct-drawers')==='1', hasShelves: g('f-ct-shelves')==='1',
+    hasBack: g('f-ct-back')==='1', hasTableTop: g('f-ct-top')==='1',
+    cncRequired: g('f-ct-cnc')==='1', hasLiftUp: g('f-ct-liftup')==='1',
+    handlesPerUnit:+g('f-ct-handles')||1, shelfPinsPerShelf:+g('f-ct-pins')||4,
+    drawerBoxFactor:1, defaultWastagePct:+g('f-ct-wastage')||8,
+  });
+  saveDB(); closeModal(); toast('Template added ✓','ok'); renderCostingMasters();
+}
+function deleteCostingTemplate(id){
+  if(!confirm('Delete this costing template?')) return;
+  DB.costingTemplates=DB.costingTemplates.filter(t=>t.id!==id);
+  saveDB(); renderCostingMasters();
+}
+
+function saveCostingMaterial(){
+  const name=g('f-cma-name'); if(!name){toast('Material name required','err');return;}
+  const wastage=g('f-cma-wastage');
+  DB.costingMaterials.push({
+    id:'CMA'+uid(), name, category:g('f-cma-cat'), unit:g('f-cma-unit'),
+    purchaseRate:+g('f-cma-rate')||0, wastagePct: wastage===''?null:+wastage,
+  });
+  saveDB(); closeModal(); toast('Material added ✓','ok'); renderCostingMasters();
+}
+function deleteCostingMaterial(id){
+  if(!confirm('Delete this material?')) return;
+  DB.costingMaterials=DB.costingMaterials.filter(m=>m.id!==id);
+  saveDB(); renderCostingMasters();
+}
+
+function saveCostingHardware(){
+  const name=g('f-chw-name'); if(!name){toast('Item name required','err');return;}
+  DB.costingHardware.push({id:'CHW'+uid(), category:g('f-chw-cat'), name, purchaseRate:+g('f-chw-rate')||0});
+  saveDB(); closeModal(); toast('Hardware added ✓','ok'); renderCostingMasters();
+}
+function deleteCostingHardware(id){
+  if(!confirm('Delete this hardware item?')) return;
+  DB.costingHardware=DB.costingHardware.filter(h=>h.id!==id);
+  saveDB(); renderCostingMasters();
+}
+
+function saveCostingLabourRate(){
+  const name=g('f-clr-name'); if(!name){toast('Labour name required','err');return;}
+  const existing=DB.costingLabourRates.find(l=>l.name===name);
+  if(existing){ existing.rate=+g('f-clr-rate')||0; existing.basis=g('f-clr-basis'); }
+  else DB.costingLabourRates.push({id:'CLR'+uid(), name, rate:+g('f-clr-rate')||0, basis:g('f-clr-basis')});
+  saveDB(); closeModal(); toast('Labour rate saved ✓','ok'); renderCostingMasters();
+}
+function deleteCostingLabourRate(id){
+  if(!confirm('Delete this labour rate?')) return;
+  DB.costingLabourRates=DB.costingLabourRates.filter(l=>l.id!==id);
+  saveDB(); renderCostingMasters();
+}
+
+function saveCostingSettings(){
+  DB.costingSettings.sheetSqft=+g('cs-sheetsqft')||32;
+  DB.costingSettings.defaultWastage=+g('cs-wastage')||8;
+  DB.costingSettings.defaultOverhead=+g('cs-overhead')||10;
+  DB.costingSettings.defaultProfit=+g('cs-profit')||20;
+  toast('Costing defaults saved ✓','ok');
+}
+
+function renderCostingMasters(){
+  document.getElementById('cs-sheetsqft').value=DB.costingSettings.sheetSqft;
+  document.getElementById('cs-wastage').value=DB.costingSettings.defaultWastage;
+  document.getElementById('cs-overhead').value=DB.costingSettings.defaultOverhead;
+  document.getElementById('cs-profit').value=DB.costingSettings.defaultProfit;
+
+  document.getElementById('cm-templates-tb').innerHTML = DB.costingTemplates.map(t=>`<tr>
+    <td>${escHtml(t.name)}</td><td>${t.constructionType}</td>
+    <td>${t.hasDoors||t.slidingShutter?'✓':'—'}</td><td>${t.hasDrawers?'✓':'—'}</td><td>${t.hasShelves?'✓':'—'}</td>
+    <td>${t.defaultWastagePct}%</td><td>${delBtn('deleteCostingTemplate',t.id)}</td>
+  </tr>`).join('') || `<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No templates yet</td></tr>`;
+
+  document.getElementById('cm-materials-tb').innerHTML = DB.costingMaterials.map(m=>`<tr>
+    <td>${escHtml(m.name)}</td><td>${m.category}</td><td>${m.unit}</td>
+    <td>${INR(m.purchaseRate)}</td><td>${m.wastagePct==null?'(default)':m.wastagePct+'%'}</td>
+    <td>${delBtn('deleteCostingMaterial',m.id)}</td>
+  </tr>`).join('') || `<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">No materials yet</td></tr>`;
+
+  document.getElementById('cm-hardware-tb').innerHTML = DB.costingHardware.map(h=>`<tr>
+    <td>${h.category}</td><td>${escHtml(h.name)}</td><td>${INR(h.purchaseRate)}</td>
+    <td>${delBtn('deleteCostingHardware',h.id)}</td>
+  </tr>`).join('') || `<tr><td colspan="4" class="muted" style="text-align:center;padding:20px">No hardware items yet</td></tr>`;
+
+  document.getElementById('cm-labour-tb').innerHTML = DB.costingLabourRates.map(l=>`<tr>
+    <td>${escHtml(l.name)}</td><td>${INR(l.rate)}</td><td>${escHtml(l.basis||'')}</td>
+    <td>${delBtn('deleteCostingLabourRate',l.id)}</td>
+  </tr>`).join('') || `<tr><td colspan="4" class="muted" style="text-align:center;padding:20px">No labour rates yet</td></tr>`;
+}
+
+// ── Calculation engine (ported from sales_studio's calcCosting) ──
+const HINGE_TIERS=[{maxH:900,qty:2},{maxH:1600,qty:3},{maxH:2200,qty:4},{maxH:2700,qty:5}];
+function mmToFt(mm){ return mm/304.8; }
+function mmToM(mm){ return mm/1000; }
+function hingeQtyForHeight(h_mm){
+  const tier=HINGE_TIERS.find(t=>h_mm<=t.maxH);
+  if(tier) return tier.qty;
+  const last=HINGE_TIERS[HINGE_TIERS.length-1];
+  return last.qty+Math.ceil((h_mm-last.maxH)/500);
+}
+function costingLabourRate(name){ return DB.costingLabourRates.find(l=>l.name===name)?.rate||0; }
+function materialLineCost(material, area, sheetSqft){
+  if(!material) return {qty:0,unitLabel:'',cost:0};
+  if(material.unit==='Sheet'){ const sheets=Math.ceil(area/sheetSqft)||0; return {qty:sheets,unitLabel:'Sheet',cost:sheets*material.purchaseRate}; }
+  return {qty:Math.round(area*100)/100,unitLabel:material.unit,cost:area*material.purchaseRate};
+}
+
+// ci: a costed line item {templateId, materialId, finishMaterialId, shutterEdgeBandMaterialId,
+// carcassEdgeBandMaterialId, innerLaminateMaterialId, length, width, height, doors, drawers,
+// shelves, qty, wastagePct, overheadPct, profitPct, corePreLaminated, softClose, glassReq,
+// mirrorReq, lightingReq, cuttingRate, veneerPolishRate, puFinishRequired, puFinishRate,
+// innerLaminationRate}. Returns a full cost/selling-price breakdown, or null if the
+// referenced template doesn't exist.
+function calcCosting(ci){
+  const tpl=DB.costingTemplates.find(t=>t.id===ci.templateId);
+  if(!tpl) return null;
+  const sheetSqft=DB.costingSettings.sheetSqft||32;
+  const fallbackWastagePct=ci.wastagePct??tpl.defaultWastagePct??DB.costingSettings.defaultWastage;
+  const coreMat=DB.costingMaterials.find(m=>m.id===ci.materialId);
+  const finishMat=DB.costingMaterials.find(m=>m.id===ci.finishMaterialId);
+  const shutterEdgeMat=DB.costingMaterials.find(m=>m.id===ci.shutterEdgeBandMaterialId);
+  const carcassEdgeMat=DB.costingMaterials.find(m=>m.id===ci.carcassEdgeBandMaterialId);
+  const innerLaminateMat=DB.costingMaterials.find(m=>m.id===ci.innerLaminateMaterialId);
+  const L=ci.length, W=ci.width, H=ci.height;
+  const Lf=mmToFt(L), Wf=mmToFt(W), Hf=mmToFt(H);
+  const doors=(tpl.hasDoors||tpl.slidingShutter)?(ci.doors||0):0;
+  const drawers=tpl.hasDrawers?(ci.drawers||0):0;
+  const shelves=tpl.hasShelves?(ci.shelves||0):0;
+
+  let coreAreaSqft=0, shutterAreaSqft=0, shutterEdgeBandM=0, carcassEdgeBandM=0;
+  const notes=[];
+
+  if(tpl.constructionType==='case'){
+    const sides=2*(Hf*Wf);
+    const topBottom=2*(Lf*Wf);
+    const partitions=Math.max(doors-1,0)*(Hf*Wf);
+    const back=tpl.hasBack?(Lf*Hf):0;
+    const shelfArea=shelves*(Lf*Wf);
+    const drawerBoxArea=drawers*tpl.drawerBoxFactor*((Lf/Math.max(drawers,1))*(Hf*0.15));
+    coreAreaSqft=sides+topBottom+partitions+back+shelfArea+drawerBoxArea;
+    shutterAreaSqft = tpl.hasDoors||tpl.slidingShutter ? Lf*Hf : 0;
+    if(tpl.hasTableTop) coreAreaSqft += Lf*Wf;
+    shutterEdgeBandM = doors>0 ? doors*(2*((Lf/doors)+Hf))*0.3048 : 0;
+    carcassEdgeBandM = shelves*Lf*0.3048;
+    notes.push('Case goods: sides + top/bottom + partitions + back + shelves'+(tpl.hasTableTop?' + top':'')+', shutter face area = length × height. Shutter edge band = door perimeters; carcass edge band = shelf front edges. Drawer box width = length ÷ drawer count.');
+  } else if(tpl.constructionType==='flatPanel'){
+    coreAreaSqft = Lf*Hf;
+    shutterAreaSqft = 0;
+    shutterEdgeBandM = 2*(Lf+Hf)*0.3048;
+    notes.push('Flat panel: single sheet area = length × height, edge banded on all sides (charged as shutter-grade edge band since the panel face is fully exposed).');
+  } else if(tpl.constructionType==='flatTop'){
+    coreAreaSqft = Lf*Wf;
+    const supportPanels = 2*(Wf*Hf*0.5);
+    coreAreaSqft += supportPanels;
+    shutterEdgeBandM = 2*(Lf+Wf)*0.3048;
+    notes.push('Flat top: top surface (length × depth) + two half-height support panels, top edge charged as shutter-grade edge band.');
+  }
+
+  const coreWastagePct=coreMat?.wastagePct ?? fallbackWastagePct;
+  const shutterWastagePct=(finishMat||coreMat)?.wastagePct ?? fallbackWastagePct;
+  const shutterEdgeWastagePct=shutterEdgeMat?.wastagePct ?? fallbackWastagePct;
+  const carcassEdgeWastagePct=carcassEdgeMat?.wastagePct ?? fallbackWastagePct;
+  const innerLamWastagePct=innerLaminateMat?.wastagePct ?? fallbackWastagePct;
+  notes.push(`Wastage applied per selected material (falls back to ${fallbackWastagePct}% where no material is chosen for a line).`);
+
+  const coreAreaWithWaste=coreAreaSqft*(1+coreWastagePct/100);
+  const shutterAreaWithWaste=shutterAreaSqft*(1+shutterWastagePct/100);
+  const shutterEdgeBandWithWaste=shutterEdgeBandM*(1+shutterEdgeWastagePct/100);
+  const carcassEdgeBandWithWaste=carcassEdgeBandM*(1+carcassEdgeWastagePct/100);
+  const innerLaminateAreaWithWaste=coreAreaSqft*(1+innerLamWastagePct/100);
+
+  const coreLine=materialLineCost(coreMat, coreAreaWithWaste, sheetSqft);
+  const shutterLine = shutterAreaWithWaste>0 ? materialLineCost(finishMat||coreMat, shutterAreaWithWaste, sheetSqft) : {qty:0,unitLabel:'',cost:0};
+  const shutterEdgeLine = {qty:Math.round(shutterEdgeBandWithWaste*100)/100,unitLabel:'Rmt',cost:shutterEdgeMat?shutterEdgeBandWithWaste*shutterEdgeMat.purchaseRate:0};
+  const carcassEdgeLine = {qty:Math.round(carcassEdgeBandWithWaste*100)/100,unitLabel:'Rmt',cost:carcassEdgeMat?carcassEdgeBandWithWaste*carcassEdgeMat.purchaseRate:0};
+  const innerLaminateLine = !ci.corePreLaminated ? materialLineCost(innerLaminateMat, innerLaminateAreaWithWaste, sheetSqft) : {qty:0,unitLabel:'',cost:0};
+
+  const hwLines=[];
+  const findHw=cat=>DB.costingHardware.find(h=>h.category===cat);
+  if(tpl.slidingShutter){
+    const track=findHw('Sliding Track'); if(track){ const qty=Math.ceil(mmToM(L)); hwLines.push({name:'Sliding Track',qty,unit:'Rmt',rate:track.purchaseRate,cost:qty*track.purchaseRate}); }
+  } else if(tpl.hasDoors && doors>0){
+    const hinge=findHw('Hinges'); if(hinge){ const qty=doors*hingeQtyForHeight(H); hwLines.push({name:'Hinges',qty,unit:'Pair',rate:hinge.purchaseRate,cost:qty*hinge.purchaseRate}); }
+  }
+  if(drawers>0){
+    const slide=findHw('Drawer Slides'); if(slide){ hwLines.push({name:'Drawer Slides',qty:drawers,unit:'Pair',rate:slide.purchaseRate,cost:drawers*slide.purchaseRate}); }
+  }
+  if((doors+drawers)>0){
+    const handle=findHw('Handles'); if(handle){ const qty=(doors+drawers)*tpl.handlesPerUnit; hwLines.push({name:'Handles',qty,unit:'Nos',rate:handle.purchaseRate,cost:qty*handle.purchaseRate}); }
+  }
+  if(shelves>0){
+    const pins=findHw('Shelf Pins'); if(pins){ const qty=shelves*tpl.shelfPinsPerShelf; hwLines.push({name:'Shelf Pins',qty,unit:'Nos',rate:pins.purchaseRate,cost:qty*pins.purchaseRate}); }
+  }
+  if(ci.softClose && (doors+drawers)>0){
+    const sc=findHw('Soft Close Systems'); if(sc){ const qty=doors+drawers; hwLines.push({name:'Soft Close Systems',qty,unit:'Nos',rate:sc.purchaseRate,cost:qty*sc.purchaseRate}); }
+  }
+  if(tpl.hasLiftUp){
+    const lift=findHw('Lift Up Systems'); if(lift){ hwLines.push({name:'Lift Up Systems',qty:1,unit:'Set',rate:lift.purchaseRate,cost:lift.purchaseRate}); }
+  }
+  if(ci.lightingReq){
+    const led=DB.costingHardware.find(h=>h.category==='LED Profiles'); const ledMat=DB.costingMaterials.find(m=>m.category==='Lighting');
+    const rate=(led?.purchaseRate)||(ledMat?.purchaseRate)||0; const qty=Math.ceil(mmToM(L));
+    if(rate) hwLines.push({name:'LED Lighting',qty,unit:'Rmt',rate,cost:qty*rate});
+  }
+  const hardwareCost=hwLines.reduce((s,h)=>s+h.cost,0);
+
+  let glassCost=0, mirrorCost=0, glassArea=0, mirrorArea=0;
+  if(ci.glassReq){ glassArea=Math.round(Lf*Hf*100)/100; const gm=DB.costingMaterials.find(m=>m.category==='Glass'); glassCost=glassArea*(gm?.purchaseRate||0); }
+  if(ci.mirrorReq){ mirrorArea=Math.round(Lf*Hf*100)/100; const gm=DB.costingMaterials.find(m=>m.category==='Mirror'); mirrorCost=mirrorArea*(gm?.purchaseRate||0); }
+
+  const totalSheets=coreLine.unitLabel==='Sheet'?coreLine.qty:Math.ceil(coreAreaWithWaste/sheetSqft);
+  const cuttingCost=totalSheets*(ci.cuttingRate??costingLabourRate('Cutting'));
+  const totalEdgeBandWithWaste=shutterEdgeBandWithWaste+carcassEdgeBandWithWaste;
+  const edgeBandingCost=totalEdgeBandWithWaste*costingLabourRate('Edge Banding');
+  const assemblyCost=coreAreaSqft*costingLabourRate('Assembly');
+  const installationCost=costingLabourRate('Installation');
+  const cncCost=tpl.cncRequired?shutterAreaSqft*costingLabourRate('CNC Charges'):0;
+  let finishLabourCost=0, finishLabourNote='';
+  const finishCat=finishMat?.category||tpl.defaultFinishCategory;
+  if(finishCat==='Laminate'){ finishLabourCost=shutterAreaSqft*costingLabourRate('Lamination'); finishLabourNote='Lamination'; }
+  else if(finishCat==='Veneer'){ finishLabourCost=shutterAreaSqft*costingLabourRate('Veneering'); finishLabourNote='Veneering'; }
+  else if(finishCat==='Melamine Polish'){ finishLabourCost=shutterAreaSqft*2*costingLabourRate('Melamine Polish'); finishLabourNote='Melamine Polish (both faces)'; }
+  const veneerSheets = finishCat==='Veneer' ? Math.ceil(shutterAreaWithWaste/sheetSqft) : 0;
+  const veneerPolishCost = veneerSheets * (ci.veneerPolishRate||0);
+  const puFinishCost = ci.puFinishRequired ? shutterAreaSqft*2*(ci.puFinishRate||0) : 0;
+  const innerLamCost = !ci.corePreLaminated ? coreAreaSqft*(ci.innerLaminationRate??costingLabourRate('Lamination')) : 0;
+  const glassInstallCost=ci.glassReq?glassArea*costingLabourRate('Glass Installation'):0;
+  const transportCost=costingLabourRate('Transportation');
+  const loadUnloadCost=costingLabourRate('Loading')+costingLabourRate('Unloading');
+
+  const labourLines=[
+    {name:'Cutting',basis:`${totalSheets} sheet(s) @ ${INR(ci.cuttingRate??costingLabourRate('Cutting'))}/sheet`,cost:cuttingCost},
+    {name:'Edge Banding',basis:`${Math.round(totalEdgeBandWithWaste*100)/100} Rmt (shutter + carcass)`,cost:edgeBandingCost},
+    {name:'Assembly',basis:`${Math.round(coreAreaSqft*100)/100} Sqft`,cost:assemblyCost},
+    ...(innerLamCost?[{name:'Inner Lamination',basis:`${Math.round(coreAreaSqft*100)/100} Sqft (non pre-laminated core)`,cost:innerLamCost}]:[]),
+    ...(finishLabourCost?[{name:finishLabourNote,basis:`${Math.round(shutterAreaSqft*100)/100} Sqft`,cost:finishLabourCost}]:[]),
+    ...(veneerPolishCost?[{name:'Veneer Polish',basis:`${veneerSheets} sheet(s)`,cost:veneerPolishCost}]:[]),
+    ...(puFinishCost?[{name:'PU Finish',basis:`${Math.round(shutterAreaSqft*2*100)/100} Sqft (both faces)`,cost:puFinishCost}]:[]),
+    ...(cncCost?[{name:'CNC Charges',basis:`${Math.round(shutterAreaSqft*100)/100} Sqft`,cost:cncCost}]:[]),
+    ...(glassInstallCost?[{name:'Glass Installation',basis:`${glassArea} Sqft`,cost:glassInstallCost}]:[]),
+    {name:'Installation',basis:'1 Unit',cost:installationCost},
+    {name:'Loading/Unloading',basis:'1 Unit',cost:loadUnloadCost},
+    {name:'Transportation',basis:'1 Unit',cost:transportCost},
+  ];
+  const labourCost=labourLines.reduce((s,l)=>s+l.cost,0);
+
+  const materialLines=[
+    {name:`Core — ${coreMat?coreMat.name:'(not selected)'}`,qty:coreLine.qty,unit:coreLine.unitLabel,cost:coreLine.cost},
+    ...(!ci.corePreLaminated?[{name:`Inner Laminate — ${innerLaminateMat?innerLaminateMat.name:'(not selected)'}`,qty:innerLaminateLine.qty,unit:innerLaminateLine.unitLabel,cost:innerLaminateLine.cost}]:[]),
+    ...(shutterAreaWithWaste>0?[{name:`Shutter Face — ${finishMat?finishMat.name:(coreMat?coreMat.name:'(not selected)')}`,qty:shutterLine.qty,unit:shutterLine.unitLabel,cost:shutterLine.cost}]:[]),
+    {name:`Shutter Edge Band — ${shutterEdgeMat?shutterEdgeMat.name:'(not selected)'}`,qty:shutterEdgeLine.qty,unit:shutterEdgeLine.unitLabel,cost:shutterEdgeLine.cost},
+    ...(carcassEdgeBandWithWaste>0?[{name:`Carcass Edge Band — ${carcassEdgeMat?carcassEdgeMat.name:'(not selected)'}`,qty:carcassEdgeLine.qty,unit:carcassEdgeLine.unitLabel,cost:carcassEdgeLine.cost}]:[]),
+    ...(ci.glassReq?[{name:'Glass',qty:glassArea,unit:'Sqft',cost:glassCost}]:[]),
+    ...(ci.mirrorReq?[{name:'Mirror',qty:mirrorArea,unit:'Sqft',cost:mirrorCost}]:[]),
+  ];
+  const materialCost=materialLines.reduce((s,l)=>s+l.cost,0);
+
+  const perUnitCost=materialCost+hardwareCost+labourCost;
+  const totalCost=perUnitCost*(ci.qty||1);
+  const overheadAmt=totalCost*(ci.overheadPct??DB.costingSettings.defaultOverhead)/100;
+  const costWithOverhead=totalCost+overheadAmt;
+  const profitAmt=costWithOverhead*(ci.profitPct??DB.costingSettings.defaultProfit)/100;
+  const sellingPrice=costWithOverhead+profitAmt;
+
+  return {
+    calculatedAt:new Date().toISOString(),
+    coreAreaSqft:Math.round(coreAreaSqft*100)/100, shutterAreaSqft:Math.round(shutterAreaSqft*100)/100,
+    shutterEdgeBandM:Math.round(shutterEdgeBandWithWaste*100)/100, carcassEdgeBandM:Math.round(carcassEdgeBandWithWaste*100)/100, totalSheets,
+    materialLines, hardwareLines:hwLines, labourLines, notes,
+    materialCost, hardwareCost, labourCost, perUnitCost,
+    totalCost, overheadAmt, costWithOverhead, profitAmt, sellingPrice
+  };
+}
 
 // ═══════════════════════════════════════════
 //  PURCHASE ORDERS
@@ -13116,7 +13530,9 @@ function seedVendorLists(){
     purchaseOrders:'purchase_orders', siteDeliveries:'site_deliveries',
     mfgJobs:'mfg_jobs', mfgOps:'mfg_ops', pendingUsers:'pending_users',
     qcChecklist:'qc_checklist', rolePermissions:'role_permissions',
-    estimationRequests:'estimation_requests', activityLog:'activity_log'
+    estimationRequests:'estimation_requests', activityLog:'activity_log',
+    costingTemplates:'costing_templates', costingMaterials:'costing_materials',
+    costingHardware:'costing_hardware', costingLabourRates:'costing_labour_rates'
   };
   const sbTable = k => SB_TABLE[k] || k;
 
@@ -13128,7 +13544,8 @@ function seedVendorLists(){
     'employees','attendance','payroll','advances','purchaseOrders','milestones',
     'siteDeliveries','installations','machines','mfgJobs','mfgOps','accounts',
     'pendingUsers','dispatch','qcChecklist','rolePermissions',
-    'estimationRequests','notifications','activityLog'
+    'estimationRequests','notifications','activityLog',
+    'costingTemplates','costingMaterials','costingHardware','costingLabourRates'
   ];
 
   // Debounced sync
