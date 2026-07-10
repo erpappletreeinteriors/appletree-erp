@@ -745,6 +745,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="nav-item" data-pg="quotations" onclick="nav('quotations',this)"><span class="ni">📋</span> Quotations</div>
       <div class="nav-item" data-pg="quotkanban" onclick="nav('quotkanban',this)"><span class="ni">📌</span> Quotations Kanban</div>
       <div class="nav-item" data-pg="customers" onclick="nav('customers',this)"><span class="ni">👤</span> Customers</div>
+      <div class="nav-item" data-pg="partners" onclick="nav('partners',this)"><span class="ni">🤝</span> Partners & Referrals</div>
     </div>
     <div class="nav-grp">
       <span class="nav-grp-label">Estimation</span>
@@ -979,6 +980,10 @@ textarea.inp{resize:vertical;min-height:72px;}
     <div class="card-hd"><div class="card-title">📋 Quotation Pipeline by Status</div></div>
     <div class="tbl-wrap"><table><thead><tr><th>Status</th><th>Count</th><th>Total Value ₹</th></tr></thead><tbody id="cd-pipeline-tb"></tbody></table></div>
   </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-hd"><div><div class="card-title">🤝 Business by Referral Partner</div><div class="card-sub">Won quotation value attributed to each Architect/Builder/B2B Partner via their referred leads</div></div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Partner</th><th>Type</th><th>Leads</th><th>Won Value ₹</th></tr></thead><tbody id="cd-referral-tb"></tbody></table></div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════
@@ -1015,6 +1020,24 @@ textarea.inp{resize:vertical;min-height:72px;}
     <button class="btn btn-gold" onclick="createNewQuotation()">+ New Quotation</button>
   </div>
   <div id="qk-board" style="display:flex;gap:14px;overflow-x:auto;padding-bottom:8px;align-items:flex-start"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: PARTNERS & REFERRALS
+══════════════════════════════════════════════ -->
+<div id="pg-partners" class="page">
+  <div class="card">
+    <div class="card-hd"><div><div class="card-title">📐 Architects</div></div><button class="btn btn-gold btn-sm" onclick="openModal('architect')">+ Add Architect</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Location</th><th>Notes</th><th></th></tr></thead><tbody id="pt-architects-tb"></tbody></table></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-hd"><div><div class="card-title">🏗️ Builders</div></div><button class="btn btn-gold btn-sm" onclick="openModal('builder')">+ Add Builder</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Location</th><th>Notes</th><th></th></tr></thead><tbody id="pt-builders-tb"></tbody></table></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-hd"><div><div class="card-title">🤝 B2B Partners</div></div><button class="btn btn-gold btn-sm" onclick="openModal('b2bpartner')">+ Add B2B Partner</button></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Location</th><th>Notes</th><th></th></tr></thead><tbody id="pt-b2b-tb"></tbody></table></div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════════
@@ -3141,6 +3164,11 @@ const DB = {
   costingHardware:[],
   costingLabourRates:[],
   costingSettings:{sheetSqft:32, defaultWastage:8, defaultOverhead:10, defaultProfit:20},
+  // Referral-channel registries (ported from Sales & Estimation Studio) —
+  // tracks which architect/builder/B2B partner a lead was referred by.
+  architects:[],
+  builders:[],
+  b2bPartners:[],
 };
 
 // Counters
@@ -3223,6 +3251,7 @@ const PAGE_TITLES={
   costingmasters:'Costing Masters',
   costingdash:'Costing Dashboard',
   quotkanban:'Quotations Kanban',
+  partners:'Partners & Referrals',
   customers:'Customers',projects:'Projects',products:'Products / Furniture Items',
   labour:'Labour & Wages',expenses:'Project Expenses',qc:'QC Checklist',qcdashboard:'QC Dashboard',
   warehouse:'Warehouse Stock',purchases:'Purchases',issues:'Material Issues',
@@ -3281,6 +3310,7 @@ function renderPage(pg){
     costingmasters:renderCostingMasters,
     costingdash:renderCostingDashboard,
     quotkanban:renderQuotKanban,
+    partners:renderPartners,
     customers:renderCustomers,invoices:renderInvoices,
     receipts:renderReceipts,vendors:renderVendorBills,
     accounts:renderAccounts,banking:renderBanking,
@@ -5434,9 +5464,38 @@ const MODAL_FORMS={
     </div>
     <div class="f2">
       <div class="fg"><label class="fl">Location</label><input class="inp" id="f-ld-loc" placeholder="City / Area"></div>
-      <div class="fg"><label class="fl">Source</label><select class="inp" id="f-ld-src"><option>Referral</option><option>Instagram</option><option>Facebook</option><option>Website</option><option>Walk-in</option><option>WhatsApp</option><option>Other</option></select></div>
+      <div class="fg"><label class="fl">Source</label><select class="inp" id="f-ld-src" onchange="ldToggleReferral()">
+        <option>Referral</option><option>Architect Referral</option><option>Builder Referral</option><option>B2B Partner Referral</option>
+        <option>Instagram</option><option>Facebook</option><option>Website</option><option>Walk-in</option><option>WhatsApp</option><option>Other</option>
+      </select></div>
     </div>
+    <div class="fg" id="f-ld-referral-wrap" style="display:none"><label class="fl">Referred By</label><select class="inp" id="f-ld-referral"></select></div>
     <div class="fg"><label class="fl">Estimated Value ₹</label><input class="inp" type="number" id="f-ld-val" placeholder="0"></div>`,
+
+  architect:`
+    <div class="fg"><label class="fl">Name</label><input class="inp" id="f-pt-name" placeholder="Architect / firm name"></div>
+    <div class="f2">
+      <div class="fg"><label class="fl">Phone</label><input class="inp" id="f-pt-phone" placeholder="+91 …"></div>
+      <div class="fg"><label class="fl">Email</label><input class="inp" type="email" id="f-pt-email"></div>
+    </div>
+    <div class="fg"><label class="fl">Location</label><input class="inp" id="f-pt-loc" placeholder="City / Area"></div>
+    <div class="fg"><label class="fl">Notes</label><input class="inp" id="f-pt-notes" placeholder="e.g. Commission %, preferred contact"></div>`,
+  builder:`
+    <div class="fg"><label class="fl">Name</label><input class="inp" id="f-pt-name" placeholder="Builder / contractor name"></div>
+    <div class="f2">
+      <div class="fg"><label class="fl">Phone</label><input class="inp" id="f-pt-phone" placeholder="+91 …"></div>
+      <div class="fg"><label class="fl">Email</label><input class="inp" type="email" id="f-pt-email"></div>
+    </div>
+    <div class="fg"><label class="fl">Location</label><input class="inp" id="f-pt-loc" placeholder="City / Area"></div>
+    <div class="fg"><label class="fl">Notes</label><input class="inp" id="f-pt-notes" placeholder="e.g. Commission %, preferred contact"></div>`,
+  b2bpartner:`
+    <div class="fg"><label class="fl">Name</label><input class="inp" id="f-pt-name" placeholder="Partner / company name"></div>
+    <div class="f2">
+      <div class="fg"><label class="fl">Phone</label><input class="inp" id="f-pt-phone" placeholder="+91 …"></div>
+      <div class="fg"><label class="fl">Email</label><input class="inp" type="email" id="f-pt-email"></div>
+    </div>
+    <div class="fg"><label class="fl">Location</label><input class="inp" id="f-pt-loc" placeholder="City / Area"></div>
+    <div class="fg"><label class="fl">Notes</label><input class="inp" id="f-pt-notes" placeholder="e.g. Commission %, preferred contact"></div>`,
 
   warehouseitem:`
     <div class="f2">
@@ -5572,6 +5631,7 @@ function openModal(type){
     stockadj:'Stock Adjustment',bankentry:'Banking Entry',
     costingtemplate:'Add Costing Template',costingmaterial:'Add Costing Material',
     costinghardware:'Add Costing Hardware',costinglabourrate:'Add/Update Labour Rate',
+    architect:'Add Architect',builder:'Add Builder',b2bpartner:'Add B2B Partner',
   };
   document.getElementById('modal-title').textContent=TITLES[type]||type;
   document.getElementById('modal-body').innerHTML=MODAL_FORMS[type]||'<p class="muted">Form coming soon.</p>';
@@ -5615,6 +5675,8 @@ function saveModal(){
     account:saveAccount,bankentry:saveBankEntry,
     costingtemplate:saveCostingTemplate,costingmaterial:saveCostingMaterial,
     costinghardware:saveCostingHardware,costinglabourrate:saveCostingLabourRate,
+    architect:()=>savePartner('architects'),builder:()=>savePartner('builders'),
+    b2bpartner:()=>savePartner('b2bPartners'),
   };
   if(saves[_currentModal])saves[_currentModal]();
   else{toast('Saved ✓');closeModal();}
@@ -5940,21 +6002,42 @@ function maybeCreateEstimationRequest(lead){
     link:{page:'estimatordash', entityId:er.id}});
 }
 
+const REFERRAL_SOURCES=['Architect Referral','Builder Referral','B2B Partner Referral'];
+function ldToggleReferral(){
+  const src=g('f-ld-src');
+  const wrap=document.getElementById('f-ld-referral-wrap');
+  if(!REFERRAL_SOURCES.includes(src)){ wrap.style.display='none'; return; }
+  const type=src.replace(' Referral','');
+  const list=allReferralPartners().filter(p=>p.type===src);
+  document.getElementById('f-ld-referral').innerHTML = list.length
+    ? list.map(p=>`<option value="${p.id}">${escHtml(p.name)}</option>`).join('')
+    : `<option value="">— None registered yet, add one in Partners & Referrals —</option>`;
+  wrap.style.display='block';
+}
+function _ldReferralFields(){
+  const src=g('f-ld-src');
+  if(!REFERRAL_SOURCES.includes(src)) return {referralPartnerType:'',referralPartnerId:'',referralPartnerName:''};
+  const id=g('f-ld-referral');
+  const partner=allReferralPartners().find(p=>p.id===id);
+  return {referralPartnerType:src, referralPartnerId:id||'', referralPartnerName:partner?.name||''};
+}
 function saveLead(){
+  const referral=_ldReferralFields();
   if(_editingId){
     const r=DB.leads.find(x=>x.id===_editingId);
     if(r){
       r.date=g('f-ld-date');r.name=g('f-ld-name')||r.name;r.phone=g('f-ld-phone');
       r.location=g('f-ld-loc');r.status=g('f-ld-status')||r.status;
       r.source=g('f-ld-src');r.value=+g('f-ld-val')||r.value;
+      Object.assign(r, referral);
       maybeCreateEstimationRequest(r);
       closeModal();toast('Lead updated ✓','ok');renderLeads();
     }return;
   }
   const name=g('f-ld-name');if(!name){toast('Name required','err');return;}
-  const newLead={id:'LD'+uid(),date:g('f-ld-date'),name,phone:g('f-ld-phone'),location:g('f-ld-loc'),status:g('f-ld-status'),source:g('f-ld-src'),value:+g('f-ld-val')||0};
+  const newLead={id:'LD'+uid(),date:g('f-ld-date'),name,phone:g('f-ld-phone'),location:g('f-ld-loc'),status:g('f-ld-status'),source:g('f-ld-src'),value:+g('f-ld-val')||0,...referral};
   DB.leads.push(newLead);
-  logActivity('lead', newLead.id, 'Lead Created', `Source: ${newLead.source||'—'}`);
+  logActivity('lead', newLead.id, 'Lead Created', `Source: ${newLead.source||'—'}${referral.referralPartnerName?' ('+referral.referralPartnerName+')':''}`);
   maybeCreateEstimationRequest(newLead);
   closeModal();toast('Lead added ✓','ok');renderLeads();
 }
@@ -6246,6 +6329,8 @@ function prefillForm(type, r) {
       setField('f-ld-loc',    r.location);
       setField('f-ld-src',    r.source);
       setField('f-ld-val',    r.value);
+      ldToggleReferral();
+      if(r.referralPartnerId) setField('f-ld-referral', r.referralPartnerId);
     },
     quotation: () => {
       setField('f-qt-ref',    r.refNo);
@@ -6567,6 +6652,39 @@ function deleteCostingLabourRate(id){
   if(!confirm('Delete this labour rate?')) return;
   DB.costingLabourRates=DB.costingLabourRates.filter(l=>l.id!==id);
   saveDB(); renderCostingMasters();
+}
+
+// ── Partners & Referrals (Architects/Builders/B2B Partners) ──
+function savePartner(key){
+  const name=g('f-pt-name'); if(!name){toast('Name required','err');return;}
+  DB[key].push({id:'PT'+uid(), name, phone:g('f-pt-phone'), email:g('f-pt-email'), location:g('f-pt-loc'), notes:g('f-pt-notes')});
+  saveDB(); closeModal(); toast('Partner added ✓','ok'); renderPartners();
+}
+function deletePartner(key,id){
+  if(!confirm('Delete this partner?')) return;
+  DB[key]=DB[key].filter(p=>p.id!==id);
+  saveDB(); renderPartners();
+}
+function allReferralPartners(){
+  return [
+    ...DB.architects.map(p=>({...p,type:'Architect Referral'})),
+    ...DB.builders.map(p=>({...p,type:'Builder Referral'})),
+    ...DB.b2bPartners.map(p=>({...p,type:'B2B Partner Referral'})),
+  ];
+}
+function renderPartners(){
+  const row=(key,p)=>`<tr>
+    <td>${escHtml(p.name)}</td><td>${escHtml(p.phone||'')}</td><td>${escHtml(p.email||'')}</td>
+    <td>${escHtml(p.location||'')}</td><td class="small muted">${escHtml(p.notes||'')}</td>
+    <td>${delBtn(`deletePartner_${key}`,p.id)}</td>
+  </tr>`;
+  // delBtn bakes a single-arg onclick, so wrap per-key deletes as tiny globals
+  window.deletePartner_architects = id=>deletePartner('architects',id);
+  window.deletePartner_builders = id=>deletePartner('builders',id);
+  window.deletePartner_b2bPartners = id=>deletePartner('b2bPartners',id);
+  document.getElementById('pt-architects-tb').innerHTML = DB.architects.map(p=>row('architects',p)).join('') || `<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No architects yet</td></tr>`;
+  document.getElementById('pt-builders-tb').innerHTML = DB.builders.map(p=>row('builders',p)).join('') || `<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No builders yet</td></tr>`;
+  document.getElementById('pt-b2b-tb').innerHTML = DB.b2bPartners.map(p=>row('b2bPartners',p)).join('') || `<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">No B2B partners yet</td></tr>`;
 }
 
 function saveCostingSettings(){
@@ -7808,6 +7926,20 @@ function renderCostingDashboard(){
     const total=items.reduce((s,q)=>s+quotTotalAmount(q),0);
     return `<tr><td>${statusTag(status)}</td><td>${items.length}</td><td class="mono">${INR(total)}</td></tr>`;
   }).join('');
+
+  // Business by referral partner — attribute a Won quotation to a partner
+  // via the lead it was created from (matched by customer name, same
+  // technique boqSave() already uses to auto-advance lead status).
+  const partners=allReferralPartners();
+  const rowsRef = partners.map(p=>{
+    const leads = DB.leads.filter(l=>l.referralPartnerId===p.id);
+    const leadNames = new Set(leads.map(l=>l.name.trim().toLowerCase()));
+    const wonValue = won.filter(q=>leadNames.has((q.customer||'').trim().toLowerCase())).reduce((s,q)=>s+quotTotalAmount(q),0);
+    return {name:p.name, type:p.type, leads:leads.length, wonValue};
+  }).filter(r=>r.leads>0);
+  document.getElementById('cd-referral-tb').innerHTML = rowsRef.map(r=>
+    `<tr><td>${escHtml(r.name)}</td><td class="small muted">${r.type}</td><td>${r.leads}</td><td class="mono">${INR(r.wonValue)}</td></tr>`
+  ).join('') || `<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">No referred leads yet</td></tr>`;
 }
 
 function deleteQuotation(id){
@@ -13903,7 +14035,8 @@ function seedVendorLists(){
     qcChecklist:'qc_checklist', rolePermissions:'role_permissions',
     estimationRequests:'estimation_requests', activityLog:'activity_log',
     costingTemplates:'costing_templates', costingMaterials:'costing_materials',
-    costingHardware:'costing_hardware', costingLabourRates:'costing_labour_rates'
+    costingHardware:'costing_hardware', costingLabourRates:'costing_labour_rates',
+    b2bPartners:'b2b_partners'
   };
   const sbTable = k => SB_TABLE[k] || k;
 
@@ -13916,7 +14049,8 @@ function seedVendorLists(){
     'siteDeliveries','installations','machines','mfgJobs','mfgOps','accounts',
     'pendingUsers','dispatch','qcChecklist','rolePermissions',
     'estimationRequests','notifications','activityLog',
-    'costingTemplates','costingMaterials','costingHardware','costingLabourRates'
+    'costingTemplates','costingMaterials','costingHardware','costingLabourRates',
+    'architects','builders','b2bPartners'
   ];
 
   // Debounced sync
