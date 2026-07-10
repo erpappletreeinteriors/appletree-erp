@@ -98,10 +98,10 @@ body{font-family:'Manrope',sans-serif;background:var(--bg);color:var(--dark);dis
 .boq-room-hd{background:var(--dark-accent);padding:12px 16px;display:flex;align-items:center;gap:10px;cursor:grab;}
 .boq-room-name{font-family:'Manrope',sans-serif;font-size:15px;font-weight:600;color:var(--gold);flex:1;background:transparent;border:none;outline:none;}
 .boq-room-name::placeholder{color:rgba(195,177,81,.4);}
-.boq-item-row{display:grid;grid-template-columns:2fr 80px 80px 100px 110px 36px;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border2);align-items:center;}
+.boq-item-row{display:grid;grid-template-columns:minmax(220px,2.2fr) 100px 100px 130px 150px 40px;gap:10px;padding:10px 12px;border-bottom:1px solid var(--border2);align-items:center;}
 .boq-item-row:last-child{border-bottom:none;}
 .boq-item-row.header{background:var(--bg);font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;padding:6px 12px;}
-.boq-inp{width:100%;border:1px solid var(--border2);border-radius:var(--r-sm);padding:6px 8px;font-size:12px;font-family:'Manrope',sans-serif;background:var(--white);color:var(--dark);outline:none;}
+.boq-inp{width:100%;border:1px solid var(--border2);border-radius:var(--r-sm);padding:9px 10px;font-size:13px;font-family:'Manrope',sans-serif;background:var(--white);color:var(--dark);outline:none;min-width:0;}
 .boq-inp:focus{border-color:var(--gold);}
 .boq-amt{font-weight:600;font-size:13px;color:var(--dark);font-family:'JetBrains Mono',monospace;text-align:right;}
 .boq-room-total{display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:10px 16px;background:var(--gold-pale);border-top:1px solid var(--border);}
@@ -6007,7 +6007,6 @@ function ldToggleReferral(){
   const src=g('f-ld-src');
   const wrap=document.getElementById('f-ld-referral-wrap');
   if(!REFERRAL_SOURCES.includes(src)){ wrap.style.display='none'; return; }
-  const type=src.replace(' Referral','');
   const list=allReferralPartners().filter(p=>p.type===src);
   document.getElementById('f-ld-referral').innerHTML = list.length
     ? list.map(p=>`<option value="${p.id}">${escHtml(p.name)}</option>`).join('')
@@ -6514,9 +6513,8 @@ function saveBankEntry() {
 //  COSTING ENGINE — ported from the Sales & Estimation Studio
 //  (appletree_sales_studio.html). Templates + rate-card masters
 //  drive calcCosting(), a parametric material/hardware/labour
-//  computation for furniture line items. Not yet wired into a
-//  quotation UI — this module ships the masters + engine only;
-//  wiring it into Estimation/Quotations is a later merge step.
+//  computation for furniture line items. Wired into both Estimation
+//  Request Costing (saveEstCosting) and Quotations (boqAddCostedItemToRoom).
 // ═══════════════════════════════════════════════════════════════
 
 MODAL_FORMS['costingtemplate'] = `
@@ -7876,11 +7874,7 @@ function renderQuotKanban(){
 }
 function qkMoveStatus(id, newStatus){
   const q=DB.quotations.find(x=>x.id===id); if(!q) return;
-  if(newStatus==='Won' && q.status!=='Won') q.wonDate=new Date().toISOString().slice(0,10);
-  else if(newStatus==='Lost' && q.status!=='Lost'){
-    const reason=prompt('Reason for loss:',''); q.lossReason=reason||''; q.lostDate=new Date().toISOString().slice(0,10);
-  }
-  q.status=newStatus;
+  applyQuotationStatus(q, newStatus);
   saveDB();
   renderQuotKanban();
 }
@@ -8046,9 +8040,10 @@ function renderBOQBuilder(){
   renderBoqConvertBtn();
 }
 
-function boqStatusChange(){
-  const q = DB.quotations.find(x=>x.id===_boqId); if(!q) return;
-  const newStatus = document.getElementById('boq-status').value;
+// Shared by the BOQ builder's status dropdown and the Kanban board's
+// per-card dropdown, so Won/Lost date-stamping and the loss-reason prompt
+// can never drift between the two entry points.
+function applyQuotationStatus(q, newStatus){
   if(newStatus==='Won' && q.status!=='Won'){
     q.wonDate = new Date().toISOString().slice(0,10);
   } else if(newStatus==='Lost' && q.status!=='Lost'){
@@ -8057,6 +8052,11 @@ function boqStatusChange(){
     q.lostDate = new Date().toISOString().slice(0,10);
   }
   q.status = newStatus;
+}
+
+function boqStatusChange(){
+  const q = DB.quotations.find(x=>x.id===_boqId); if(!q) return;
+  applyQuotationStatus(q, document.getElementById('boq-status').value);
   boqSave();
   renderBoqConvertBtn();
 }
