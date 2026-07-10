@@ -2445,6 +2445,28 @@ textarea.inp{resize:vertical;min-height:72px;}
       <button class="budget-tab active" onclick="_ecTab('mat',this)">📦 Raw Materials</button>
       <button class="budget-tab" onclick="_ecTab('lab',this)">👷 Labour & Wages</button>
       <button class="budget-tab" onclick="_ecTab('exp',this)">💰 Other Expenses</button>
+      <button class="budget-tab" onclick="_ecTab('item',this)">🧮 Parametric Items</button>
+    </div>
+    <div id="ec-tab-item" style="display:none;padding:14px 20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--muted)">Costed with the Costing Engine (templates/materials/hardware/labour from Costing Masters) — quantity-driven, no manual line-by-line entry.</div>
+        <button class="btn btn-gold" onclick="openCostedItemModal()" style="font-size:11px;padding:4px 10px">+ Add Costed Item</button>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="min-width:820px;width:100%">
+          <thead><tr>
+            <th style="min-width:160px">Item</th><th>Template</th><th style="width:110px">Dimensions (mm)</th>
+            <th style="width:56px">Qty</th><th style="width:110px">Cost ₹ (ea)</th><th style="width:110px">Selling ₹ (ea)</th>
+            <th style="width:110px">Line Total ₹</th><th style="width:60px"></th>
+          </tr></thead>
+          <tbody id="ec-item-rows"></tbody>
+          <tfoot><tr style="background:var(--bg)">
+            <td colspan="6" style="text-align:right;font-size:12px;font-weight:700;color:var(--muted);padding:8px 10px">Costed Items Total (cost)</td>
+            <td style="padding:8px 10px"><span id="ec-item-total" style="font-size:13px;font-weight:700;color:var(--gold);font-family:'JetBrains Mono',monospace">₹0</span></td>
+            <td></td>
+          </tr></tfoot>
+        </table>
+      </div>
     </div>
     <div id="ec-tab-mat" style="padding:14px 20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -2522,6 +2544,43 @@ textarea.inp{resize:vertical;min-height:72px;}
       </div>
     </div>
     <input type="hidden" id="ec-er-id">
+  </div>
+</div>
+
+<!-- ══ COSTED ITEM MODAL (Costing Engine — calcCosting) ══ -->
+<div id="ci-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:4100;align-items:flex-start;justify-content:center;padding:16px;overflow-y:auto">
+  <div style="background:var(--white);border-radius:var(--r-lg);width:min(760px,98vw);box-shadow:var(--shadow-lg)">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:15px;font-weight:700;color:var(--dark)">Add Costed Item</div>
+      <button onclick="closeCostedItemModal()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)">✕</button>
+    </div>
+    <div style="padding:16px 20px">
+      <div class="fg"><label class="fl">Item Name</label><input class="inp" id="ci-name" placeholder="e.g. Master Bedroom Wardrobe"></div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Template</label><select class="inp" id="ci-template" onchange="_ciRecalc()"></select></div>
+        <div class="fg"><label class="fl">Qty</label><input class="inp" type="number" id="ci-qty" value="1" oninput="_ciRecalc()"></div>
+      </div>
+      <div class="f2" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="fg"><label class="fl">Length (mm)</label><input class="inp" type="number" id="ci-length" oninput="_ciRecalc()"></div>
+        <div class="fg"><label class="fl">Width/Depth (mm)</label><input class="inp" type="number" id="ci-width" oninput="_ciRecalc()"></div>
+        <div class="fg"><label class="fl">Height (mm)</label><input class="inp" type="number" id="ci-height" oninput="_ciRecalc()"></div>
+      </div>
+      <div class="f2" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="fg"><label class="fl">Doors</label><input class="inp" type="number" id="ci-doors" value="0" oninput="_ciRecalc()"></div>
+        <div class="fg"><label class="fl">Drawers</label><input class="inp" type="number" id="ci-drawers" value="0" oninput="_ciRecalc()"></div>
+        <div class="fg"><label class="fl">Shelves</label><input class="inp" type="number" id="ci-shelves" value="0" oninput="_ciRecalc()"></div>
+      </div>
+      <div class="fg"><label class="fl">Core Material</label><select class="inp" id="ci-material" onchange="_ciRecalc()"></select></div>
+      <div class="f2">
+        <div class="fg"><label class="fl">Overhead %</label><input class="inp" type="number" id="ci-overhead" oninput="_ciRecalc()"></div>
+        <div class="fg"><label class="fl">Profit %</label><input class="inp" type="number" id="ci-profit" oninput="_ciRecalc()"></div>
+      </div>
+      <div id="ci-preview" style="margin-top:8px;padding:12px;background:var(--bg);border-radius:var(--r);font-size:12px;color:var(--muted)"></div>
+    </div>
+    <div style="padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px">
+      <button class="btn btn-outline" onclick="closeCostedItemModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="saveCostedItem()">Add Item</button>
+    </div>
   </div>
 </div>
 
@@ -4648,6 +4707,7 @@ function claimEstimationRequest(id){
 //  verbatim into a real productBOM later without any transformation.
 // ═══════════════════════════════════════════
 let _ecMatId=0, _ecLabId=0;
+let _ecCostedItems=[]; // costed line items for the estimation request currently open (Costing Engine)
 
 function openEstCosting(erId){
   if(!requireRole('CEO','Admin','Estimator')){_accessDenied();return;}
@@ -4661,6 +4721,8 @@ function openEstCosting(erId){
   const materials=saved.materials||[];
   const labour=saved.labour||[];
   const exp=saved.expenses||{};
+  _ecCostedItems=(saved.costedItems||[]).map(x=>({...x}));
+  _ecRenderCostedItems();
 
   document.getElementById('ec-mat-rows').innerHTML='';
   document.getElementById('ec-lab-rows').innerHTML='';
@@ -4691,7 +4753,7 @@ function closeEstCosting(){
 
 function _ecTab(tab, btn){
   document.querySelectorAll('#est-cost-overlay .budget-tab').forEach(b=>b.classList.remove('active'));
-  ['mat','lab','exp'].forEach(t=>{ const el=document.getElementById('ec-tab-'+t); if(el) el.style.display='none'; });
+  ['mat','lab','exp','item'].forEach(t=>{ const el=document.getElementById('ec-tab-'+t); if(el) el.style.display='none'; });
   if(btn) btn.classList.add('active');
   document.getElementById('ec-tab-'+tab).style.display='block';
 }
@@ -4838,11 +4900,92 @@ function _ecUpdateGrand(){
   let lab=0;
   document.querySelectorAll('[id^="ecl-amt-"]').forEach(el=>{ lab+=parseFloat(el.value)||0; });
   const exp=fl('ec-exp-transport')+fl('ec-exp-install')+fl('ec-exp-finish')+fl('ec-exp-other');
-  const gt=mat+lab+exp;
+  const items=_ecCostedItems.reduce((s,ci)=>s+(ci.result?.totalCost||0),0);
+  const gt=mat+lab+exp+items;
   const expEl=document.getElementById('ec-exp-total');
   if(expEl) expEl.textContent=INR(exp);
   document.getElementById('ec-grand-total').textContent=INR(gt);
   document.getElementById('ec-footer-total').textContent=INR(gt);
+}
+
+// ── Costed Items tab (Costing Engine — calcCosting) ──
+function _ecRenderCostedItems(){
+  document.getElementById('ec-item-rows').innerHTML = _ecCostedItems.map((ci,idx)=>{
+    const r=ci.result;
+    return `<tr>
+      <td>${escHtml(ci.name)}</td><td>${escHtml(ci.templateName||'')}</td>
+      <td>${ci.length}×${ci.width}×${ci.height}</td><td>${ci.qty}</td>
+      <td>${INR(r?r.perUnitCost:0)}</td><td>${INR(r?(r.sellingPrice/(ci.qty||1)):0)}</td>
+      <td>${INR(r?r.totalCost:0)}</td>
+      <td><button onclick="_ecRemCostedItem(${idx})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:18px;line-height:1;padding:2px 6px">×</button></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="8" class="muted" style="text-align:center;padding:16px">No costed items yet</td></tr>`;
+  const total=_ecCostedItems.reduce((s,ci)=>s+(ci.result?.totalCost||0),0);
+  document.getElementById('ec-item-total').textContent=INR(total);
+  _ecUpdateGrand();
+}
+function _ecRemCostedItem(idx){
+  _ecCostedItems.splice(idx,1);
+  _ecRenderCostedItems();
+}
+
+function openCostedItemModal(){
+  const tplOpts=DB.costingTemplates.map(t=>`<option value="${t.id}">${escHtml(t.name)}</option>`).join('');
+  const matOpts=DB.costingMaterials.map(m=>`<option value="${m.id}">${escHtml(m.name)} (${m.category})</option>`).join('');
+  document.getElementById('ci-template').innerHTML='<option value="">— Select —</option>'+tplOpts;
+  document.getElementById('ci-material').innerHTML='<option value="">— Select —</option>'+matOpts;
+  document.getElementById('ci-name').value='';
+  document.getElementById('ci-qty').value='1';
+  document.getElementById('ci-length').value='';
+  document.getElementById('ci-width').value='';
+  document.getElementById('ci-height').value='';
+  document.getElementById('ci-doors').value='0';
+  document.getElementById('ci-drawers').value='0';
+  document.getElementById('ci-shelves').value='0';
+  document.getElementById('ci-overhead').value=DB.costingSettings.defaultOverhead;
+  document.getElementById('ci-profit').value=DB.costingSettings.defaultProfit;
+  document.getElementById('ci-preview').textContent='Fill in dimensions and select a template to see the cost breakdown.';
+  document.getElementById('ci-modal-overlay').style.display='flex';
+}
+function closeCostedItemModal(){
+  document.getElementById('ci-modal-overlay').style.display='none';
+}
+function _ciBuildLineItem(){
+  return {
+    templateId: document.getElementById('ci-template').value,
+    materialId: document.getElementById('ci-material').value,
+    length:+document.getElementById('ci-length').value||0,
+    width:+document.getElementById('ci-width').value||0,
+    height:+document.getElementById('ci-height').value||0,
+    doors:+document.getElementById('ci-doors').value||0,
+    drawers:+document.getElementById('ci-drawers').value||0,
+    shelves:+document.getElementById('ci-shelves').value||0,
+    qty:+document.getElementById('ci-qty').value||1,
+    overheadPct:+document.getElementById('ci-overhead').value||0,
+    profitPct:+document.getElementById('ci-profit').value||0,
+  };
+}
+function _ciRecalc(){
+  const previewEl=document.getElementById('ci-preview');
+  const li=_ciBuildLineItem();
+  if(!li.templateId||!li.length||!li.width||!li.height){
+    previewEl.textContent='Fill in dimensions and select a template to see the cost breakdown.';
+    return null;
+  }
+  const result=calcCosting(li);
+  if(!result){ previewEl.textContent='Template not found.'; return null; }
+  previewEl.innerHTML=`Material ${INR(result.materialCost)} + Hardware ${INR(result.hardwareCost)} + Labour ${INR(result.labourCost)} = <strong>${INR(result.perUnitCost)}</strong> per unit &nbsp;·&nbsp; Qty ${li.qty} → Total Cost <strong>${INR(result.totalCost)}</strong> &nbsp;·&nbsp; Suggested Selling Price <strong style="color:var(--gold)">${INR(result.sellingPrice)}</strong>`;
+  return {li,result};
+}
+function saveCostedItem(){
+  const name=g('ci-name'); if(!name){toast('Item name required','err');return;}
+  const calc=_ciRecalc();
+  if(!calc){ toast('Select a template and enter dimensions first','err'); return; }
+  const tpl=DB.costingTemplates.find(t=>t.id===calc.li.templateId);
+  _ecCostedItems.push({id:'ECI'+uid(), name, templateName:tpl?.name||'', ...calc.li, result:calc.result});
+  closeCostedItemModal();
+  _ecRenderCostedItems();
+  toast('Costed item added ✓','ok');
 }
 
 function saveEstCosting(){
@@ -4898,13 +5041,16 @@ function saveEstCosting(){
   const expTotal=Object.values(expenses).reduce((s,v)=>s+v,0);
   const matTotal=materials.reduce((s,m)=>s+m.amount,0);
   const labTotal=labour.reduce((s,l)=>s+l.amount,0);
-  const grandTotal=matTotal+labTotal+expTotal;
+  const costedItems=_ecCostedItems.map(ci=>({...ci}));
+  const itemsTotal=costedItems.reduce((s,ci)=>s+(ci.result?.totalCost||0),0);
+  const itemsSellingTotal=costedItems.reduce((s,ci)=>s+(ci.result?.sellingPrice||0),0);
+  const grandTotal=matTotal+labTotal+expTotal+itemsTotal;
 
   const isFirstSave=!er.costing;
-  er.costing={materials, labour, expenses, matTotal, labTotal, expTotal, grandTotal, updatedAt:new Date().toISOString()};
+  er.costing={materials, labour, expenses, costedItems, matTotal, labTotal, expTotal, itemsTotal, itemsSellingTotal, grandTotal, updatedAt:new Date().toISOString()};
 
   logActivity('estimationRequest', er.id, isFirstSave?'Costing Prepared':'Costing Updated',
-    `${materials.length} materials, ${labour.length} labour lines — total ${INR(grandTotal)}`);
+    `${materials.length} materials, ${labour.length} labour lines, ${costedItems.length} costed items — total ${INR(grandTotal)}`);
 
   closeEstCosting();
   toast(`Costing saved — ${INR(grandTotal)}`,'ok');
@@ -6566,13 +6712,14 @@ function calcCosting(ci){
   const profitAmt=costWithOverhead*(ci.profitPct??DB.costingSettings.defaultProfit)/100;
   const sellingPrice=costWithOverhead+profitAmt;
 
+  const r2=n=>Math.round((n+Number.EPSILON)*100)/100;
   return {
     calculatedAt:new Date().toISOString(),
     coreAreaSqft:Math.round(coreAreaSqft*100)/100, shutterAreaSqft:Math.round(shutterAreaSqft*100)/100,
     shutterEdgeBandM:Math.round(shutterEdgeBandWithWaste*100)/100, carcassEdgeBandM:Math.round(carcassEdgeBandWithWaste*100)/100, totalSheets,
     materialLines, hardwareLines:hwLines, labourLines, notes,
-    materialCost, hardwareCost, labourCost, perUnitCost,
-    totalCost, overheadAmt, costWithOverhead, profitAmt, sellingPrice
+    materialCost:r2(materialCost), hardwareCost:r2(hardwareCost), labourCost:r2(labourCost), perUnitCost:r2(perUnitCost),
+    totalCost:r2(totalCost), overheadAmt:r2(overheadAmt), costWithOverhead:r2(costWithOverhead), profitAmt:r2(profitAmt), sellingPrice:r2(sellingPrice)
   };
 }
 
