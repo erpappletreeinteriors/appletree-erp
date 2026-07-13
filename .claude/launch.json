@@ -7,6 +7,17 @@
       "runtimeArgs": ["-ExecutionPolicy", "Bypass", "-File", "serve.ps1"],
       "port": 3333,
       "autoPort": true
+    },
+    {
+      "name": "manufacturing-erp-frontend",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": [
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        "manufacturing-erp/apps/frontend/dev.ps1"
+      ],
+      "port": 5173
     }
   ]
 }

@@ -1,0 +1,31 @@
+{
+  "name": "appletree-manufacturing-erp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Appletree Manufacturing ERP — cutting list generation from approved interior drawings",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "npm run build --workspace=packages/shared-types && npm run build --workspace=apps/backend && npm run build --workspace=apps/frontend",
+    "test": "npm run test --workspace=apps/backend && npm run test --workspace=apps/frontend",
+    "lint": "npm run lint --workspace=apps/backend && npm run lint --workspace=apps/frontend",
+    "format": "prettier --write \"apps/**/src/**/*.{ts,tsx}\" \"packages/**/src/**/*.ts\"",
+    "format:check": "prettier --check \"apps/**/src/**/*.{ts,tsx}\" \"packages/**/src/**/*.ts\""
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3"
+  },
+  "allowScripts": {
+    "@nestjs/core@10.4.22": true,
+    "@prisma/client@5.22.0": true,
+    "@prisma/engines@5.22.0": true,
+    "bcrypt@5.1.1": true,
+    "esbuild@0.21.5": true,
+    "prisma@5.22.0": true
+  }
+}

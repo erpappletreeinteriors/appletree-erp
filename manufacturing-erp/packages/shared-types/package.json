@@ -1,0 +1,17 @@
+{
+  "name": "@appletree/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript types/enums shared between the backend and frontend",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "eslint \"src/**/*.ts\"",
+    "clean": "rimraf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "rimraf": "^6.0.1"
+  }
+}

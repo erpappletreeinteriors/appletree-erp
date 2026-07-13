@@ -1,0 +1,49 @@
+:root {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: #f4f5f7;
+  color: #1a1a1a;
+}
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-form {
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 2rem;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.auth-subtitle {
+  margin-top: -0.5rem;
+  color: #555;
+}
+
+.auth-error {
+  color: #b3261e;
+}
+
+.dashboard-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
