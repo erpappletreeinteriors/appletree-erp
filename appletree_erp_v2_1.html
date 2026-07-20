@@ -643,6 +643,11 @@ textarea.inp{resize:vertical;min-height:72px;}
 </head>
 <body>
 
+<!-- Shared customer-name suggestions, used by every free-text customer/client
+     field (Leads, Quotations, BOQ Builder, New Estimation Request). Populated
+     from DB.customers + DB.leads names — see refreshCustomerDatalist(). -->
+<datalist id="dl-customers"></datalist>
+
 <!-- SUPABASE LOADING OVERLAY -->
 <div id="sb-loading" style="display:flex;position:fixed;inset:0;background:var(--dark-accent);z-index:99999;flex-direction:column;align-items:center;justify-content:center;gap:20px">
   <img src="logo.png" alt="Apple Tree" style="width:80px;height:auto">
@@ -706,6 +711,8 @@ textarea.inp{resize:vertical;min-height:72px;}
         <option value="Sales">Sales</option>
         <option value="Estimator">Estimator</option>
         <option value="Procurement">Procurement</option>
+        <option value="Project Manager">Project Manager</option>
+        <option value="QC Manager">QC Manager</option>
       </select>
 
       <label class="login-label">Password *</label>
@@ -744,6 +751,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="nav-item" data-pg="leads" onclick="nav('leads',this)"><span class="ni">🎯</span> Leads & Enquiries</div>
       <div class="nav-item" data-pg="quotations" onclick="nav('quotations',this)"><span class="ni">📋</span> Quotations</div>
       <div class="nav-item" data-pg="quotkanban" onclick="nav('quotkanban',this)"><span class="ni">📌</span> Quotations Kanban</div>
+      <div class="nav-item" data-pg="calendar" onclick="nav('calendar',this)"><span class="ni">📅</span> Calendar</div>
       <div class="nav-item" data-pg="customers" onclick="nav('customers',this)"><span class="ni">👤</span> Customers</div>
       <div class="nav-item" data-pg="partners" onclick="nav('partners',this)"><span class="ni">🤝</span> Partners & Referrals</div>
     </div>
@@ -752,12 +760,14 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="nav-item" data-pg="estimatordash" onclick="nav('estimatordash',this)"><span class="ni">🧮</span> Estimator Dashboard</div>
       <div class="nav-item" data-pg="costingmasters" onclick="nav('costingmasters',this)"><span class="ni">⚙️</span> Costing Masters</div>
       <div class="nav-item" data-pg="costingdash" onclick="nav('costingdash',this)"><span class="ni">📐</span> Costing Dashboard</div>
+      <div class="nav-item" data-pg="costingreports" onclick="nav('costingreports',this)"><span class="ni">🖨️</span> Costing Reports</div>
     </div>
     <div class="nav-grp">
       <span class="nav-grp-label">Projects</span>
       <div class="nav-item" data-pg="projects" onclick="nav('projects',this)"><span class="ni">🏗️</span> Projects</div>
       <div class="nav-item" data-pg="products" onclick="nav('products',this)"><span class="ni">🪑</span> Products / Items</div>
       <div class="nav-item" data-pg="projectbom" onclick="nav('projectbom',this)"><span class="ni">📋</span> Project BOM</div>
+      <div class="nav-item" data-pg="stagegatedash" onclick="nav('stagegatedash',this)"><span class="ni">🚦</span> Stage-Gate Dashboard</div>
     </div>
     <div class="nav-grp">
       <span class="nav-grp-label">Operations</span>
@@ -766,6 +776,8 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="nav-item" data-pg="qc" onclick="nav('qc',this)"><span class="ni">✅</span> QC Checklist</div>
       <div class="nav-item" data-pg="qcdashboard" onclick="nav('qcdashboard',this)"><span class="ni">📋</span> QC Dashboard</div>
       <div class="nav-item" data-pg="matrequest" onclick="nav('matrequest',this)"><span class="ni">📋</span> Material Requests</div>
+      <div class="nav-item" data-pg="capa" onclick="nav('capa',this)"><span class="ni">🛠️</span> CAPA Register</div>
+      <div class="nav-item" data-pg="riskregister" onclick="nav('riskregister',this)"><span class="ni">⚠️</span> Risk Register</div>
     </div>
     <div class="nav-grp">
       <span class="nav-grp-label">Inventory</span>
@@ -786,6 +798,7 @@ textarea.inp{resize:vertical;min-height:72px;}
     </div>
     <div class="nav-grp">
       <span class="nav-grp-label">Reports</span>
+      <div class="nav-item" data-pg="kpidashboard" onclick="nav('kpidashboard',this)"><span class="ni">🎯</span> KPI Dashboard</div>
       <div class="nav-item" data-pg="profitloss" onclick="nav('profitloss',this)"><span class="ni">📉</span> Project P&L</div>
       <div class="nav-item" data-pg="wip" onclick="nav('wip',this)"><span class="ni">🏗️</span> Work In Progress</div>
       <div class="nav-item" data-pg="receivables" onclick="nav('receivables',this)"><span class="ni">🧾</span> Receivables Aging</div>
@@ -814,6 +827,13 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="nav-item" data-pg="attendance" onclick="nav('attendance',this)"><span class="ni">📅</span> Attendance</div>
       <div class="nav-item" data-pg="payroll" onclick="nav('payroll',this)"><span class="ni">💵</span> Payroll</div>
       <div class="nav-item" data-pg="advances" onclick="nav('advances',this)"><span class="ni">💸</span> Advances</div>
+      <div class="nav-item" data-pg="recruitment" onclick="nav('recruitment',this)"><span class="ni">🧑‍💼</span> Recruitment</div>
+      <div class="nav-item" data-pg="induction" onclick="nav('induction',this)"><span class="ni">🎓</span> Induction</div>
+      <div class="nav-item" data-pg="training" onclick="nav('training',this)"><span class="ni">📚</span> Training Records</div>
+      <div class="nav-item" data-pg="appraisals" onclick="nav('appraisals',this)"><span class="ni">📝</span> Performance Appraisals</div>
+      <div class="nav-item" data-pg="leaverequests" onclick="nav('leaverequests',this)"><span class="ni">🏖️</span> Leave Requests</div>
+      <div class="nav-item" data-pg="recognition" onclick="nav('recognition',this)"><span class="ni">🏆</span> Recognition &amp; Awards</div>
+      <div class="nav-item" data-pg="disciplinary" onclick="nav('disciplinary',this)"><span class="ni">⚖️</span> Disciplinary Actions</div>
     </div>
     <div class="nav-grp">
       <span class="nav-grp-label">Master Data</span>
@@ -911,6 +931,10 @@ textarea.inp{resize:vertical;min-height:72px;}
      PAGE: ESTIMATOR DASHBOARD
 ══════════════════════════════════════════════ -->
 <div id="pg-estimatordash" class="page">
+  <div class="sec-hd" style="margin-bottom:0">
+    <div></div>
+    <button class="btn btn-gold" onclick="openNewEstimationRequest()">+ New Estimation Request</button>
+  </div>
   <div class="kpi-row c3">
     <div class="kpi b"><div class="kpi-label">New Requests</div><div class="kpi-val" id="ed-new">0</div><div class="kpi-sub">Awaiting an estimator</div></div>
     <div class="kpi"><div class="kpi-label">Assigned To Me</div><div class="kpi-val" id="ed-mine">0</div><div class="kpi-sub">Currently estimating</div></div>
@@ -943,7 +967,7 @@ textarea.inp{resize:vertical;min-height:72px;}
 
   <div class="card" style="margin-top:16px">
     <div class="card-hd"><div><div class="card-title">📐 Templates</div><div class="card-sub">Parametric furniture-type definitions that drive area/hardware rules</div></div><button class="btn btn-gold btn-sm" onclick="openModal('costingtemplate')">+ Add Template</button></div>
-    <div class="tbl-wrap"><table><thead><tr><th>Name</th><th>Construction Type</th><th>Doors</th><th>Drawers</th><th>Shelves</th><th>Default Wastage %</th><th></th></tr></thead><tbody id="cm-templates-tb"></tbody></table></div>
+    <div class="tbl-wrap"><table><thead><tr><th></th><th>Name</th><th>Construction Type</th><th>Doors</th><th>Drawers</th><th>Shelves</th><th>Default Wastage %</th><th></th></tr></thead><tbody id="cm-templates-tb"></tbody></table></div>
   </div>
 
   <div class="card" style="margin-top:16px">
@@ -987,6 +1011,20 @@ textarea.inp{resize:vertical;min-height:72px;}
 </div>
 
 <!-- ══════════════════════════════════════════════
+     PAGE: COSTING REPORTS
+══════════════════════════════════════════════ -->
+<div id="pg-costingreports" class="page">
+  <div class="card">
+    <div class="card-hd"><div><div class="card-title">🖨️ Costing Reports</div><div class="card-sub">Built from the costed line items on quotations linked to the selected project — pick a project, then a report</div></div></div>
+    <div style="padding:14px 16px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div class="fg" style="min-width:260px;margin:0"><label class="fl">Project</label><select class="inp" id="cr-proj-sel" onchange="renderCostingReportButtons()"></select></div>
+    </div>
+    <div id="cr-buttons" style="padding:0 16px 16px;display:flex;gap:8px;flex-wrap:wrap"></div>
+  </div>
+  <div id="cr-output" style="margin-top:16px"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
      PAGE: QUOTATIONS
 ══════════════════════════════════════════════ -->
 <!-- ══════════════════════════════════════════════
@@ -1023,6 +1061,35 @@ textarea.inp{resize:vertical;min-height:72px;}
 </div>
 
 <!-- ══════════════════════════════════════════════
+     PAGE: CALENDAR
+══════════════════════════════════════════════ -->
+<div id="pg-calendar" class="page">
+  <div class="card">
+    <div class="card-hd">
+      <div><div class="card-title" id="cal-month-label">—</div><div class="card-sub">Quotation follow-ups, manufacturing due dates, and PO expected dates</div></div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="calShiftMonth(-1)">← Prev</button>
+        <button class="btn btn-outline btn-sm" onclick="calGoToday()">Today</button>
+        <button class="btn btn-outline btn-sm" onclick="calShiftMonth(1)">Next →</button>
+      </div>
+    </div>
+    <div style="padding:12px 16px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;font-size:11px;margin-bottom:10px">
+        <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--gold);margin-right:4px"></span>Follow-up</span>
+        <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--violet);margin-right:4px"></span>Manufacturing due</span>
+        <span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--teal);margin-right:4px"></span>PO expected</span>
+      </div>
+      <div id="cal-dow-row" style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px;font-size:11px;font-weight:700;color:var(--muted);text-align:center"></div>
+      <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:6px"></div>
+    </div>
+  </div>
+  <div class="card" id="cal-day-detail" style="margin-top:16px;display:none">
+    <div class="card-hd"><div class="card-title" id="cal-day-title">—</div></div>
+    <div id="cal-day-list" style="padding:8px 16px 16px"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
      PAGE: PARTNERS & REFERRALS
 ══════════════════════════════════════════════ -->
 <div id="pg-partners" class="page">
@@ -1052,6 +1119,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div>
         <div style="font-family:'Manrope',sans-serif;font-size:18px;color:var(--dark)" id="boq-title">New Quotation</div>
         <div style="font-size:11px;color:var(--muted)" id="boq-sub">Draft</div>
+        <div style="font-size:11px;color:var(--gold)" id="boq-source-trace"></div>
       </div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1076,11 +1144,13 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="fg"><label class="fl">Ref No.</label><input class="inp" id="boq-refno" placeholder="STR/Q/001"></div>
       <div class="fg"><label class="fl">Revision</label><input class="inp" id="boq-revision" type="number" placeholder="1"></div>
       <div class="fg"><label class="fl">Date</label><input class="inp" type="date" id="boq-date"></div>
-      <div class="fg"><label class="fl">Client Name</label><input class="inp" id="boq-client" placeholder="Client name"></div>
+      <div class="fg"><label class="fl">Client Name</label><input class="inp" id="boq-client" list="dl-customers" placeholder="Client name — pick existing or type new"></div>
       <div class="fg"><label class="fl">Project / Site</label><input class="inp" id="boq-site" placeholder="Site address"></div>
       <div class="fg"><label class="fl">Designer</label><input class="inp" id="boq-designer" placeholder="Designer name"></div>
       <div class="fg"><label class="fl">Validity</label><input class="inp" id="boq-validity" placeholder="e.g. 30 days"></div>
-      <div class="fg"><label class="fl">Discount %</label><input class="inp" type="number" id="boq-discount" placeholder="0" oninput="boqUpdateTotal(DB.quotations.find(x=>x.id===_boqId))"></div>
+      <div class="fg"><label class="fl">Discount %</label><input class="inp" type="number" id="boq-discount" placeholder="0" oninput="boqUpdateTotal(DB.quotations.find(x=>x.id===_boqId))">
+        <div id="boq-discount-authority" class="small muted" style="margin-top:4px"></div>
+      </div>
       <div class="fg"><label class="fl">GST %</label><input class="inp" type="number" id="boq-gst" placeholder="18" oninput="boqUpdateTotal(DB.quotations.find(x=>x.id===_boqId))"></div>
     </div>
   </div>
@@ -1266,6 +1336,24 @@ textarea.inp{resize:vertical;min-height:72px;}
 </div>
 
 <!-- ══════════════════════════════════════════════
+     PAGE: STAGE-GATE DASHBOARD
+══════════════════════════════════════════════ -->
+<div id="pg-stagegatedash" class="page">
+  <div class="sec-hd"><div class="sec-title">Stage-Gate Dashboard</div></div>
+  <div class="kpi-row c4" id="sgd-kpis" style="margin-bottom:16px"></div>
+  <div class="g2" style="margin-bottom:16px">
+    <div class="card">
+      <div class="card-hd"><div class="card-title">Projects by Current Gate</div></div>
+      <div id="sgd-gate-dist" style="padding:12px 16px"></div>
+    </div>
+    <div class="card">
+      <div class="card-hd"><div><div class="card-title">Project Stage-Gate Progress</div><div class="card-sub">Stuck/overdue projects surface first</div></div></div>
+      <div id="sgd-project-list" style="padding:8px 16px;max-height:320px;overflow-y:auto"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
      PAGE: MATERIAL APPROVAL REQUESTS
 ══════════════════════════════════════════════ -->
 <div id="pg-matrequest" class="page">
@@ -1299,6 +1387,170 @@ textarea.inp{resize:vertical;min-height:72px;}
       <tbody id="tb-matrequest"></tbody>
     </table></div>
   </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: CAPA REGISTER
+══════════════════════════════════════════════ -->
+<div id="pg-capa" class="page">
+  <div class="sec-hd">
+    <div class="sec-title">CAPA Register</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select class="inp inp-sm" id="capa-status-f" onchange="renderCapaRegister()">
+        <option value="">All Status</option>
+        <option>Open</option>
+        <option>In Progress</option>
+        <option>Pending Effectiveness Check</option>
+        <option>Closed</option>
+      </select>
+      <button class="btn btn-gold" onclick="openCapaModal('')">+ New CAPA</button>
+    </div>
+  </div>
+  <div class="kpi-row c5" id="capa-kpis" style="margin-bottom:16px"></div>
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>CAPA ID</th><th>Title</th><th>Trigger</th><th>Owner</th><th>Status</th><th>Due Date</th><th>Actions</th></tr></thead>
+      <tbody id="tb-capa"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: RISK REGISTER
+══════════════════════════════════════════════ -->
+<div id="pg-riskregister" class="page">
+  <div class="sec-hd">
+    <div class="sec-title">Risk Register</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select class="inp inp-sm" id="risk-cat-f" onchange="renderRiskRegister()">
+        <option value="">All Categories</option>
+        <option>Operational</option><option>Financial</option><option>Compliance</option>
+        <option>Reputational</option><option>Safety</option><option>Strategic</option>
+      </select>
+      <button class="btn btn-gold" onclick="openRiskModal('')">+ New Risk</button>
+    </div>
+  </div>
+  <div class="kpi-row c4" id="risk-kpis" style="margin-bottom:16px"></div>
+  <div class="card">
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Risk ID</th><th>Department</th><th>Description</th><th>Category</th><th>Severity</th><th>Owner</th><th>Last Reviewed</th><th>Actions</th></tr></thead>
+      <tbody id="tb-risk"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: KPI DASHBOARD
+══════════════════════════════════════════════ -->
+<div id="pg-kpidashboard" class="page">
+  <div class="sec-hd"><div class="sec-title">KPI Dashboard</div></div>
+  <div class="card" style="padding:14px 16px;margin-bottom:10px">
+    <div class="card-title" style="margin-bottom:8px">Configurable Targets</div>
+    <div class="small muted" style="margin-bottom:10px">A few KPIs need an external plan figure that isn't derivable from operational data. Set them here once.</div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end">
+      <div><label class="fl">Annual Revenue Target (₹)</label><input class="inp inp-sm" type="number" id="kpi-target-annual-rev" placeholder="0" style="width:160px"></div>
+      <div><label class="fl">Monthly Sales Target (₹)</label><input class="inp inp-sm" type="number" id="kpi-target-monthly-sales" placeholder="0" style="width:160px"></div>
+      <div><label class="fl">Monthly Lead Target</label><input class="inp inp-sm" type="number" id="kpi-target-monthly-leads" placeholder="0" style="width:120px"></div>
+      <button class="btn btn-gold btn-sm" onclick="saveKpiTargets()">Save Targets</button>
+    </div>
+  </div>
+  <div id="kpi-dashboard-body"></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: RECRUITMENT
+══════════════════════════════════════════════ -->
+<div id="pg-recruitment" class="page">
+  <div class="sec-hd"><div class="sec-title">Recruitment</div>
+    <button class="btn btn-gold" onclick="openRecruitmentModal('')">+ New Requisition</button>
+  </div>
+  <div class="kpi-row c3" id="recruit-kpis" style="margin-bottom:16px"></div>
+  <div class="card"><div class="tbl-wrap"><table>
+    <thead><tr><th>Req ID</th><th>Role</th><th>Department</th><th>Requested By</th><th>Date Requested</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody id="tb-recruitment"></tbody>
+  </table></div></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: EMPLOYEE INDUCTION
+══════════════════════════════════════════════ -->
+<div id="pg-induction" class="page">
+  <div class="sec-hd"><div class="sec-title">Employee Induction</div></div>
+  <div class="kpi-row c3" id="induct-kpis" style="margin-bottom:16px"></div>
+  <div class="card"><div class="tbl-wrap"><table>
+    <thead><tr><th>Employee</th><th>Department</th><th>Progress</th><th>Actions</th></tr></thead>
+    <tbody id="tb-induction"></tbody>
+  </table></div></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: TRAINING RECORDS
+══════════════════════════════════════════════ -->
+<div id="pg-training" class="page">
+  <div class="sec-hd"><div class="sec-title">Training Records</div>
+    <button class="btn btn-gold" onclick="openTrainingModal()">+ Log Training</button>
+  </div>
+  <div class="kpi-row c3" id="training-kpis" style="margin-bottom:16px"></div>
+  <div class="card"><div class="tbl-wrap"><table>
+    <thead><tr><th>Employee</th><th>Topic</th><th>Type</th><th>Hours</th><th>Date</th><th>Actions</th></tr></thead>
+    <tbody id="tb-training"></tbody>
+  </table></div></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: PERFORMANCE APPRAISALS
+══════════════════════════════════════════════ -->
+<div id="pg-appraisals" class="page">
+  <div class="sec-hd"><div class="sec-title">Performance Appraisals</div>
+    <button class="btn btn-gold" onclick="openAppraisalModal('')">+ New Appraisal</button>
+  </div>
+  <div class="kpi-row c3" id="appraisal-kpis" style="margin-bottom:16px"></div>
+  <div class="card"><div class="tbl-wrap"><table>
+    <thead><tr><th>Employee</th><th>Cycle</th><th>Rating</th><th>Status</th><th>Due Date</th><th>Actions</th></tr></thead>
+    <tbody id="tb-appraisals"></tbody>
+  </table></div></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: LEAVE REQUESTS
+══════════════════════════════════════════════ -->
+<div id="pg-leaverequests" class="page">
+  <div class="sec-hd"><div class="sec-title">Leave Requests</div>
+    <button class="btn btn-gold" onclick="openLeaveModal()">+ New Request</button>
+  </div>
+  <div class="kpi-row c3" id="leave-kpis" style="margin-bottom:16px"></div>
+  <div class="card"><div class="tbl-wrap"><table>
+    <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Reason</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody id="tb-leave"></tbody>
+  </table></div></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: RECOGNITION & AWARDS
+══════════════════════════════════════════════ -->
+<div id="pg-recognition" class="page">
+  <div class="sec-hd"><div class="sec-title">Recognition &amp; Awards</div>
+    <button class="btn btn-gold" onclick="openRecognitionModal()">+ Log Recognition</button>
+  </div>
+  <div class="kpi-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px" id="recog-kpis"></div>
+  <div class="card"><div class="tbl-wrap"><table>
+    <thead><tr><th>Employee</th><th>Type</th><th>Reason</th><th>Date Awarded</th><th>Awarded By</th><th>Actions</th></tr></thead>
+    <tbody id="tb-recognition"></tbody>
+  </table></div></div>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     PAGE: DISCIPLINARY ACTIONS
+══════════════════════════════════════════════ -->
+<div id="pg-disciplinary" class="page">
+  <div class="sec-hd"><div class="sec-title">Disciplinary Actions</div>
+    <button class="btn btn-gold" onclick="openDisciplinaryModal()">+ Log Action</button>
+  </div>
+  <div class="kpi-row c3" id="discipline-kpis" style="margin-bottom:16px"></div>
+  <div class="card"><div class="tbl-wrap"><table>
+    <thead><tr><th>Employee</th><th>Stage</th><th>Issue</th><th>Date Issued</th><th>Issued By</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody id="tb-discipline"></tbody>
+  </table></div></div>
 </div>
 
 <!-- ══════════════════════════════════════════════
@@ -1656,6 +1908,8 @@ textarea.inp{resize:vertical;min-height:72px;}
         <option>Sales</option>
         <option>Estimator</option>
         <option>Procurement</option>
+        <option>Project Manager</option>
+        <option>QC Manager</option>
         <option>Admin</option>
       </select>
     </div>
@@ -1683,6 +1937,8 @@ textarea.inp{resize:vertical;min-height:72px;}
         <th style="text-align:center">Sales</th>
         <th style="text-align:center">Estimator</th>
         <th style="text-align:center">Procurement</th>
+        <th style="text-align:center">Project Mgr.</th>
+        <th style="text-align:center">QC Manager</th>
         <th style="text-align:center">Admin</th>
       </tr></thead>
       <tbody id="tb-role-matrix-body"></tbody>
@@ -1718,6 +1974,8 @@ textarea.inp{resize:vertical;min-height:72px;}
             <option>Sales</option>
             <option>Estimator</option>
             <option>Procurement</option>
+            <option>Project Manager</option>
+            <option>QC Manager</option>
             <option>Admin</option>
           </select></div>
         <div><label style="font-size:11px;font-weight:600;color:var(--muted);display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Status</label>
@@ -1989,6 +2247,7 @@ textarea.inp{resize:vertical;min-height:72px;}
     </div>
     <div id="po-items-container"></div>
     <div style="display:flex;justify-content:flex-end;align-items:center;gap:16px;padding:12px 16px;background:var(--dark-accent);border-radius:0 0 var(--r) var(--r)">
+      <span style="font-size:11px" id="po-doa-note"></span>
       <span style="font-size:12px;color:var(--muted)" id="po-item-count">0 items</span>
       <span style="font-size:20px;font-weight:800;color:var(--gold)" id="po-total-val">₹0</span>
     </div>
@@ -2219,6 +2478,10 @@ textarea.inp{resize:vertical;min-height:72px;}
     <div class="kpi r"><div class="kpi-label">Delayed Jobs</div><div class="kpi-val" id="fd-delayed">0</div><div class="kpi-sub">Past due date</div></div>
     <div class="kpi"><div class="kpi-label">Pending QC</div><div class="kpi-val" id="fd-qc">0</div><div class="kpi-sub">Awaiting inspection</div></div>
     <div class="kpi g"><div class="kpi-label">Completed This Week</div><div class="kpi-val" id="fd-done">0</div><div class="kpi-sub">Jobs finished</div></div>
+  </div>
+  <div class="card" id="fd-at-risk-card" style="margin-top:16px;display:none">
+    <div class="card-hd"><div class="card-title">⏳ At Risk — Due Soon or Overdue</div><div class="card-sub">Jobs not yet completed, within 2 days of due date or already past it — check this before starting something new</div></div>
+    <div class="tbl-wrap"><table><thead><tr><th>Job</th><th>Product</th><th>Due Date</th><th>Status</th><th></th></tr></thead><tbody id="fd-at-risk-tb"></tbody></table></div>
   </div>
   <div id="fd-kanban" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:4px"></div>
   <div class="card" style="margin-top:16px">
@@ -3152,6 +3415,18 @@ const DB = {
   mfgOps:[],
   accounts:[],
   qcChecklist:[],
+  // Stage-Gate Tracker (BOS Manual §7) — 6-gate project governance checklist.
+  // One record per (project, gate, checklist line item); see STAGE_GATE_TEMPLATE.
+  stageGates:[],
+  // Quality/Risk governance (BOS Manual §9.7 CAPA, §10 Risk Register).
+  capaRegister:[],
+  riskRegister:[],
+  // Configurable absolute-value targets for KPIs that need an external
+  // plan figure not derivable from operational data (§6 KPI Dashboard).
+  kpiTargets:{annualRevenueTarget:0, monthlySalesTarget:0, monthlyLeadTarget:0},
+  // HR & People Systems (BOS Manual §11).
+  recruitmentRequisitions:[], inductions:[], trainingRecords:[],
+  appraisals:[], leaveRequests:[], recognitions:[], disciplinaryActions:[],
   rolePermissions:[],
   estimationRequests:[],
   notifications:[],
@@ -3250,10 +3525,13 @@ const PAGE_TITLES={
   estimatordash:'Estimator Dashboard',
   costingmasters:'Costing Masters',
   costingdash:'Costing Dashboard',
+  costingreports:'Costing Reports',
   quotkanban:'Quotations Kanban',
+  calendar:'Calendar',
   partners:'Partners & Referrals',
   customers:'Customers',projects:'Projects',products:'Products / Furniture Items',
   labour:'Labour & Wages',expenses:'Project Expenses',qc:'QC Checklist',qcdashboard:'QC Dashboard',
+  stagegatedash:'Stage-Gate Dashboard',
   warehouse:'Warehouse Stock',purchases:'Purchases',issues:'Material Issues',
   returns:'Material Returns',invoices:'Sales Invoices',receipts:'Receipts & Payments',
   vendors:'Vendor Bills',accounts:'Chart of Accounts',banking:'Banking & Petty Cash',
@@ -3276,6 +3554,12 @@ const PAGE_TITLES={
   usermgmt:'Users & Roles',
   matrequest:'Material Requests',
   projectbom:'Project BOM',
+  capa:'CAPA Register',
+  riskregister:'Risk Register',
+  kpidashboard:'KPI Dashboard',
+  recruitment:'Recruitment', induction:'Employee Induction', training:'Training Records',
+  appraisals:'Performance Appraisals', leaverequests:'Leave Requests',
+  recognition:'Recognition & Awards', disciplinary:'Disciplinary Actions',
 };
 
 let _currentPage = 'dashboard';
@@ -3309,7 +3593,9 @@ function renderPage(pg){
     estimatordash:renderEstimatorDash,
     costingmasters:renderCostingMasters,
     costingdash:renderCostingDashboard,
+    costingreports:renderCostingReports,
     quotkanban:renderQuotKanban,
+    calendar:renderCalendar,
     partners:renderPartners,
     customers:renderCustomers,invoices:renderInvoices,
     receipts:renderReceipts,vendors:renderVendorBills,
@@ -3317,6 +3603,7 @@ function renderPage(pg){
     jobanalysis:renderJobAnalysis,profitloss:renderPL,wip:renderWIP,
     productcosting:renderProductCosting,stockreport:renderStockReportPage,
     qc:renderQC,qcdashboard:renderQcDashboard,
+    stagegatedash:renderStageGateDashboard,
     factorydash:renderFactoryDash,mfgjobs:renderMfgJobs,machines:renderMachines,jobops:renderJobOps,jobcards:renderJobCards,
     sitedash:renderSiteDash,deliveries:renderDeliveries,installation:renderInstallation,
     milestones:renderMilestones,
@@ -3334,6 +3621,12 @@ function renderPage(pg){
     usermgmt:renderUserMgmt,
     matrequest:renderMatRequests,
     projectbom:renderBomPage,
+    capa:renderCapaRegister,
+    riskregister:renderRiskRegister,
+    kpidashboard:renderKpiDashboard,
+    recruitment:renderRecruitment, induction:renderInductions, training:renderTraining,
+    appraisals:renderAppraisals, leaverequests:renderLeaveRequests,
+    recognition:renderRecognitions, disciplinary:renderDisciplinary,
   };
   if(fn[pg])fn[pg]();
   populateGlobalProjectDropdowns();
@@ -3486,6 +3779,7 @@ function renderProjects(){
       <button class="btn btn-outline btn-xs" onclick="nav('productcosting',null);document.getElementById('pc-proj-sel').value='${p.id}';renderProductCosting()">Costing</button>
       <button class="btn btn-xs ${DB.projectBudgets.find(b=>b.projectId===p.id)?'btn-gold':'btn-outline'}" onclick="openBudgetOverlay('${p.id}')" title="Project Budget / BOM">${DB.projectBudgets.find(b=>b.projectId===p.id)?'📊 Budget':'📋 Set Budget'}</button>
       <button class="btn btn-outline btn-xs" onclick="openQcChecklist('${p.id}')" title="QC Checklist">✅ QC ${(()=>{const s=qcProjectStats(p.id);return s.total?`(${s.pass}/${s.total})`:'';})()}</button>
+      <button class="btn btn-outline btn-xs" onclick="openStageGateModal('${p.id}')" title="Stage-Gate Tracker">🚦 Stage ${stageGateStats(p.id).currentGate}/6</button>
       ${editBtn('editProject',p.id)}
     </td>
   </tr>`).join('');
@@ -3938,6 +4232,1300 @@ function renderQcDashboard(){
   }).join('') : '<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">✅ Nothing overdue</td></tr>';
 }
 
+// ═══════════════════════════════════════════
+//  STAGE-GATE TRACKER (BOS Manual §7)
+//  6-gate project governance model. Fact-check items (approverRole:null)
+//  can be ticked by anyone with Projects access; approval items require
+//  the named role (requireRole) AND that the previous gate is fully Done
+//  — the sequential-enforcement rule. Mirrors the QC Checklist module's
+//  data shape and interaction pattern above.
+// ═══════════════════════════════════════════
+const STAGE_GATE_TEMPLATE = [
+  {gate:1, name:'Qualified Opportunity Gate', items:[
+    {item:'Budget range, scope, and timeline confirmed with client', approverRole:null},
+    {item:'Decision-maker identified', approverRole:null},
+    {item:'Opportunity marked Qualified in CRM', approverRole:null},
+    {item:'Head of Sales & BD sign-off', approverRole:'Sales'},
+  ]},
+  {gate:2, name:'Commercial Approval Gate', items:[
+    {item:'Client signed working drawings (Design Approval Form)', approverRole:null},
+    {item:'Cost Sheet approved at/above minimum margin', approverRole:null},
+    {item:'Quotation issued and accepted by client in writing', approverRole:null},
+    {item:'Head of Sales & BD sign-off', approverRole:'Sales'},
+  ]},
+  {gate:3, name:'Execution Readiness Gate', items:[
+    {item:'Order Confirmation signed by client', approverRole:null},
+    {item:'Master Project Schedule drafted, long-lead items identified', approverRole:null},
+    {item:'Finance: advance payment cleared', approverRole:'Accounts'},
+    {item:'Project Manager: schedule approved', approverRole:'Project Manager'},
+  ]},
+  {gate:4, name:'Dispatch Readiness Gate', items:[
+    {item:'All items in dispatch batch passed Final QC', approverRole:null},
+    {item:'No open incoming/in-process quality issue on the job', approverRole:null},
+    {item:'Site readiness confirmed', approverRole:null},
+    {item:'QC Manager sign-off', approverRole:'QC Manager'},
+  ]},
+  {gate:5, name:'Handover Readiness Gate', items:[
+    {item:'Installation complete per working drawings', approverRole:null},
+    {item:'Snag List at zero open items', approverRole:null},
+    {item:'Site Supervisor sign-off', approverRole:'Site Supervisor'},
+    {item:'QC Manager sign-off', approverRole:'QC Manager'},
+  ]},
+  {gate:6, name:'Project Closure Gate', items:[
+    {item:'Handover Certificate signed by client', approverRole:null},
+    {item:'Warranty Certificate issued and registered', approverRole:null},
+    {item:'Project Manager sign-off', approverRole:'Project Manager'},
+    {item:'Accounts: final invoice settled / payment plan confirmed', approverRole:'Accounts'},
+  ]},
+];
+// Generic "flag for attention" threshold — the BOS manual doesn't specify
+// one, kept distinct from QC_OVERDUE_DAYS so the two aren't conflated.
+const STAGE_GATE_OVERDUE_DAYS = 14;
+
+// Seeds all 6 gates' checklist items for a project the first time it's
+// opened. Safe to call repeatedly — no-ops if items already exist.
+function ensureStageGates(projectId){
+  if(!DB.stageGates) DB.stageGates=[];
+  const existing = DB.stageGates.filter(g=>g.projectId===projectId);
+  if(existing.length) return;
+  const today = new Date().toISOString().slice(0,10);
+  let sortOrder=0;
+  STAGE_GATE_TEMPLATE.forEach(g=>{
+    g.items.forEach(it=>{
+      DB.stageGates.push({
+        id:'SG'+uid(), projectId, gate:g.gate, gateName:g.name,
+        item:it.item, approverRole:it.approverRole, sortOrder:sortOrder++,
+        status:'Pending', remarks:'', checkedBy:'', checkedDate:'', createdDate:today
+      });
+    });
+  });
+  saveDB();
+}
+
+// currentGate = highest gate number where ALL its items are Done (0 if none).
+// daysInGate for gate N = days since gate N-1's items were all completed
+// (anchored on the max checkedDate among them), or since the items were
+// first created for Gate 1 — never a project field, since projects have
+// no creation-date field to anchor on.
+function stageGateStats(projectId){
+  const items = (DB.stageGates||[]).filter(g=>g.projectId===projectId);
+  const gateDetail = STAGE_GATE_TEMPLATE.map(g=>{
+    const gi = items.filter(i=>i.gate===g.gate);
+    const doneCount = gi.filter(i=>i.status==='Done').length;
+    const totalCount = gi.length;
+    const pct = totalCount ? Math.round(doneCount/totalCount*100) : 0;
+    const complete = totalCount>0 && doneCount===totalCount;
+    let anchorDate = null;
+    if(g.gate===1){
+      anchorDate = gi.length ? gi[0].createdDate : null;
+    } else {
+      const prevDates = items.filter(i=>i.gate===g.gate-1 && i.status==='Done' && i.checkedDate).map(i=>i.checkedDate);
+      anchorDate = prevDates.length ? prevDates.sort().reverse()[0] : null;
+    }
+    const daysInGate = anchorDate ? Math.floor((new Date()-new Date(anchorDate))/86400000) : 0;
+    return {gate:g.gate, name:g.name, doneCount, totalCount, pct, complete, daysInGate};
+  });
+  let currentGate=0;
+  for(const gd of gateDetail){ if(gd.complete) currentGate=gd.gate; else break; }
+  const totalItems=items.length;
+  const totalDone=items.filter(i=>i.status==='Done').length;
+  const overallPct = totalItems ? Math.round(totalDone/totalItems*100) : 0;
+  return {currentGate, gateDetail, overallPct};
+}
+
+// A project is "stuck" if the first gate it hasn't completed has sat
+// open longer than STAGE_GATE_OVERDUE_DAYS.
+function _stageGateIsOverdue(stats){
+  const stuck = stats.gateDetail.find(g=>!g.complete);
+  return stuck ? stuck.daysInGate > STAGE_GATE_OVERDUE_DAYS : false;
+}
+
+function openStageGateModal(projectId){
+  ensureStageGates(projectId);
+  const proj = DB.projects.find(p=>p.id===projectId);
+  window._stageGateProjId = projectId;
+  document.getElementById('modal-title').textContent = `🚦 Stage-Gate Tracker — ${proj?proj.client:''}`;
+  document.getElementById('modal-save-btn').style.display='none';
+  document.getElementById('modal-body').innerHTML = `<div id="stage-gate-body"></div>`;
+  document.getElementById('modal').className='modal modal-xl';
+  renderStageGateBody();
+  openOverlay();
+}
+
+function renderStageGateBody(){
+  const projectId = window._stageGateProjId;
+  const stats = stageGateStats(projectId);
+  const items = (DB.stageGates||[]).filter(g=>g.projectId===projectId);
+  const stBg = {Done:'var(--green-l)',Rejected:'var(--red-l)',Pending:'var(--amber-l)'};
+
+  document.getElementById('stage-gate-body').innerHTML = STAGE_GATE_TEMPLATE.map(g=>{
+    const gd = stats.gateDetail.find(x=>x.gate===g.gate);
+    const prevGd = stats.gateDetail.find(x=>x.gate===g.gate-1);
+    const locked = g.gate>1 && prevGd && !prevGd.complete;
+    const gi = items.filter(i=>i.gate===g.gate).sort((a,b)=>a.sortOrder-b.sortOrder);
+    return `
+    <div style="border:1px solid var(--border);border-radius:var(--r-sm);margin-bottom:14px;${locked?'opacity:.55':''}">
+      <div style="padding:10px 14px;background:${gd.complete?'var(--green-l)':'var(--white)'};border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+        <strong style="font-size:13px">${locked?'🔒 ':gd.complete?'✅ ':''}Gate ${g.gate} — ${escHtml(g.name)}</strong>
+        <span class="small muted">${gd.doneCount}/${gd.totalCount} complete${!gd.complete&&gd.daysInGate?` · ${gd.daysInGate}d in this gate`:''}</span>
+      </div>
+      <div style="padding:10px 14px">
+        ${gi.map(it=>{
+          const canAct = !it.approverRole || requireRole(it.approverRole);
+          return `<div style="border:1px solid var(--border2);border-radius:var(--r-sm);padding:10px 12px;margin-bottom:6px;background:${stBg[it.status]||'var(--white)'}">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+              <div>
+                <strong style="font-size:12.5px">${escHtml(it.item)}</strong>
+                ${it.approverRole?`<span class="tag tag-gold" style="margin-left:6px;font-size:9.5px">${escHtml(it.approverRole)} sign-off</span>`:''}
+              </div>
+              <div style="display:flex;gap:6px">
+                ${canAct?`
+                  <button class="btn btn-xs ${it.status==='Done'?'btn-gold':'btn-outline'}" style="${it.status==='Done'?'':'color:var(--green)'}" onclick="setStageGateItemStatus('${it.id}','Done')">✓ Done</button>
+                  <button class="btn btn-xs ${it.status==='Rejected'?'btn-gold':'btn-outline'}" style="${it.status==='Rejected'?'':'color:var(--red)'}" onclick="rejectStageGateItem('${it.id}')">✕ Reject</button>
+                  <button class="btn btn-xs ${it.status==='Pending'?'btn-gold':'btn-outline'}" onclick="setStageGateItemStatus('${it.id}','Pending')">⏳ Pending</button>
+                `:`<span class="tag ${it.status==='Done'?'tag-green':it.status==='Rejected'?'tag-red':'tag-grey'}">${it.status}</span>`}
+              </div>
+            </div>
+            ${it.remarks?`<div style="margin-top:6px;font-size:11.5px;color:var(--red)">⚠ ${escHtml(it.remarks)}</div>`:''}
+            ${it.checkedBy?`<div style="margin-top:4px;font-size:10.5px;color:var(--muted)">by ${escHtml(it.checkedBy)} · ${fmtDate(it.checkedDate)}</div>`:''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setStageGateItemStatus(itemId, status){
+  const item = DB.stageGates.find(g=>g.id===itemId);
+  if(!item) return;
+  if(item.approverRole && !requireRole(item.approverRole)){
+    toast('Only '+item.approverRole+' can act on this item','err');
+    return;
+  }
+  if(status==='Done' && item.approverRole && item.gate>1){
+    const prevDone = DB.stageGates.filter(g=>g.projectId===item.projectId && g.gate===item.gate-1).every(g=>g.status==='Done');
+    if(!prevDone){ toast('Complete Gate '+(item.gate-1)+' first','err'); return; }
+  }
+  item.status = status;
+  item.checkedBy = _currentUser?.name || '';
+  item.checkedDate = new Date().toISOString().slice(0,10);
+  if(status!=='Rejected') item.remarks='';
+  saveDB();
+  renderStageGateBody();
+  if(document.getElementById('pg-stagegatedash')?.classList.contains('active')) renderStageGateDashboard();
+}
+
+function rejectStageGateItem(itemId){
+  const item = DB.stageGates.find(g=>g.id===itemId);
+  if(!item) return;
+  if(item.approverRole && !requireRole(item.approverRole)){
+    toast('Only '+item.approverRole+' can reject this item','err');
+    return;
+  }
+  const remarks = prompt('Reason for rejection (required):','');
+  if(!remarks || !remarks.trim()){ toast('A remarks note is required to reject','err'); return; }
+  item.status='Rejected';
+  item.remarks=remarks.trim();
+  item.checkedBy=_currentUser?.name||'';
+  item.checkedDate=new Date().toISOString().slice(0,10);
+  saveDB();
+  renderStageGateBody();
+  if(document.getElementById('pg-stagegatedash')?.classList.contains('active')) renderStageGateDashboard();
+}
+
+function setStageGateItemField(itemId, field, value){
+  const item = DB.stageGates.find(g=>g.id===itemId);
+  if(!item) return;
+  item[field] = value;
+  saveDB();
+}
+
+// ── STAGE-GATE DASHBOARD (aggregate view across all projects) ──────
+function renderStageGateDashboard(){
+  DB.projects.forEach(p=>ensureStageGates(p.id));
+  const allStats = DB.projects.map(p=>({p, stats:stageGateStats(p.id)}));
+  const stuck = allStats.filter(s=>_stageGateIsOverdue(s.stats));
+  const myPending = (DB.stageGates||[]).filter(g=>g.approverRole===_currentUser?.role && g.status==='Pending');
+  const gateCounts = [0,1,2,3,4,5,6].map(n=>allStats.filter(s=>s.stats.currentGate===n).length);
+
+  document.getElementById('sgd-kpis').innerHTML = `
+    ${kpiBox('Total Projects', DB.projects.length, '', '')}
+    ${kpiBox('Gates Stuck >'+STAGE_GATE_OVERDUE_DAYS+'d', stuck.length, '', stuck.length>0?'var(--red)':'var(--green)')}
+    ${kpiBox('Pending for My Role', myPending.length, _currentUser?.role||'', myPending.length>0?'var(--amber)':'var(--green)')}
+    ${kpiBox('Fully Closed (Gate 6)', gateCounts[6], '', 'var(--green)')}
+  `;
+
+  document.getElementById('sgd-gate-dist').innerHTML = [0,1,2,3,4,5,6].map(n=>`
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 0">
+      <span class="small muted" style="width:70px">${n===0?'Not started':'Gate '+n}</span>
+      <div style="flex:1;background:var(--border2);border-radius:10px;height:10px;overflow:hidden">
+        <div style="width:${DB.projects.length?Math.round(gateCounts[n]/DB.projects.length*100):0}%;height:100%;background:var(--gold)"></div>
+      </div>
+      <span class="mono small" style="width:24px;text-align:right">${gateCounts[n]}</span>
+    </div>`).join('');
+
+  // Project-wise list, stuck/overdue projects surfaced first
+  const sorted = allStats.slice().sort((a,b)=>{
+    const aStuck=_stageGateIsOverdue(a.stats), bStuck=_stageGateIsOverdue(b.stats);
+    if(aStuck!==bStuck) return aStuck? -1:1;
+    return a.stats.currentGate-b.stats.currentGate;
+  });
+  document.getElementById('sgd-project-list').innerHTML = sorted.length ? sorted.map(s=>{
+    const stuckFlag = _stageGateIsOverdue(s.stats);
+    return `<div style="padding:10px 4px;border-bottom:1px solid var(--border2)">
+      <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+        <strong>${escHtml(s.p.client)}${stuckFlag?' <span style="color:var(--red)">⚠ stuck</span>':''}</strong>
+        <span class="muted">Gate ${s.stats.currentGate}/6 · ${s.stats.overallPct}% overall</span>
+      </div>
+      <div style="background:var(--border2);border-radius:10px;height:8px;overflow:hidden">
+        <div style="width:${s.stats.overallPct}%;height:100%;background:${stuckFlag?'var(--red)':'var(--green)'}"></div>
+      </div>
+      <div style="text-align:right;margin-top:4px"><button class="btn btn-outline btn-xs" onclick="openStageGateModal('${s.p.id}')">Open Tracker</button></div>
+    </div>`;
+  }).join('') : '<div class="muted" style="padding:16px">No projects yet.</div>';
+}
+
+// ═══════════════════════════════════════════
+//  CAPA REGISTER (BOS Manual §9.7 / §12.3)
+//  A CAPA can only be closed after an effectiveness check — closing
+//  immediately after the corrective action, without confirming it
+//  worked, is a process violation per the manual.
+// ═══════════════════════════════════════════
+const CAPA_TRIGGER_TYPES = ['Recurring Defect','Recurring Warranty Issue','Recurring Customer Complaint','Safety Incident','Vendor Quality Failure','Other'];
+const CAPA_OVERDUE_DAYS = 30; // no owner, or no movement, for this many days escalates to CEO as P2 (§4.5)
+
+function _capaIsOverdue(c){
+  if(c.status==='Closed') return false;
+  if(!c.owner) return true;
+  const days = (new Date() - new Date(c.lastUpdatedDate||c.dateOpened)) / 86400000;
+  return days > CAPA_OVERDUE_DAYS;
+}
+
+function renderCapaRegister(){
+  const statusF = document.getElementById('capa-status-f')?.value||'';
+  let list = DB.capaRegister||[];
+  if(statusF) list = list.filter(c=>c.status===statusF);
+
+  const all = DB.capaRegister||[];
+  const open = all.filter(c=>c.status==='Open'||c.status==='In Progress').length;
+  const pendingCheck = all.filter(c=>c.status==='Pending Effectiveness Check').length;
+  const overdue = all.filter(_capaIsOverdue).length;
+  const thisQ = new Date(); thisQ.setMonth(thisQ.getMonth()-3);
+  const closedThisQ = all.filter(c=>c.status==='Closed'&&c.closedDate&&new Date(c.closedDate)>=thisQ).length;
+
+  document.getElementById('capa-kpis').innerHTML = `
+    ${kpiBox('Total CAPAs', all.length, '', '')}
+    ${kpiBox('Open / In Progress', open, '', open>0?'var(--amber)':'var(--green)')}
+    ${kpiBox('Pending Effectiveness Check', pendingCheck, '', pendingCheck>0?'var(--amber)':'')}
+    ${kpiBox('Overdue (>'+CAPA_OVERDUE_DAYS+'d / no owner)', overdue, '', overdue>0?'var(--red)':'var(--green)')}
+    ${kpiBox('Closed This Quarter', closedThisQ, '', 'var(--green)')}
+  `;
+
+  const stColor = {Open:'tag-red','In Progress':'tag-gold','Pending Effectiveness Check':'tag-violet',Closed:'tag-green'};
+  const tb = document.getElementById('tb-capa');
+  tb.innerHTML = list.map(c=>{
+    const overdueFlag = _capaIsOverdue(c);
+    return `<tr${overdueFlag?' style="background:var(--red-l)"':''}>
+      <td><span class="tag tag-dark">${escHtml(c.capaId)}</span></td>
+      <td><strong>${escHtml(c.title)}</strong>${overdueFlag?'<div class="small" style="color:var(--red)">⚠ overdue</div>':''}</td>
+      <td class="small">${escHtml(c.triggerType)}</td>
+      <td class="small muted">${escHtml(c.owner)||'—'}</td>
+      <td><span class="tag ${stColor[c.status]||'tag-grey'}">${c.status}</span></td>
+      <td>${fmtDate(c.dueDate)}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-outline btn-xs" onclick="openCapaModal('${c.id}')">✏️ Open</button>
+        ${delBtn('deleteCapa',c.id)}
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No CAPAs logged yet.</td></tr>';
+}
+
+function openCapaModal(id){
+  _currentModal='capa';
+  window._capaId = id||'';
+  const c = id ? (DB.capaRegister||[]).find(x=>x.id===id) : null;
+  document.getElementById('modal-title').textContent = c ? '✏️ '+c.capaId : '🆕 New CAPA';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-row"><label class="lbl">Title *</label><input class="inp" id="f-capa-title" value="${escHtml(c?.title||'')}" placeholder="Short summary of the issue"></div>
+    <div class="form-row"><label class="lbl">Trigger Type</label>
+      <select class="inp" id="f-capa-trigger">${CAPA_TRIGGER_TYPES.map(t=>`<option ${c?.triggerType===t?'selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="form-row"><label class="lbl">Trigger Reference</label><input class="inp" id="f-capa-ref" value="${escHtml(c?.triggerRef||'')}" placeholder="e.g. Project P003, Vendor XYZ, Defect Log entry"></div>
+    <div class="form-row"><label class="lbl">Owner</label><input class="inp" id="f-capa-owner" value="${escHtml(c?.owner||'')}" placeholder="Who implements the corrective action"></div>
+    <div class="form-row"><label class="lbl">Due Date</label><input class="inp" type="date" id="f-capa-due" value="${c?.dueDate||''}"></div>
+    <div class="form-row"><label class="lbl">Root Cause Analysis</label><textarea class="inp" id="f-capa-root" rows="2" placeholder="5 Whys / fishbone findings">${escHtml(c?.rootCause||'')}</textarea></div>
+    <div class="form-row"><label class="lbl">Corrective Action</label><textarea class="inp" id="f-capa-corrective" rows="2" placeholder="Fix for the current instance">${escHtml(c?.correctiveAction||'')}</textarea></div>
+    <div class="form-row"><label class="lbl">Preventive Action</label><textarea class="inp" id="f-capa-preventive" rows="2" placeholder="Process/SOP/checklist change that stops recurrence">${escHtml(c?.preventiveAction||'')}</textarea></div>
+    <div class="form-row"><label class="lbl">Status</label>
+      <select class="inp" id="f-capa-status">
+        ${['Open','In Progress','Pending Effectiveness Check','Closed'].map(s=>`<option ${c?.status===s?'selected':''}>${s}</option>`).join('')}
+      </select></div>
+    <div class="form-row"><label class="lbl">Effectiveness Check Date</label><input class="inp" type="date" id="f-capa-effdate" value="${c?.effectivenessCheckDate||''}"></div>
+    <div class="form-row"><label class="lbl">Effectiveness Notes</label><textarea class="inp" id="f-capa-effnotes" rows="2" placeholder="Confirm the defect has not recurred">${escHtml(c?.effectivenessNotes||'')}</textarea></div>
+  `;
+  openOverlay();
+}
+
+function saveCapa(){
+  const id = window._capaId;
+  let c = id ? (DB.capaRegister||[]).find(x=>x.id===id) : null;
+  const title = document.getElementById('f-capa-title')?.value.trim();
+  if(!title){ toast('Title is required','err'); return; }
+  const requestedStatus = document.getElementById('f-capa-status')?.value||'Open';
+  const effDate = document.getElementById('f-capa-effdate')?.value||'';
+
+  // Standing rule (§9.7/§12.3): a CAPA can only close after an
+  // effectiveness check has actually been recorded.
+  if(requestedStatus==='Closed'){
+    const priorStatus = c ? c.status : 'Open';
+    if(priorStatus!=='Pending Effectiveness Check' && priorStatus!=='Closed'){
+      toast('Move this CAPA to "Pending Effectiveness Check" before closing it','err');
+      return;
+    }
+    if(!effDate){ toast('An effectiveness check date is required before closing a CAPA','err'); return; }
+  }
+
+  if(!c){
+    if(!DB.capaRegister) DB.capaRegister=[];
+    const seq = DB.capaRegister.length+1;
+    c = { id:'CAPA'+uid(), capaId:'CAPA-'+String(seq).padStart(3,'0'), dateOpened:new Date().toISOString().slice(0,10), openedBy:_currentUser?.name||'' };
+    DB.capaRegister.push(c);
+  }
+  c.title           = title;
+  c.triggerType     = document.getElementById('f-capa-trigger')?.value||'Other';
+  c.triggerRef      = document.getElementById('f-capa-ref')?.value||'';
+  c.owner           = document.getElementById('f-capa-owner')?.value||'';
+  c.dueDate         = document.getElementById('f-capa-due')?.value||'';
+  c.rootCause       = document.getElementById('f-capa-root')?.value||'';
+  c.correctiveAction= document.getElementById('f-capa-corrective')?.value||'';
+  c.preventiveAction= document.getElementById('f-capa-preventive')?.value||'';
+  c.effectivenessCheckDate = effDate;
+  c.effectivenessNotes     = document.getElementById('f-capa-effnotes')?.value||'';
+  if(requestedStatus==='Closed' && c.status!=='Closed'){
+    c.closedDate = new Date().toISOString().slice(0,10);
+    c.closedBy   = _currentUser?.name||'';
+  }
+  c.status = requestedStatus;
+  c.lastUpdatedDate = new Date().toISOString().slice(0,10);
+  saveDB();
+  toast('CAPA saved ✓','ok');
+  renderCapaRegister();
+}
+
+function deleteCapa(id){
+  if(!confirm('Delete this CAPA record?')) return;
+  const i = DB.capaRegister.findIndex(x=>x.id===id);
+  if(i>-1){ DB.capaRegister.splice(i,1); _trackDelete('capaRegister',id); saveDB(); renderCapaRegister(); toast('CAPA deleted','ok'); }
+}
+
+// ═══════════════════════════════════════════
+//  RISK REGISTER (BOS Manual §10)
+//  Severity is computed from Likelihood × Impact via the same matrix
+//  in §10.1 — never hand-picked, so it stays consistent across
+//  departments and reviewers.
+// ═══════════════════════════════════════════
+const RISK_CATEGORIES = ['Operational','Financial','Compliance','Reputational','Safety','Strategic'];
+const RISK_DEPARTMENTS = ['Company-Wide','Sales & BD','Marketing','Design','Estimation','Project Management','Procurement','Inventory','Factory Production','Quality Control','Site Installation','Finance & Accounts','HR & Administration','Customer Service'];
+const RISK_MATRIX = {
+  High:  {Low:'Medium', Medium:'High',   High:'Critical'},
+  Medium:{Low:'Low',    Medium:'Medium', High:'High'},
+  Low:   {Low:'Low',    Medium:'Low',    High:'Medium'}
+};
+function riskSeverity(likelihood, impact){
+  return (RISK_MATRIX[likelihood]||{})[impact] || 'Low';
+}
+const RISK_REVIEW_OVERDUE_DAYS = 90; // quarterly review cadence outer bound (§10.1, §8.6)
+
+function _riskReviewOverdue(r){
+  if(r.status==='Closed') return false;
+  if(!r.lastReviewedDate) return true;
+  const days = (new Date() - new Date(r.lastReviewedDate)) / 86400000;
+  return days > RISK_REVIEW_OVERDUE_DAYS;
+}
+
+function renderRiskRegister(){
+  const catF = document.getElementById('risk-cat-f')?.value||'';
+  let list = DB.riskRegister||[];
+  if(catF) list = list.filter(r=>r.category===catF);
+
+  const all = DB.riskRegister||[];
+  const critical = all.filter(r=>riskSeverity(r.likelihood,r.impact)==='Critical'&&r.status!=='Closed').length;
+  const high = all.filter(r=>riskSeverity(r.likelihood,r.impact)==='High'&&r.status!=='Closed').length;
+  const overdueReview = all.filter(_riskReviewOverdue).length;
+
+  document.getElementById('risk-kpis').innerHTML = `
+    ${kpiBox('Total Risks', all.length, '', '')}
+    ${kpiBox('Critical', critical, '', critical>0?'var(--red)':'var(--green)')}
+    ${kpiBox('High', high, '', high>0?'var(--amber)':'')}
+    ${kpiBox('Reviews Overdue (>'+RISK_REVIEW_OVERDUE_DAYS+'d)', overdueReview, '', overdueReview>0?'var(--red)':'var(--green)')}
+  `;
+
+  const sevColor = {Critical:'tag-red',High:'tag-gold',Medium:'tag-blue',Low:'tag-green'};
+  const tb = document.getElementById('tb-risk');
+  tb.innerHTML = list.map(r=>{
+    const sev = riskSeverity(r.likelihood, r.impact);
+    const overdueFlag = _riskReviewOverdue(r);
+    return `<tr${overdueFlag?' style="background:var(--red-l)"':''}>
+      <td><span class="tag tag-dark">${escHtml(r.riskId)}</span></td>
+      <td class="small">${escHtml(r.department)}</td>
+      <td><strong>${escHtml(r.description)}</strong></td>
+      <td class="small">${escHtml(r.category)}</td>
+      <td><span class="tag ${sevColor[sev]}">${sev}</span></td>
+      <td class="small muted">${escHtml(r.owner)||'—'}</td>
+      <td>${fmtDate(r.lastReviewedDate)}${overdueFlag?'<div class="small" style="color:var(--red)">⚠ review overdue</div>':''}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-outline btn-xs" onclick="openRiskModal('${r.id}')">✏️ Open</button>
+        <button class="btn btn-outline btn-xs" onclick="reviewRiskNow('${r.id}')" title="Mark reviewed today">✓ Reviewed</button>
+        ${delBtn('deleteRisk',r.id)}
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" class="muted" style="text-align:center;padding:20px">No risks logged yet.</td></tr>';
+}
+
+function reviewRiskNow(id){
+  const r = (DB.riskRegister||[]).find(x=>x.id===id); if(!r) return;
+  r.lastReviewedDate = new Date().toISOString().slice(0,10);
+  saveDB();
+  renderRiskRegister();
+  toast('Marked reviewed ✓','ok');
+}
+
+function openRiskModal(id){
+  _currentModal='risk';
+  window._riskId = id||'';
+  const r = id ? (DB.riskRegister||[]).find(x=>x.id===id) : null;
+  document.getElementById('modal-title').textContent = r ? '✏️ '+r.riskId : '🆕 New Risk';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-row"><label class="lbl">Department</label>
+      <select class="inp" id="f-risk-dept">${RISK_DEPARTMENTS.map(d=>`<option ${r?.department===d?'selected':''}>${d}</option>`).join('')}</select></div>
+    <div class="form-row"><label class="lbl">Risk Description *</label><input class="inp" id="f-risk-desc" value="${escHtml(r?.description||'')}" placeholder="What could go wrong"></div>
+    <div class="form-row"><label class="lbl">Category</label>
+      <select class="inp" id="f-risk-cat">${RISK_CATEGORIES.map(c=>`<option ${r?.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+    <div class="form-row"><label class="lbl">Likelihood</label>
+      <select class="inp" id="f-risk-likelihood" onchange="_updateRiskSevPreview()">${['Low','Medium','High'].map(l=>`<option ${r?.likelihood===l?'selected':''}>${l}</option>`).join('')}</select></div>
+    <div class="form-row"><label class="lbl">Impact</label>
+      <select class="inp" id="f-risk-impact" onchange="_updateRiskSevPreview()">${['Low','Medium','High'].map(i=>`<option ${r?.impact===i?'selected':''}>${i}</option>`).join('')}</select></div>
+    <div class="form-row"><label class="lbl">Computed Severity</label><div id="risk-sev-preview" class="tag tag-blue" style="display:inline-block"></div></div>
+    <div class="form-row"><label class="lbl">Preventive Control</label><textarea class="inp" id="f-risk-preventive" rows="2" placeholder="What stops this from happening">${escHtml(r?.preventiveControl||'')}</textarea></div>
+    <div class="form-row"><label class="lbl">Corrective Action</label><textarea class="inp" id="f-risk-corrective" rows="2" placeholder="What to do if it happens">${escHtml(r?.correctiveAction||'')}</textarea></div>
+    <div class="form-row"><label class="lbl">Contingency Plan</label><textarea class="inp" id="f-risk-contingency" rows="2" placeholder="Fallback if the corrective action isn't enough">${escHtml(r?.contingencyPlan||'')}</textarea></div>
+    <div class="form-row"><label class="lbl">Owner</label><input class="inp" id="f-risk-owner" value="${escHtml(r?.owner||'')}" placeholder="Role/person accountable"></div>
+    <div class="form-row"><label class="lbl">Status</label>
+      <select class="inp" id="f-risk-status">${['Active','Monitoring','Closed'].map(s=>`<option ${r?.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+  `;
+  openOverlay();
+  _updateRiskSevPreview();
+}
+
+function _updateRiskSevPreview(){
+  const el = document.getElementById('risk-sev-preview'); if(!el) return;
+  const l = document.getElementById('f-risk-likelihood')?.value||'Low';
+  const i = document.getElementById('f-risk-impact')?.value||'Low';
+  const sev = riskSeverity(l,i);
+  const cls = {Critical:'tag-red',High:'tag-gold',Medium:'tag-blue',Low:'tag-green'}[sev];
+  el.className = 'tag '+cls;
+  el.textContent = sev;
+}
+
+function saveRisk(){
+  const id = window._riskId;
+  let r = id ? (DB.riskRegister||[]).find(x=>x.id===id) : null;
+  const desc = document.getElementById('f-risk-desc')?.value.trim();
+  if(!desc){ toast('Risk description is required','err'); return; }
+  if(!r){
+    if(!DB.riskRegister) DB.riskRegister=[];
+    const seq = DB.riskRegister.length+1;
+    r = { id:'RISK'+uid(), riskId:'RISK-'+String(seq).padStart(3,'0'), dateIdentified:new Date().toISOString().slice(0,10) };
+    DB.riskRegister.push(r);
+  }
+  r.department        = document.getElementById('f-risk-dept')?.value||'Company-Wide';
+  r.description       = desc;
+  r.category          = document.getElementById('f-risk-cat')?.value||'Operational';
+  r.likelihood        = document.getElementById('f-risk-likelihood')?.value||'Low';
+  r.impact            = document.getElementById('f-risk-impact')?.value||'Low';
+  r.preventiveControl = document.getElementById('f-risk-preventive')?.value||'';
+  r.correctiveAction  = document.getElementById('f-risk-corrective')?.value||'';
+  r.contingencyPlan   = document.getElementById('f-risk-contingency')?.value||'';
+  r.owner             = document.getElementById('f-risk-owner')?.value||'';
+  r.status            = document.getElementById('f-risk-status')?.value||'Active';
+  if(!r.lastReviewedDate) r.lastReviewedDate = new Date().toISOString().slice(0,10);
+  saveDB();
+  toast('Risk saved ✓','ok');
+  renderRiskRegister();
+}
+
+function deleteRisk(id){
+  if(!confirm('Delete this risk record?')) return;
+  const i = DB.riskRegister.findIndex(x=>x.id===id);
+  if(i>-1){ DB.riskRegister.splice(i,1); _trackDelete('riskRegister',id); saveDB(); renderRiskRegister(); toast('Risk deleted','ok'); }
+}
+
+// ═══════════════════════════════════════════
+//  KPI DASHBOARD — generic formula-driven engine (BOS Manual §6)
+//  Every KPI is computed from live DB data, never hand-entered. A KPI
+//  whose underlying data isn't tracked anywhere in the ERP yet renders
+//  honestly as "Not Yet Tracked" rather than showing a fabricated
+//  number — see each definition's `note` for what module/field would
+//  need to exist to light it up.
+// ═══════════════════════════════════════════
+
+// RAG convention per §6.1: green = at/beyond target, amber = within
+// 10%, red = more than 10% off. 'tolerance' KPIs (variance-style, where
+// the target IS the acceptable ± band) are judged on absolute distance
+// from zero instead of a directional comparison.
+function kpiRag(value, target, direction){
+  if(value==null || target==null) return 'grey';
+  if(direction==='tolerance'){
+    const absVal = Math.abs(value);
+    if(absVal<=target) return 'green';
+    if(absVal<=target*2) return 'amber';
+    return 'red';
+  }
+  if(direction==='lower'){
+    if(value<=target) return 'green';
+    if(value<=target*1.1) return 'amber';
+    return 'red';
+  }
+  // 'higher' — the default direction
+  if(value>=target) return 'green';
+  if(value>=target*0.9) return 'amber';
+  return 'red';
+}
+
+const KPI_REGISTRY = [
+  // ── Company-Level ──────────────────────────────────────────────
+  { id:'revenue-plan', dept:'Company-Level', name:'Revenue vs. Plan', unit:'%', direction:'higher', freq:'Monthly',
+    compute(){ const actual=DB.invoices.reduce((s,i)=>s+(+i.amount||0),0); const t=DB.kpiTargets?.annualRevenueTarget||0;
+      if(!t) return {value:null, extra:INR(actual)+' invoiced so far'};
+      return {value:Math.round(actual/t*100), extra:INR(actual)+' of '+INR(t)}; },
+    target:100, note:'Set an annual revenue target in the panel below to enable this KPI.' },
+  { id:'gross-margin', dept:'Company-Level', name:'Gross Margin %', unit:'%', direction:'higher', freq:'Monthly',
+    compute(){ const rev=DB.invoices.reduce((s,i)=>s+(+i.amount||0),0);
+      const cost=DB.purchases.reduce((s,p)=>s+(+p.amount||0),0)+DB.labour.reduce((s,l)=>s+(+l.amount||0),0)+DB.expenses.reduce((s,e)=>s+(+e.amount||0),0);
+      if(!rev) return {value:null};
+      return {value:Math.round((rev-cost)/rev*1000)/10, extra:INR(rev-cost)+' margin on '+INR(rev)}; },
+    target:20 },
+  { id:'ontime-handover', dept:'Company-Level', name:'On-Time Handover %', unit:'%', direction:'higher', freq:'Monthly',
+    compute(){ const done=DB.installations.filter(i=>i.status==='Completed'&&i.handoverDate);
+      if(!done.length) return {value:null};
+      const onTime=done.filter(i=>!i.dueDate||new Date(i.handoverDate)<=new Date(i.dueDate)).length;
+      return {value:Math.round(onTime/done.length*100), extra:onTime+' of '+done.length+' installations'}; },
+    target:90 },
+
+  // ── Sales & Business Development ───────────────────────────────
+  { id:'lead-to-order', dept:'Sales & Business Development', name:'Lead-to-Order %', unit:'%', direction:'higher', freq:'Monthly',
+    compute(){ if(!DB.leads.length) return {value:null};
+      const won=DB.leads.filter(l=>l.status==='Won').length;
+      return {value:Math.round(won/DB.leads.length*100), extra:won+' of '+DB.leads.length+' leads'}; },
+    target:25 },
+  { id:'sales-vs-target', dept:'Sales & Business Development', name:'Sales vs. Target', unit:'%', direction:'higher', freq:'Monthly',
+    compute(){ const now=new Date(); const won=DB.quotations.filter(q=>q.status==='Won'&&q.wonDate&&new Date(q.wonDate).getMonth()===now.getMonth()&&new Date(q.wonDate).getFullYear()===now.getFullYear());
+      const actual=won.reduce((s,q)=>s+quotTotalAmount(q),0); const t=DB.kpiTargets?.monthlySalesTarget||0;
+      if(!t) return {value:null, extra:INR(actual)+' won this month'};
+      return {value:Math.round(actual/t*100), extra:INR(actual)+' of '+INR(t)}; },
+    target:100, note:'Set a monthly sales target in the panel below to enable this KPI.' },
+  { id:'quotation-turnaround', dept:'Sales & Business Development', name:'Quotation Turnaround', unit:'days', direction:'lower', freq:'Weekly',
+    compute(){ return {value:null}; }, target:2,
+    note:'Needs a Cost-Sheet-approved timestamp on quotations, which isn\'t tracked yet — only a single date field exists today.' },
+
+  // ── Marketing ───────────────────────────────────────────────────
+  { id:'cost-per-lead', dept:'Marketing', name:'Cost per Qualified Lead', unit:'₹', direction:'lower', freq:'Monthly',
+    compute(){ return {value:null}; }, target:0,
+    note:'No campaign/marketing-spend tracking exists in the ERP yet.' },
+  { id:'lead-volume', dept:'Marketing', name:'Lead Volume vs. Target', unit:'%', direction:'higher', freq:'Monthly',
+    compute(){ const now=new Date(); const cnt=DB.leads.filter(l=>new Date(l.date).getMonth()===now.getMonth()&&new Date(l.date).getFullYear()===now.getFullYear()).length;
+      const t=DB.kpiTargets?.monthlyLeadTarget||0;
+      if(!t) return {value:null, extra:cnt+' leads this month'};
+      return {value:Math.round(cnt/t*100), extra:cnt+' of '+t+' target'}; },
+    target:100, note:'Set a monthly lead target in the panel below to enable this KPI.' },
+  { id:'referral-lead-pct', dept:'Marketing', name:'Referral-Sourced Lead %', unit:'%', direction:'higher', freq:'Monthly',
+    compute(){ if(!DB.leads.length) return {value:null};
+      const ref=DB.leads.filter(l=>l.referralPartnerId).length;
+      return {value:Math.round(ref/DB.leads.length*100), extra:ref+' of '+DB.leads.length+' leads'}; },
+    target:20 },
+
+  // ── Design ──────────────────────────────────────────────────────
+  { id:'design-turnaround', dept:'Design', name:'Design Approval Turnaround', unit:'days', direction:'lower', freq:'Monthly',
+    compute(){ return {value:null}; }, target:10,
+    note:'No design-approval timestamp is tracked yet — there is no dedicated Design module with stage dates.' },
+  { id:'design-change-rate', dept:'Design', name:'Post-Approval Change Rate', unit:'%', direction:'lower', freq:'Quarterly',
+    compute(){ return {value:null}; }, target:10,
+    note:'No design-change tracking exists yet.' },
+
+  // ── Estimation ──────────────────────────────────────────────────
+  { id:'estimate-variance', dept:'Estimation', name:'Estimate-to-Actual Cost Variance', unit:'%', direction:'tolerance', freq:'Per project close',
+    compute(){ return _projectCostVariance(); }, target:5 },
+  { id:'costing-turnaround', dept:'Estimation', name:'Costing Turnaround', unit:'days', direction:'lower', freq:'Monthly',
+    compute(){ return {value:null}; }, target:3,
+    note:'No BOQ-drawing-received vs. Cost-Sheet-approved timestamps are tracked yet.' },
+
+  // ── Project Management ──────────────────────────────────────────
+  { id:'ontime-delivery', dept:'Project Management', name:'On-Time Delivery %', unit:'%', direction:'higher', freq:'Monthly',
+    compute(){ const done=DB.installations.filter(i=>i.status==='Completed'&&i.handoverDate);
+      if(!done.length) return {value:null};
+      const onTime=done.filter(i=>!i.dueDate||new Date(i.handoverDate)<=new Date(i.dueDate)).length;
+      return {value:Math.round(onTime/done.length*100)}; },
+    target:90 },
+  { id:'budget-variance', dept:'Project Management', name:'Budget Variance', unit:'%', direction:'tolerance', freq:'Monthly',
+    compute(){ const projs=DB.projects.filter(p=>p.contractValue);
+      if(!projs.length) return {value:null};
+      const variances=projs.map(p=>{
+        const cost=DB.purchases.filter(x=>x.projectId===p.id).reduce((s,x)=>s+(+x.amount||0),0)
+          +DB.labour.filter(x=>x.projectId===p.id).reduce((s,x)=>s+(+x.amount||0),0)
+          +DB.expenses.filter(x=>x.projectId===p.id).reduce((s,x)=>s+(+x.amount||0),0);
+        return (cost-p.contractValue)/p.contractValue*100;
+      });
+      return {value:Math.round(variances.reduce((s,v)=>s+v,0)/variances.length*10)/10, extra:'Contract value used as budget proxy'}; },
+    target:5 },
+  { id:'client-satisfaction', dept:'Project Management', name:'Client Satisfaction Score', unit:'/10', direction:'higher', freq:'Per handover',
+    compute(){ return {value:null}; }, target:8,
+    note:'No client satisfaction/rating capture exists yet.' },
+
+  // ── Procurement ──────────────────────────────────────────────────
+  { id:'po-cycle-time', dept:'Procurement', name:'PO Cycle Time', unit:'days', direction:'lower', freq:'Weekly',
+    compute(){ return {value:null}; }, target:2,
+    note:'Purchase Requests aren\'t a separate tracked entity yet — only the PO itself has a single date field.' },
+  { id:'vendor-ontime', dept:'Procurement', name:'Vendor On-Time Delivery %', unit:'%', direction:'higher', freq:'Monthly',
+    compute(){ const received=DB.purchaseOrders.filter(p=>p.status==='Received'&&p.receivedDate&&p.expectedDate);
+      if(!received.length) return {value:null};
+      const onTime=received.filter(p=>new Date(p.receivedDate)<=new Date(p.expectedDate)).length;
+      return {value:Math.round(onTime/received.length*100), extra:onTime+' of '+received.length+' POs'}; },
+    target:90 },
+  { id:'price-variance', dept:'Procurement', name:'Price Variance vs. Estimate', unit:'%', direction:'tolerance', freq:'Monthly',
+    compute(){ return {value:null}; }, target:5,
+    note:'PO line items aren\'t linked back to their original BOQ/Cost-Sheet rate yet.' },
+
+  // ── Inventory ─────────────────────────────────────────────────────
+  { id:'stock-accuracy', dept:'Inventory', name:'Stock Accuracy %', unit:'%', direction:'higher', freq:'Monthly',
+    compute(){ return {value:null}; }, target:98,
+    note:'No physical cycle-count workflow exists yet to compare against system stock.' },
+  { id:'wastage-rate', dept:'Inventory', name:'Wastage/Damage Rate', unit:'%', direction:'lower', freq:'Monthly',
+    compute(){ return {value:null}; }, target:2,
+    note:'Damaged/wastage stock isn\'t tagged separately from normal returns yet.' },
+
+  // ── Factory Production ────────────────────────────────────────────
+  { id:'production-adherence', dept:'Factory Production', name:'Production Plan Adherence %', unit:'%', direction:'higher', freq:'Weekly',
+    compute(){ return {value:null}; }, target:90,
+    note:'Manufacturing jobs have no completed-date field — only a due date and a status, so on-schedule completion can\'t be measured yet.' },
+  { id:'material-wastage', dept:'Factory Production', name:'Material Wastage %', unit:'%', direction:'lower', freq:'Weekly',
+    compute(){ return {value:null}; }, target:5,
+    note:'No BOQ-budgeted-vs-actual-consumed material tracking exists yet.' },
+  { id:'rework-rate', dept:'Factory Production', name:'Rework Rate', unit:'%', direction:'lower', freq:'Weekly',
+    compute(){ if(!DB.qc.length) return {value:null};
+      const fail=DB.qc.filter(q=>q.result==='Fail').length;
+      return {value:Math.round(fail/DB.qc.length*100), extra:fail+' of '+DB.qc.length+' QC entries'}; },
+    target:5 },
+
+  // ── Quality Control ────────────────────────────────────────────────
+  { id:'first-pass-qc', dept:'Quality Control', name:'First-Pass QC Rate', unit:'%', direction:'higher', freq:'Weekly',
+    compute(){ const stats=DB.projects.map(p=>qcProjectStats(p.id)); const total=stats.reduce((s,x)=>s+x.total,0);
+      if(!total) return {value:null};
+      const pass=stats.reduce((s,x)=>s+x.pass,0);
+      return {value:Math.round(pass/total*100), extra:pass+' of '+total+' checklist items'}; },
+    target:95 },
+  { id:'defect-escape', dept:'Quality Control', name:'Defect Escape Rate', unit:'%', direction:'lower', freq:'Monthly',
+    compute(){ return {value:null}; }, target:2,
+    note:'No post-handover defect log distinct from CAPA exists yet.' },
+
+  // ── Site Installation ────────────────────────────────────────────────
+  { id:'install-schedule', dept:'Site Installation', name:'Installation Schedule Adherence %', unit:'%', direction:'higher', freq:'Monthly',
+    compute(){ const done=DB.installations.filter(i=>i.status==='Completed'&&i.handoverDate);
+      if(!done.length) return {value:null};
+      const onTime=done.filter(i=>!i.dueDate||new Date(i.handoverDate)<=new Date(i.dueDate)).length;
+      return {value:Math.round(onTime/done.length*100)}; },
+    target:90 },
+  { id:'snags-per-project', dept:'Site Installation', name:'Snags per Project', unit:'count', direction:'lower', freq:'Per project', compute(){ return {value:null}; }, target:8,
+    note:'No snag-list module exists in the ERP yet.' },
+  { id:'safety-incidents', dept:'Site Installation', name:'Safety Incident Rate (via CAPA)', unit:'count', direction:'lower', freq:'Monthly',
+    compute(){ const now=new Date(); const cnt=(DB.capaRegister||[]).filter(c=>c.triggerType==='Safety Incident'&&new Date(c.dateOpened).getMonth()===now.getMonth()&&new Date(c.dateOpened).getFullYear()===now.getFullYear()).length;
+      return {value:cnt, extra:'CAPAs opened with Safety Incident trigger this month'}; },
+    target:0 },
+
+  // ── Finance & Accounts ────────────────────────────────────────────
+  { id:'ar-ageing', dept:'Finance & Accounts', name:'AR Ageing (Overdue %)', unit:'%', direction:'lower', freq:'Weekly',
+    compute(){ if(!DB.invoices.length) return {value:null};
+      const now=new Date();
+      const overdue=DB.invoices.filter(i=>{ const bal=(+i.amount||0)-(+i.paid||0); return bal>0 && i.dueDate && new Date(i.dueDate)<now; });
+      const overdueVal=overdue.reduce((s,i)=>s+((+i.amount||0)-(+i.paid||0)),0);
+      const totalOutstanding=DB.invoices.reduce((s,i)=>s+Math.max(0,(+i.amount||0)-(+i.paid||0)),0);
+      if(!totalOutstanding) return {value:0};
+      return {value:Math.round(overdueVal/totalOutstanding*100), extra:INR(overdueVal)+' overdue of '+INR(totalOutstanding)}; },
+    target:10 },
+  { id:'job-costing-variance', dept:'Finance & Accounts', name:'Job Costing Variance', unit:'%', direction:'tolerance', freq:'Per project close',
+    compute(){ return _projectCostVariance(); }, target:5 },
+  { id:'cash-conversion', dept:'Finance & Accounts', name:'Cash Conversion Cycle', unit:'days', direction:'lower', freq:'Monthly',
+    compute(){ return {value:null}; }, target:45,
+    note:'Needs inventory turnover tracking, which doesn\'t exist yet.' },
+
+  // ── HR & Administration ────────────────────────────────────────────
+  { id:'time-to-hire', dept:'HR & Administration', name:'Time-to-Hire', unit:'days', direction:'lower', freq:'Monthly',
+    compute(){ const filled=(DB.recruitmentRequisitions||[]).filter(r=>r.status==='Filled'&&r.offerAcceptedDate&&r.dateRequested);
+      if(!filled.length) return {value:null};
+      const avg=Math.round(filled.reduce((s,r)=>s+((new Date(r.offerAcceptedDate)-new Date(r.dateRequested))/86400000),0)/filled.length);
+      return {value:avg, extra:filled.length+' filled requisition(s)'}; },
+    target:30 },
+  { id:'attrition-rate', dept:'HR & Administration', name:'Attrition Rate', unit:'%', direction:'lower', freq:'Monthly',
+    compute(){ const now=new Date(); const yearAgo=new Date(); yearAgo.setFullYear(now.getFullYear()-1);
+      const exited=DB.employees.filter(e=>e.exitDate&&new Date(e.exitDate)>=yearAgo).length;
+      const avgHeadcount=DB.employees.length;
+      if(!avgHeadcount) return {value:null};
+      return {value:Math.round(exited/avgHeadcount*1000)/10, extra:exited+' exited in the last 12 months of '+avgHeadcount+' total'}; },
+    target:15 },
+  { id:'training-hours', dept:'HR & Administration', name:'Training Hours per Employee', unit:'hrs', direction:'higher', freq:'Quarterly',
+    compute(){ const now=new Date(); const qStart=new Date(); qStart.setMonth(now.getMonth()-3);
+      const recent=(DB.trainingRecords||[]).filter(t=>t.date&&new Date(t.date)>=qStart);
+      const activeEmp=DB.employees.filter(e=>e.status==='Active').length;
+      if(!activeEmp) return {value:null};
+      const totalHours=recent.reduce((s,t)=>s+(+t.hours||0),0);
+      return {value:Math.round(totalHours/activeEmp*10)/10, extra:totalHours+'h delivered this quarter across '+activeEmp+' active employees'}; },
+    target:8 },
+
+  // ── Customer Service / After-Sales ────────────────────────────────
+  { id:'service-sla', dept:'Customer Service', name:'Service SLA Adherence %', unit:'%', direction:'higher', freq:'Weekly',
+    compute(){ return {value:null}; }, target:95,
+    note:'No service-request/ticketing module exists yet.' },
+  { id:'warranty-closure', dept:'Customer Service', name:'Warranty Closure Time', unit:'days', direction:'lower', freq:'Monthly',
+    compute(){ return {value:null}; }, target:7,
+    note:'No warranty-claim tracking module exists yet.' },
+  { id:'nps', dept:'Customer Service', name:'Net Promoter Score', unit:'score', direction:'higher', freq:'Quarterly',
+    compute(){ return {value:null}; }, target:50,
+    note:'No client feedback/survey capture exists yet.' },
+];
+
+// Shared by Estimation's "Estimate-to-Actual Cost Variance" and Finance's
+// "Job Costing Variance" — same real underlying calculation, presented
+// at two levels per the manual. Compares each Completed project's
+// contract value (the quoted/estimated figure) to its actual incurred
+// cost (purchases + labour + expenses).
+function _projectCostVariance(){
+  const closed = DB.projects.filter(p=>p.status==='Completed'&&p.contractValue);
+  if(!closed.length) return {value:null};
+  const variances = closed.map(p=>{
+    const cost=DB.purchases.filter(x=>x.projectId===p.id).reduce((s,x)=>s+(+x.amount||0),0)
+      +DB.labour.filter(x=>x.projectId===p.id).reduce((s,x)=>s+(+x.amount||0),0)
+      +DB.expenses.filter(x=>x.projectId===p.id).reduce((s,x)=>s+(+x.amount||0),0);
+    return (cost-p.contractValue)/p.contractValue*100;
+  });
+  return {value:Math.round(variances.reduce((s,v)=>s+v,0)/variances.length*10)/10, extra:closed.length+' completed project(s)'};
+}
+
+function renderKpiDashboard(){
+  document.getElementById('kpi-target-annual-rev').value = DB.kpiTargets?.annualRevenueTarget||'';
+  document.getElementById('kpi-target-monthly-sales').value = DB.kpiTargets?.monthlySalesTarget||'';
+  document.getElementById('kpi-target-monthly-leads').value = DB.kpiTargets?.monthlyLeadTarget||'';
+
+  const depts = [...new Set(KPI_REGISTRY.map(k=>k.dept))];
+  const ragBg = {green:'var(--green-l)',amber:'var(--amber-l)',red:'var(--red-l)',grey:'var(--bg2)'};
+  const ragText = {green:'var(--green)',amber:'var(--amber)',red:'var(--red)',grey:'var(--muted)'};
+
+  document.getElementById('kpi-dashboard-body').innerHTML = depts.map(dept=>{
+    const kpis = KPI_REGISTRY.filter(k=>k.dept===dept);
+    return `
+    <div style="margin-top:22px">
+      <div style="font-size:13px;font-weight:700;color:var(--dark);border-bottom:2px solid var(--gold-l);padding-bottom:6px;margin-bottom:10px">${escHtml(dept)}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+        ${kpis.map(k=>{
+          let result; try{ result = k.compute(); }catch(e){ result = {value:null}; }
+          const value = result?.value;
+          const trackable = value!=null;
+          const rag = trackable ? kpiRag(value, typeof k.target==='function'?k.target():k.target, k.direction) : 'grey';
+          return `<div class="card" style="padding:14px 16px;background:${ragBg[rag]};border:1px solid var(--border)">
+            <div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700">${escHtml(k.name)}</div>
+            <div style="font-size:22px;font-weight:800;color:${trackable?ragText[rag]:'var(--muted)'};margin-top:4px;font-family:'JetBrains Mono',monospace">
+              ${trackable ? (value+(k.unit==='%'||k.unit==='/10'||k.unit==='hrs'||k.unit==='days'||k.unit==='count'||k.unit==='score'?(k.unit==='%'?'%':' '+k.unit):k.unit)) : 'Not Yet Tracked'}
+            </div>
+            <div class="small muted" style="margin-top:4px">${trackable ? (result.extra||('Target: '+(k.direction==='tolerance'?'±':'')+k.target+(k.unit==='%'?'%':' '+k.unit))) : (k.note||'Formula is live — will populate once there\'s data to compute over')}</div>
+            <div class="small muted" style="margin-top:6px;text-transform:uppercase;letter-spacing:.04em;font-size:9.5px">${k.freq}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════
+//  HR & PEOPLE SYSTEMS (BOS Manual §11)
+//  Recruitment, Induction, Training, Appraisals, Leave, Recognition,
+//  and Disciplinary — sitting alongside the existing Employees/
+//  Attendance/Payroll/Advances modules. Uses the HR module's own
+//  lightweight showHRModal()/closeHRModal()/g() pattern throughout,
+//  not the main app's #modal/_currentModal system.
+// ═══════════════════════════════════════════
+
+// ── Recruitment Requisitions (§11.1) ──────────────────────────────
+const RECRUITMENT_STATUSES = ['Open','Interviewing','Offer Extended','Filled','Closed'];
+
+function renderRecruitment(){
+  const tb = document.getElementById('tb-recruitment'); if(!tb) return;
+  const all = DB.recruitmentRequisitions||[];
+  const open = all.filter(r=>r.status!=='Filled'&&r.status!=='Closed').length;
+  const filled = all.filter(r=>r.status==='Filled'&&r.offerAcceptedDate);
+  const avgDays = filled.length ? Math.round(filled.reduce((s,r)=>s+((new Date(r.offerAcceptedDate)-new Date(r.dateRequested))/86400000),0)/filled.length) : null;
+  document.getElementById('recruit-kpis').innerHTML = `
+    ${kpiBox('Open Requisitions', open, '', open>0?'var(--amber)':'var(--green)')}
+    ${kpiBox('Filled', filled.length, '', 'var(--green)')}
+    ${kpiBox('Avg. Time-to-Hire', avgDays!=null?avgDays+'d':'—', '', '')}
+  `;
+  tb.innerHTML = all.map(r=>`<tr>
+    <td><span class="tag tag-dark">${escHtml(r.reqId)}</span></td>
+    <td><strong>${escHtml(r.role)}</strong></td>
+    <td class="small">${escHtml(r.department)}</td>
+    <td class="small muted">${escHtml(r.requestedBy)}</td>
+    <td>${fmtDate(r.dateRequested)}</td>
+    <td><span class="tag ${({Open:'tag-red',Interviewing:'tag-gold','Offer Extended':'tag-blue',Filled:'tag-green',Closed:'tag-grey'})[r.status]||'tag-grey'}">${r.status}</span></td>
+    <td style="white-space:nowrap"><button class="btn btn-outline btn-xs" onclick="openRecruitmentModal('${r.id}')">✏️ Open</button>${delBtn('deleteRecruitment',r.id)}</td>
+  </tr>`).join('') || '<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No requisitions yet.</td></tr>';
+}
+
+function openRecruitmentModal(id){
+  const r = id ? (DB.recruitmentRequisitions||[]).find(x=>x.id===id) : null;
+  window._recruitId = id||'';
+  showHRModal(r?'✏️ '+r.reqId:'🆕 New Requisition', `
+    <div class="form-grid">
+      <label>Role *</label><input id="f-rec-role" class="inp" value="${escHtml(r?.role||'')}">
+      <label>Department</label>
+      <select id="f-rec-dept" class="inp">${RISK_DEPARTMENTS.filter(d=>d!=='Company-Wide').map(d=>`<option ${r?.department===d?'selected':''}>${d}</option>`).join('')}</select>
+      <label>Requested By</label><input id="f-rec-reqby" class="inp" value="${escHtml(r?.requestedBy||'')}">
+      <label>Date Requested</label><input id="f-rec-date" class="inp" type="date" value="${r?.dateRequested||new Date().toISOString().slice(0,10)}">
+      <label>Status</label><select id="f-rec-status" class="inp">${RECRUITMENT_STATUSES.map(s=>`<option ${r?.status===s?'selected':''}>${s}</option>`).join('')}</select>
+      <label>Offer Accepted Date</label><input id="f-rec-offerdate" class="inp" type="date" value="${r?.offerAcceptedDate||''}">
+      <label>Notes</label><input id="f-rec-notes" class="inp" value="${escHtml(r?.notes||'')}">
+    </div>`, 'saveRecruitment()');
+}
+
+function saveRecruitment(){
+  const id = window._recruitId;
+  let r = id ? (DB.recruitmentRequisitions||[]).find(x=>x.id===id) : null;
+  const role = g('f-rec-role').trim();
+  if(!role){ toast('Role is required','err'); return; }
+  const status = g('f-rec-status')||'Open';
+  if(status==='Filled' && !g('f-rec-offerdate')){ toast('Offer Accepted Date is required to mark a requisition Filled','err'); return; }
+  if(!r){
+    if(!DB.recruitmentRequisitions) DB.recruitmentRequisitions=[];
+    const seq = DB.recruitmentRequisitions.length+1;
+    r = {id:'REQ'+uid(), reqId:'REQ-'+String(seq).padStart(3,'0')};
+    DB.recruitmentRequisitions.push(r);
+  }
+  r.role = role;
+  r.department = g('f-rec-dept');
+  r.requestedBy = g('f-rec-reqby');
+  r.dateRequested = g('f-rec-date');
+  r.status = status;
+  r.offerAcceptedDate = g('f-rec-offerdate');
+  r.notes = g('f-rec-notes');
+  saveDB();
+  closeHRModal();
+  toast('Requisition saved ✓','ok');
+  renderRecruitment();
+}
+
+function deleteRecruitment(id){
+  if(!confirm('Delete this requisition?')) return;
+  DB.recruitmentRequisitions = DB.recruitmentRequisitions.filter(x=>x.id!==id);
+  _trackDelete('recruitmentRequisitions',id); saveDB(); renderRecruitment(); toast('Deleted','ok');
+}
+
+// ── Employee Induction (§11.2) ────────────────────────────────────
+const INDUCTION_TEMPLATE = [
+  'Company orientation — vision/mission/values, policies, safety',
+  'Department-specific SOP walkthrough & system access setup',
+  'Week 1 task shadowing with assigned buddy/mentor',
+  'Induction Checklist signed off — ready for unsupervised work'
+];
+
+function ensureInduction(employeeId){
+  if(!DB.inductions) DB.inductions=[];
+  if(DB.inductions.find(i=>i.employeeId===employeeId)) return;
+  DB.inductions.push({
+    id:'IND'+uid(), employeeId,
+    items: INDUCTION_TEMPLATE.map((text,idx)=>({id:'INDI'+uid()+idx, text, status:'Pending', doneDate:''})),
+    createdDate:new Date().toISOString().slice(0,10)
+  });
+}
+
+function renderInductions(){
+  const tb = document.getElementById('tb-induction'); if(!tb) return;
+  DB.employees.filter(e=>e.status==='Active').forEach(e=>ensureInduction(e.id));
+  saveDB();
+  const list = (DB.inductions||[]);
+  const complete = list.filter(i=>i.items.every(it=>it.status==='Done')).length;
+  document.getElementById('induct-kpis').innerHTML = `
+    ${kpiBox('Total Employees Tracked', list.length, '', '')}
+    ${kpiBox('Fully Inducted', complete, '', 'var(--green)')}
+    ${kpiBox('In Progress', list.length-complete, '', list.length-complete>0?'var(--amber)':'var(--green)')}
+  `;
+  tb.innerHTML = list.map(i=>{
+    const emp = DB.employees.find(e=>e.id===i.employeeId);
+    const done = i.items.filter(it=>it.status==='Done').length;
+    return `<tr>
+      <td><strong>${escHtml(emp?.name||'—')}</strong></td>
+      <td class="small muted">${escHtml(emp?.dept||'')}</td>
+      <td>${done}/${i.items.length} complete</td>
+      <td style="white-space:nowrap"><button class="btn btn-outline btn-xs" onclick="openInductionModal('${i.id}')">✏️ Open</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="4" class="muted" style="text-align:center;padding:20px">No active employees yet.</td></tr>';
+}
+
+function openInductionModal(id){
+  const i = (DB.inductions||[]).find(x=>x.id===id); if(!i) return;
+  const emp = DB.employees.find(e=>e.id===i.employeeId);
+  showHRModal('Induction — '+(emp?.name||''), `
+    ${i.items.map(it=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border2)">
+        <span style="font-size:12.5px">${escHtml(it.text)}</span>
+        <select class="inp inp-sm" style="width:110px" onchange="setInductionItemStatus('${id}','${it.id}',this.value)">
+          <option ${it.status==='Pending'?'selected':''}>Pending</option>
+          <option ${it.status==='Done'?'selected':''}>Done</option>
+        </select>
+      </div>`).join('')}
+  `, 'closeHRModal()');
+}
+
+function setInductionItemStatus(inductId, itemId, status){
+  const i = (DB.inductions||[]).find(x=>x.id===inductId); if(!i) return;
+  const it = i.items.find(x=>x.id===itemId); if(!it) return;
+  it.status = status;
+  it.doneDate = status==='Done' ? new Date().toISOString().slice(0,10) : '';
+  saveDB();
+  renderInductions();
+}
+
+// ── Training Records (§11.3) ──────────────────────────────────────
+const TRAINING_TYPES = ['Technical/Craft','Safety','Compliance','Leadership','Other'];
+
+function renderTraining(){
+  const tb = document.getElementById('tb-training'); if(!tb) return;
+  const list = DB.trainingRecords||[];
+  const totalHours = list.reduce((s,t)=>s+(+t.hours||0),0);
+  const activeEmpCount = DB.employees.filter(e=>e.status==='Active').length;
+  const avgPerEmp = activeEmpCount ? Math.round(totalHours/activeEmpCount*10)/10 : 0;
+  document.getElementById('training-kpis').innerHTML = `
+    ${kpiBox('Total Sessions', list.length, '', '')}
+    ${kpiBox('Total Hours Delivered', totalHours, '', '')}
+    ${kpiBox('Avg. Hours / Active Employee', avgPerEmp, '', '')}
+  `;
+  tb.innerHTML = list.map(t=>{
+    const emp = DB.employees.find(e=>e.id===t.employeeId);
+    return `<tr>
+      <td><strong>${escHtml(emp?.name||'—')}</strong></td>
+      <td class="small">${escHtml(t.topic)}</td>
+      <td class="small muted">${escHtml(t.type)}</td>
+      <td class="mono">${t.hours}h</td>
+      <td>${fmtDate(t.date)}</td>
+      <td style="white-space:nowrap">${delBtn('deleteTraining',t.id)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">No training records yet.</td></tr>';
+}
+
+function openTrainingModal(){
+  showHRModal('🆕 Log Training', `
+    <div class="form-grid">
+      <label>Employee *</label><select id="f-tr-emp" class="inp">${DB.employees.map(e=>`<option value="${e.id}">${escHtml(e.name)}</option>`).join('')}</select>
+      <label>Topic *</label><input id="f-tr-topic" class="inp">
+      <label>Type</label><select id="f-tr-type" class="inp">${TRAINING_TYPES.map(t=>`<option>${t}</option>`).join('')}</select>
+      <label>Hours</label><input id="f-tr-hours" class="inp" type="number" value="1">
+      <label>Date</label><input id="f-tr-date" class="inp" type="date" value="${new Date().toISOString().slice(0,10)}">
+      <label>Delivered By</label><input id="f-tr-by" class="inp">
+    </div>`, 'saveTraining()');
+}
+
+function saveTraining(){
+  const empId = g('f-tr-emp'); const topic = g('f-tr-topic').trim();
+  if(!empId||!topic){ toast('Employee and topic are required','err'); return; }
+  if(!DB.trainingRecords) DB.trainingRecords=[];
+  DB.trainingRecords.push({id:'TR'+uid(), employeeId:empId, topic, type:g('f-tr-type'), hours:+g('f-tr-hours')||0, date:g('f-tr-date'), deliveredBy:g('f-tr-by')});
+  saveDB(); closeHRModal(); toast('Training logged ✓','ok'); renderTraining();
+}
+
+function deleteTraining(id){
+  if(!confirm('Delete this training record?')) return;
+  DB.trainingRecords = DB.trainingRecords.filter(x=>x.id!==id);
+  _trackDelete('trainingRecords',id); saveDB(); renderTraining(); toast('Deleted','ok');
+}
+
+// ── Performance Appraisals (§11.4) ────────────────────────────────
+function renderAppraisals(){
+  const tb = document.getElementById('tb-appraisals'); if(!tb) return;
+  const list = DB.appraisals||[];
+  const open = list.filter(a=>a.status==='Open').length;
+  const overdue = list.filter(a=>a.status==='Open'&&a.dueDate&&new Date(a.dueDate)<new Date()).length;
+  document.getElementById('appraisal-kpis').innerHTML = `
+    ${kpiBox('Total Appraisals', list.length, '', '')}
+    ${kpiBox('Open', open, '', open>0?'var(--amber)':'var(--green)')}
+    ${kpiBox('Overdue', overdue, '', overdue>0?'var(--red)':'var(--green)')}
+  `;
+  tb.innerHTML = list.map(a=>{
+    const emp = DB.employees.find(e=>e.id===a.employeeId);
+    return `<tr>
+      <td><strong>${escHtml(emp?.name||'—')}</strong></td>
+      <td class="small">${escHtml(a.cycle)}</td>
+      <td>${a.rating?a.rating+'/5':'—'}</td>
+      <td><span class="tag ${a.status==='Completed'?'tag-green':'tag-gold'}">${a.status}</span></td>
+      <td>${fmtDate(a.dueDate)}</td>
+      <td style="white-space:nowrap"><button class="btn btn-outline btn-xs" onclick="openAppraisalModal('${a.id}')">✏️ Open</button>${delBtn('deleteAppraisal',a.id)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">No appraisals yet.</td></tr>';
+}
+
+function openAppraisalModal(id){
+  const a = id ? (DB.appraisals||[]).find(x=>x.id===id) : null;
+  window._apprId = id||'';
+  showHRModal(a?'✏️ Appraisal':'🆕 New Appraisal', `
+    <div class="form-grid">
+      <label>Employee *</label><select id="f-ap-emp" class="inp" ${a?'disabled':''}>${DB.employees.map(e=>`<option value="${e.id}" ${a?.employeeId===e.id?'selected':''}>${escHtml(e.name)}</option>`).join('')}</select>
+      <label>Cycle</label><input id="f-ap-cycle" class="inp" value="${escHtml(a?.cycle||'')}" placeholder="e.g. 2026-Annual">
+      <label>Rating (1-5)</label><input id="f-ap-rating" class="inp" type="number" min="1" max="5" value="${a?.rating||''}">
+      <label>Strengths</label><input id="f-ap-strengths" class="inp" value="${escHtml(a?.strengths||'')}">
+      <label>Development Areas</label><input id="f-ap-dev" class="inp" value="${escHtml(a?.developmentAreas||'')}">
+      <label>Due Date</label><input id="f-ap-due" class="inp" type="date" value="${a?.dueDate||''}">
+      <label>Status</label><select id="f-ap-status" class="inp"><option ${a?.status==='Open'?'selected':''}>Open</option><option ${a?.status==='Completed'?'selected':''}>Completed</option></select>
+    </div>`, 'saveAppraisal()');
+}
+
+function saveAppraisal(){
+  const id = window._apprId;
+  let a = id ? (DB.appraisals||[]).find(x=>x.id===id) : null;
+  const empId = g('f-ap-emp');
+  if(!empId){ toast('Employee is required','err'); return; }
+  if(!a){
+    if(!DB.appraisals) DB.appraisals=[];
+    a = {id:'APR'+uid(), employeeId:empId};
+    DB.appraisals.push(a);
+  }
+  a.cycle = g('f-ap-cycle');
+  a.rating = +g('f-ap-rating')||null;
+  a.strengths = g('f-ap-strengths');
+  a.developmentAreas = g('f-ap-dev');
+  a.dueDate = g('f-ap-due');
+  const newStatus = g('f-ap-status')||'Open';
+  if(newStatus==='Completed' && a.status!=='Completed') a.completedDate = new Date().toISOString().slice(0,10);
+  a.status = newStatus;
+  saveDB(); closeHRModal(); toast('Appraisal saved ✓','ok'); renderAppraisals();
+}
+
+function deleteAppraisal(id){
+  if(!confirm('Delete this appraisal?')) return;
+  DB.appraisals = DB.appraisals.filter(x=>x.id!==id);
+  _trackDelete('appraisals',id); saveDB(); renderAppraisals(); toast('Deleted','ok');
+}
+
+// ── Leave Requests (§11.5) ─────────────────────────────────────────
+const LEAVE_TYPES = ['Annual','Sick','Emergency','Other'];
+
+function renderLeaveRequests(){
+  const tb = document.getElementById('tb-leave'); if(!tb) return;
+  const list = DB.leaveRequests||[];
+  const pending = list.filter(l=>l.status==='Pending').length;
+  const now = new Date();
+  const approvedThisMonth = list.filter(l=>l.status==='Approved'&&l.approvedDate&&new Date(l.approvedDate).getMonth()===now.getMonth()&&new Date(l.approvedDate).getFullYear()===now.getFullYear()).length;
+  document.getElementById('leave-kpis').innerHTML = `
+    ${kpiBox('Pending', pending, '', pending>0?'var(--amber)':'var(--green)')}
+    ${kpiBox('Approved This Month', approvedThisMonth, '', 'var(--green)')}
+    ${kpiBox('Total Requests', list.length, '', '')}
+  `;
+  tb.innerHTML = list.map(l=>{
+    const emp = DB.employees.find(e=>e.id===l.employeeId);
+    return `<tr>
+      <td><strong>${escHtml(emp?.name||'—')}</strong></td>
+      <td class="small">${escHtml(l.leaveType)}</td>
+      <td class="small">${fmtDate(l.fromDate)} → ${fmtDate(l.toDate)}</td>
+      <td class="small muted">${escHtml(l.reason)||'—'}</td>
+      <td><span class="tag ${({Pending:'tag-gold',Approved:'tag-green',Declined:'tag-red'})[l.status]}">${l.status}</span></td>
+      <td style="white-space:nowrap">
+        ${l.status==='Pending'?`<button class="btn btn-outline btn-xs" onclick="approveLeave('${l.id}')">✓ Approve</button><button class="btn btn-outline btn-xs" onclick="declineLeave('${l.id}')">✕ Decline</button>`:`<span class="small muted">by ${escHtml(l.approvedBy||'')}</span>`}
+        ${delBtn('deleteLeave',l.id)}
+      </td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">No leave requests yet.</td></tr>';
+}
+
+function openLeaveModal(){
+  showHRModal('🆕 New Leave Request', `
+    <div class="form-grid">
+      <label>Employee *</label><select id="f-lv-emp" class="inp">${DB.employees.map(e=>`<option value="${e.id}">${escHtml(e.name)}</option>`).join('')}</select>
+      <label>Leave Type</label><select id="f-lv-type" class="inp">${LEAVE_TYPES.map(t=>`<option>${t}</option>`).join('')}</select>
+      <label>From</label><input id="f-lv-from" class="inp" type="date">
+      <label>To</label><input id="f-lv-to" class="inp" type="date">
+      <label>Reason</label><input id="f-lv-reason" class="inp">
+    </div>`, 'saveLeaveRequest()');
+}
+
+function saveLeaveRequest(){
+  const empId = g('f-lv-emp'); const from = g('f-lv-from'); const to = g('f-lv-to');
+  if(!empId||!from||!to){ toast('Employee, from and to dates are required','err'); return; }
+  if(!DB.leaveRequests) DB.leaveRequests=[];
+  const days = Math.max(1, Math.round((new Date(to)-new Date(from))/86400000)+1);
+  DB.leaveRequests.push({id:'LV'+uid(), employeeId:empId, leaveType:g('f-lv-type'), fromDate:from, toDate:to, days, reason:g('f-lv-reason'), status:'Pending'});
+  saveDB(); closeHRModal(); toast('Leave request submitted ✓','ok'); renderLeaveRequests();
+}
+
+function approveLeave(id){
+  const l = (DB.leaveRequests||[]).find(x=>x.id===id); if(!l) return;
+  l.status='Approved'; l.approvedBy=_currentUser?.name||''; l.approvedDate=new Date().toISOString().slice(0,10);
+  saveDB(); renderLeaveRequests(); toast('Leave approved ✓','ok');
+}
+function declineLeave(id){
+  const l = (DB.leaveRequests||[]).find(x=>x.id===id); if(!l) return;
+  l.status='Declined'; l.approvedBy=_currentUser?.name||''; l.approvedDate=new Date().toISOString().slice(0,10);
+  saveDB(); renderLeaveRequests(); toast('Leave declined','ok');
+}
+function deleteLeave(id){
+  if(!confirm('Delete this leave request?')) return;
+  DB.leaveRequests = DB.leaveRequests.filter(x=>x.id!==id);
+  _trackDelete('leaveRequests',id); saveDB(); renderLeaveRequests(); toast('Deleted','ok');
+}
+
+// ── Rewards & Recognition (§11.7) ──────────────────────────────────
+const RECOGNITION_TYPES = ['Craftsmanship Award','Safety Milestone','Referral Bonus','Quality Milestone','Other'];
+
+function renderRecognitions(){
+  const tb = document.getElementById('tb-recognition'); if(!tb) return;
+  const list = DB.recognitions||[];
+  document.getElementById('recog-kpis').innerHTML = `${kpiBox('Total Recognitions', list.length, '', 'var(--green)')}`;
+  tb.innerHTML = list.map(r=>{
+    const emp = DB.employees.find(e=>e.id===r.employeeId);
+    return `<tr>
+      <td><strong>${escHtml(emp?.name||'—')}</strong></td>
+      <td class="small">${escHtml(r.type)}</td>
+      <td class="small muted">${escHtml(r.reason)}</td>
+      <td>${fmtDate(r.dateAwarded)}</td>
+      <td class="small muted">${escHtml(r.awardedBy)}</td>
+      <td>${delBtn('deleteRecognition',r.id)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">No recognitions logged yet.</td></tr>';
+}
+
+function openRecognitionModal(){
+  showHRModal('🆕 Log Recognition', `
+    <div class="form-grid">
+      <label>Employee *</label><select id="f-rg-emp" class="inp">${DB.employees.map(e=>`<option value="${e.id}">${escHtml(e.name)}</option>`).join('')}</select>
+      <label>Type</label><select id="f-rg-type" class="inp">${RECOGNITION_TYPES.map(t=>`<option>${t}</option>`).join('')}</select>
+      <label>Reason</label><input id="f-rg-reason" class="inp" placeholder="Specific achievement or judgment call">
+      <label>Date Awarded</label><input id="f-rg-date" class="inp" type="date" value="${new Date().toISOString().slice(0,10)}">
+      <label>Awarded By</label><input id="f-rg-by" class="inp">
+    </div>`, 'saveRecognition()');
+}
+
+function saveRecognition(){
+  const empId = g('f-rg-emp'); const reason = g('f-rg-reason').trim();
+  if(!empId||!reason){ toast('Employee and reason are required','err'); return; }
+  if(!DB.recognitions) DB.recognitions=[];
+  DB.recognitions.push({id:'RG'+uid(), employeeId:empId, type:g('f-rg-type'), reason, dateAwarded:g('f-rg-date'), awardedBy:g('f-rg-by')});
+  saveDB(); closeHRModal(); toast('Recognition logged ✓','ok'); renderRecognitions();
+}
+
+function deleteRecognition(id){
+  if(!confirm('Delete this recognition entry?')) return;
+  DB.recognitions = DB.recognitions.filter(x=>x.id!==id);
+  _trackDelete('recognitions',id); saveDB(); renderRecognitions(); toast('Deleted','ok');
+}
+
+// ── Disciplinary Process (§11.8) ───────────────────────────────────
+// Enforced progressive ladder: Verbal → Written → Final Written →
+// Termination. Gross misconduct bypasses straight to Termination.
+// Otherwise the next stage offered is always exactly one step past
+// whatever this employee's highest prior stage already is.
+const DISCIPLINE_LADDER = ['Verbal Warning','Written Warning','Final Written Warning','Termination'];
+
+function _employeeDisciplineHistory(employeeId){
+  return (DB.disciplinaryActions||[]).filter(d=>d.employeeId===employeeId);
+}
+function _highestDisciplineStage(employeeId){
+  const hist = _employeeDisciplineHistory(employeeId);
+  if(!hist.length) return -1;
+  return Math.max(...hist.map(d=>DISCIPLINE_LADDER.indexOf(d.stage)));
+}
+
+function renderDisciplinary(){
+  const tb = document.getElementById('tb-discipline'); if(!tb) return;
+  const list = DB.disciplinaryActions||[];
+  const open = list.filter(d=>d.status!=='Closed').length;
+  document.getElementById('discipline-kpis').innerHTML = `
+    ${kpiBox('Total Actions', list.length, '', '')}
+    ${kpiBox('Open', open, '', open>0?'var(--amber)':'var(--green)')}
+    ${kpiBox('Terminations', list.filter(d=>d.stage==='Termination').length, '', list.some(d=>d.stage==='Termination')?'var(--red)':'')}
+  `;
+  tb.innerHTML = list.map(d=>{
+    const emp = DB.employees.find(e=>e.id===d.employeeId);
+    return `<tr${d.grossMisconduct?' style="background:var(--red-l)"':''}>
+      <td><strong>${escHtml(emp?.name||'—')}</strong></td>
+      <td><span class="tag ${d.stage==='Termination'?'tag-red':d.stage==='Final Written Warning'?'tag-gold':'tag-blue'}">${d.stage}</span>${d.grossMisconduct?'<div class="small" style="color:var(--red)">⚠ gross misconduct</div>':''}</td>
+      <td class="small muted">${escHtml(d.issue)}</td>
+      <td>${fmtDate(d.dateIssued)}</td>
+      <td class="small muted">${escHtml(d.issuedBy)}</td>
+      <td><span class="tag ${d.status==='Closed'?'tag-green':'tag-gold'}">${d.status}</span></td>
+      <td style="white-space:nowrap">${delBtn('deleteDiscipline',d.id)}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No disciplinary actions logged.</td></tr>';
+}
+
+function openDisciplinaryModal(){
+  showHRModal('🆕 Log Disciplinary Action', `
+    <div class="form-grid">
+      <label>Employee *</label><select id="f-di-emp" class="inp" onchange="_updateDisciplineStageOptions()">${DB.employees.map(e=>`<option value="${e.id}">${escHtml(e.name)}</option>`).join('')}</select>
+      <label>Gross Misconduct?</label><input type="checkbox" id="f-di-gross" onchange="_updateDisciplineStageOptions()" style="justify-self:start">
+      <label>Stage</label><select id="f-di-stage" class="inp"></select>
+      <label>Issue *</label><input id="f-di-issue" class="inp" placeholder="Specific facts: date, what happened, policy breached">
+      <label>Date Issued</label><input id="f-di-date" class="inp" type="date" value="${new Date().toISOString().slice(0,10)}">
+      <label>Issued By</label><input id="f-di-by" class="inp">
+      <label>Employee Response</label><input id="f-di-response" class="inp">
+      <label>Follow-up Date</label><input id="f-di-followup" class="inp" type="date">
+    </div>`, 'saveDisciplinary()');
+  _updateDisciplineStageOptions();
+}
+
+function _updateDisciplineStageOptions(){
+  const sel = document.getElementById('f-di-stage'); if(!sel) return;
+  const gross = document.getElementById('f-di-gross')?.checked;
+  const empId = document.getElementById('f-di-emp')?.value;
+  if(gross){
+    sel.innerHTML = `<option>Termination</option>`;
+    return;
+  }
+  const highest = _highestDisciplineStage(empId);
+  const nextIdx = Math.min(highest+1, DISCIPLINE_LADDER.length-1);
+  sel.innerHTML = DISCIPLINE_LADDER.map((s,idx)=>`<option value="${s}" ${idx===nextIdx?'selected':''} ${idx>nextIdx?'disabled':''}>${s}${idx>nextIdx?' (complete prior stage first)':''}</option>`).join('');
+}
+
+function saveDisciplinary(){
+  const empId = g('f-di-emp'); const issue = g('f-di-issue').trim();
+  if(!empId||!issue){ toast('Employee and issue description are required','err'); return; }
+  const gross = document.getElementById('f-di-gross')?.checked;
+  const stage = g('f-di-stage');
+  if(!DISCIPLINE_LADDER.includes(stage)){ toast('Select a valid stage before saving','err'); return; }
+  if(!gross){
+    const highest = _highestDisciplineStage(empId);
+    const requestedIdx = DISCIPLINE_LADDER.indexOf(stage);
+    if(requestedIdx > highest+1){
+      toast('This employee must complete "'+DISCIPLINE_LADDER[highest+1]+'" before moving to "'+stage+'"','err');
+      return;
+    }
+  }
+  if(!DB.disciplinaryActions) DB.disciplinaryActions=[];
+  DB.disciplinaryActions.push({
+    id:'DA'+uid(), employeeId:empId, stage, grossMisconduct:!!gross, issue,
+    dateIssued:g('f-di-date'), issuedBy:g('f-di-by'), employeeResponse:g('f-di-response'),
+    followUpDate:g('f-di-followup'), status:'Open'
+  });
+  saveDB(); closeHRModal(); toast('Disciplinary action logged ✓','ok'); renderDisciplinary();
+}
+
+function deleteDiscipline(id){
+  if(!confirm('Delete this disciplinary record?')) return;
+  DB.disciplinaryActions = DB.disciplinaryActions.filter(x=>x.id!==id);
+  _trackDelete('disciplinaryActions',id); saveDB(); renderDisciplinary(); toast('Deleted','ok');
+}
+
+function saveKpiTargets(){
+  DB.kpiTargets = {
+    annualRevenueTarget: +document.getElementById('kpi-target-annual-rev')?.value||0,
+    monthlySalesTarget: +document.getElementById('kpi-target-monthly-sales')?.value||0,
+    monthlyLeadTarget: +document.getElementById('kpi-target-monthly-leads')?.value||0,
+  };
+  saveDB();
+  toast('KPI targets saved ✓','ok');
+  renderKpiDashboard();
+}
+
 // INVOICES
 function renderInvoices(){
   const tb=document.getElementById('tb-invoices');
@@ -3972,7 +5560,7 @@ function renderReceipts(){
 function deleteReceipt(id){
   if(!confirm('Delete this receipt?')) return;
   const i=DB.receipts.findIndex(x=>x.id===id);
-  if(i>-1){DB.receipts.splice(i,1);renderReceipts();toast('Receipt deleted','ok');}
+  if(i>-1){DB.receipts.splice(i,1);_trackDelete('receipts',id);saveDB();renderReceipts();toast('Receipt deleted','ok');}
 }
 function editReceipt(id){
   const r=DB.receipts.find(x=>x.id===id);
@@ -4731,8 +6319,30 @@ function renderLeads(){
     <td>${statusTag(l.status)}</td>
     <td><span class="tag tag-grey">${l.source||'—'}</span></td>
     <td class="mono">${INR(l.value)}</td>
-    <td>${editBtn('editLead',l.id)}${historyBtn('lead',l.id)}</td>
+    <td style="white-space:nowrap">
+      ${['New','Contacted','Site Visit'].includes(l.status)?`<button class="btn btn-gold btn-xs" onclick="requestQuotationForLead('${l.id}')">📝 Request Quote</button>`:''}
+      ${editBtn('editLead',l.id)}${historyBtn('lead',l.id)}
+    </td>
   </tr>`).join('');
+}
+
+// Explicit, visible next step from a lead into the estimation pipeline —
+// replaces relying on someone noticing "Quotation Requested" buried in the
+// generic status dropdown. Delegates the actual Estimation Request
+// creation to the same maybeCreateEstimationRequest() saveLead() already
+// uses, so there is exactly one place that logic lives.
+function requestQuotationForLead(id){
+  const lead = DB.leads.find(x=>x.id===id);
+  if(!lead) return;
+  if(['Quotation Requested','Quoted','Won','Lost'].includes(lead.status)){
+    toast('This lead has already moved past that stage','err');
+    return;
+  }
+  lead.status = 'Quotation Requested';
+  maybeCreateEstimationRequest(lead);
+  saveDB();
+  toast(`Estimation request raised for ${lead.name} ✓`,'ok');
+  renderLeads();
 }
 
 // ESTIMATOR DASHBOARD
@@ -4765,8 +6375,115 @@ function renderEstimatorDash(){
     <td class="muted">${escHtml(er.requestedBy||'—')}</td>
     <td class="mono">${INR(er.estimatedValue)}</td>
     <td>${er.costing?`<span class="tag tag-gold">Draft — ${INR(er.costing.grandTotal)}</span>`:`<span class="tag tag-grey">Not started</span>`}</td>
-    <td><button class="btn btn-gold btn-xs" onclick="openEstCosting('${er.id}')">${er.costing?'Edit':'Prepare'} Costing</button>${historyBtn('estimationRequest',er.id)}</td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-gold btn-xs" onclick="openEstCosting('${er.id}')">${er.costing?'Edit':'Prepare'} Costing</button>
+      ${er.costing?`<button class="btn btn-outline btn-xs" onclick="convertEstimationToQuotation('${er.id}')">${er.quotationId?'🔄 Sync & View':'➡ Convert to'} Quotation</button>`:''}
+      ${historyBtn('estimationRequest',er.id)}
+    </td>
   </tr>`).join('') || `<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">Nothing claimed yet</td></tr>`;
+}
+
+// The missing link the CEO flagged: once an estimator has priced a
+// request, this carries every costed line — parametric costed items,
+// flat materials, flat labour, and expenses — straight into a real
+// Quotation instead of making Sales re-type everything by hand. Idempotent:
+// re-opens the same quotation if already converted once.
+function convertEstimationToQuotation(erId){
+  const er = DB.estimationRequests.find(x=>x.id===erId);
+  if(!er) return;
+  if(!er.costing){ toast('Save a costing before converting to a quotation','err'); return; }
+
+  const items = [];
+
+  (er.costing.costedItems||[]).forEach(ci=>{
+    const qty = ci.qty||1;
+    const sellingTotal = ci.result?.sellingPrice||0;
+    items.push({
+      id:'IT'+uid(), desc:ci.name, unit:'Nos', qty,
+      rate: qty ? Math.round((sellingTotal/qty)*100)/100 : sellingTotal,
+      amount: sellingTotal, isCosted:true, costingResult:ci.result, templateName:ci.templateName
+    });
+  });
+  (er.costing.materials||[]).forEach(m=>{
+    if(!m.amount) return;
+    items.push({id:'IT'+uid(), desc:'Material: '+m.itemName, unit:m.unit||'Nos', qty:m.netQty||m.qty||1, rate:m.rate||0, amount:m.amount});
+  });
+  (er.costing.labour||[]).forEach(l=>{
+    if(!l.amount) return;
+    items.push({id:'IT'+uid(), desc:'Labour: '+l.workCenter+(l.type?' ('+l.type+')':''), unit:'Lot', qty:1, rate:l.amount, amount:l.amount});
+  });
+  const expLabels = {transport:'Transport', install:'Installation', finish:'Finishing', other:'Other Expenses'};
+  Object.entries(er.costing.expenses||{}).forEach(([k,v])=>{
+    if(!v) return;
+    items.push({id:'IT'+uid(), desc:expLabels[k]||k, unit:'Lot', qty:1, rate:v, amount:v});
+  });
+
+  // Already converted once — re-sync the auto-generated "Estimated Items"
+  // section with the latest costing instead of leaving the quotation frozen
+  // at whatever it looked like on the first conversion. Otherwise any
+  // costed line added after the first "Convert to Quotation" click never
+  // reaches the quotation (the bug: estimator adds one item, converts,
+  // adds more later, and they silently never show up on the quote).
+  if(er.quotationId){
+    const q = DB.quotations.find(x=>x.id===er.quotationId);
+    if(q){
+      let room = q.rooms.find(r=>r.id===er.estimatedItemsRoomId) || q.rooms.find(r=>r.name==='Estimated Items');
+      if(room) room.items = items;
+      else { room = {id:'RM'+uid(), name:'Estimated Items', items}; q.rooms.push(room); }
+      er.estimatedItemsRoomId = room.id;
+      logActivity('estimationRequest', er.id, 'Quotation Re-synced', `Quotation ${q.refNo} updated from costing (${INR(er.costing.grandTotal)})`);
+      saveDB();
+      toast(`Quotation ${q.refNo} synced with latest costing ✓`,'ok');
+      openBOQ(q.id);
+      return;
+    }
+    er.quotationId=''; // stale reference (quotation was deleted) — fall through and recreate
+  }
+
+  const seq = DB.quotations.length + 1;
+  const refNo = 'STR/Q/' + String(seq).padStart(3,'0');
+  const roomId = 'RM'+uid();
+  const newQ = {
+    id:'Q'+uid(), refNo, revisionNo:1, date:new Date().toISOString().slice(0,10),
+    customer:er.customerName||'', site:er.location||'', designer:'', validity:'30 days', status:'Draft',
+    payment:'', warranty:'', includes:'', excludes:'', notes:'',
+    discountType:'pct', discountValue:0, gstPct:18,
+    followUps:[], lossReason:'', lossRemarks:'', wonDate:null, lostDate:null,
+    leadId: er.leadId||'', estimationRequestId: er.id,
+    rooms:[ { id:roomId, name:'Estimated Items', items } ]
+  };
+  DB.quotations.push(newQ);
+  er.quotationId = newQ.id;
+  er.estimatedItemsRoomId = roomId;
+  logActivity('estimationRequest', er.id, 'Converted to Quotation', `Quotation ${refNo} created from costing (${INR(er.costing.grandTotal)})`);
+  saveDB();
+  toast(`Quotation ${refNo} created from costing ✓`,'ok');
+  openBOQ(newQ.id);
+}
+
+// Lets an Estimator start an estimate directly, without a Lead first moving
+// to "Quotation Requested" (the only other way an Estimation Request is
+// created — see maybeCreateEstimationRequest). Goes straight into "My
+// Assigned Requests", already claimed by whoever opened this form.
+function openNewEstimationRequest(){
+  openModal('newestreq');
+}
+function saveNewEstimationRequest(){
+  const name=g('f-ner-name'); if(!name){toast('Customer name required','err');return;}
+  const er={
+    id:'ER'+uid(), leadId:'', customerName:name, phone:g('f-ner-phone')||'',
+    location:g('f-ner-loc')||'', estimatedValue:+g('f-ner-val')||0,
+    requestedBy:(typeof _currentUser!=='undefined'&&_currentUser)?_currentUser.name:'System',
+    requestedDate:new Date().toISOString().slice(0,10),
+    status:'Estimation In Progress',
+    assignedEstimator:(typeof _currentUser!=='undefined'&&_currentUser)?_currentUser.name:''
+  };
+  DB.estimationRequests.push(er);
+  logActivity('estimationRequest', er.id, 'Created', `Self-initiated by ${er.assignedEstimator} (no Lead)`);
+  saveDB();
+  closeModal();
+  toast('Estimation request created ✓','ok');
+  renderEstimatorDash();
 }
 
 function claimEstimationRequest(id){
@@ -5023,6 +6740,8 @@ function _ciResetForm(){
   const matOpts=DB.costingMaterials.map(m=>`<option value="${m.id}">${escHtml(m.name)} (${m.category})</option>`).join('');
   document.getElementById('ci-template').innerHTML='<option value="">— Select —</option>'+tplOpts;
   document.getElementById('ci-material').innerHTML='<option value="">— Select —</option>'+matOpts;
+  const defaultTpl=DB.costingTemplates.find(t=>t.isDefault);
+  if(defaultTpl) document.getElementById('ci-template').value=defaultTpl.id;
   document.getElementById('ci-name').value='';
   document.getElementById('ci-qty').value='1';
   document.getElementById('ci-length').value='';
@@ -5459,7 +7178,7 @@ const MODAL_FORMS={
       <div class="fg"><label class="fl">Status</label><select class="inp" id="f-ld-status"><option>New</option><option>Contacted</option><option>Site Visit</option><option>Quotation Requested</option><option>Quoted</option><option>Won</option><option>Lost</option></select></div>
     </div>
     <div class="f2">
-      <div class="fg"><label class="fl">Client Name</label><input class="inp" id="f-ld-name" placeholder="Name"></div>
+      <div class="fg"><label class="fl">Client Name</label><input class="inp" id="f-ld-name" list="dl-customers" placeholder="Name — pick existing or type new"></div>
       <div class="fg"><label class="fl">Phone</label><input class="inp" id="f-ld-phone" placeholder="+91 …"></div>
     </div>
     <div class="f2">
@@ -5471,6 +7190,15 @@ const MODAL_FORMS={
     </div>
     <div class="fg" id="f-ld-referral-wrap" style="display:none"><label class="fl">Referred By</label><select class="inp" id="f-ld-referral"></select></div>
     <div class="fg"><label class="fl">Estimated Value ₹</label><input class="inp" type="number" id="f-ld-val" placeholder="0"></div>`,
+
+  newestreq:`
+    <div class="fg"><label class="fl">Customer / Client Name</label><input class="inp" id="f-ner-name" list="dl-customers" placeholder="Pick existing or type new"></div>
+    <div class="f2">
+      <div class="fg"><label class="fl">Phone</label><input class="inp" id="f-ner-phone" placeholder="+91 …"></div>
+      <div class="fg"><label class="fl">Location</label><input class="inp" id="f-ner-loc" placeholder="City / Area"></div>
+    </div>
+    <div class="fg"><label class="fl">Estimated Value ₹ (optional)</label><input class="inp" type="number" id="f-ner-val" placeholder="0"></div>
+    <div class="hint" style="margin-top:4px">Use this when a client needs an estimate directly — no Lead required. It goes straight into your own queue below, already assigned to you.</div>`,
 
   architect:`
     <div class="fg"><label class="fl">Name</label><input class="inp" id="f-pt-name" placeholder="Architect / firm name"></div>
@@ -5554,7 +7282,7 @@ const MODAL_FORMS={
       <div class="fg"><label class="fl">Ref No.</label><input class="inp" id="f-qt-ref" placeholder="STR/Q/003"></div>
       <div class="fg"><label class="fl">Date</label><input class="inp" type="date" id="f-qt-date" value="${new Date().toISOString().slice(0,10)}"></div>
     </div>
-    <div class="fg"><label class="fl">Customer</label><input class="inp" id="f-qt-cust" placeholder="Customer name"></div>
+    <div class="fg"><label class="fl">Customer</label><input class="inp" id="f-qt-cust" list="dl-customers" placeholder="Customer name — pick existing or type new"></div>
     <div class="f2">
       <div class="fg"><label class="fl">Status</label><select class="inp" id="f-qt-status"><option>Draft</option><option>Sent</option><option>Approved</option><option>Rejected</option></select></div>
       <div class="fg"><label class="fl">Amount ₹</label><input class="inp" type="number" id="f-qt-amt" placeholder="0"></div>
@@ -5619,8 +7347,22 @@ function purCalcAmt(){
   if(amtEl && qty && rate) amtEl.value = qty*rate;
 }
 
+// Populates the shared #dl-customers <datalist> (see body top) from every
+// known customer plus every lead name, so any free-text customer/client
+// field can suggest existing names without forcing a hard dropdown —
+// typing a genuinely new name still works.
+function refreshCustomerDatalist(){
+  const dl = document.getElementById('dl-customers');
+  if(!dl) return;
+  const names = new Set();
+  (DB.customers||[]).forEach(c=>{ if(c.name) names.add(c.name); });
+  (DB.leads||[]).forEach(l=>{ if(l.name) names.add(l.name); });
+  dl.innerHTML = [...names].sort((a,b)=>a.localeCompare(b)).map(n=>`<option value="${escHtml(n)}">`).join('');
+}
+
 function openModal(type){
   _currentModal=type;
+  refreshCustomerDatalist();
   const TITLES={
     project:'New Project',product:'Add Product / Furniture Item',labour:'Add Labour / Wage Entry',
     expense:'Add Project Expense',purchase:'New Purchase',issue:'Issue Material to Project',
@@ -5632,6 +7374,7 @@ function openModal(type){
     costingtemplate:'Add Costing Template',costingmaterial:'Add Costing Material',
     costinghardware:'Add Costing Hardware',costinglabourrate:'Add/Update Labour Rate',
     architect:'Add Architect',builder:'Add Builder',b2bpartner:'Add B2B Partner',
+    newestreq:'New Estimation Request',
   };
   document.getElementById('modal-title').textContent=TITLES[type]||type;
   document.getElementById('modal-body').innerHTML=MODAL_FORMS[type]||'<p class="muted">Form coming soon.</p>';
@@ -5677,6 +7420,7 @@ function saveModal(){
     costinghardware:saveCostingHardware,costinglabourrate:saveCostingLabourRate,
     architect:()=>savePartner('architects'),builder:()=>savePartner('builders'),
     b2bpartner:()=>savePartner('b2bPartners'),
+    newestreq:saveNewEstimationRequest,
   };
   if(saves[_currentModal])saves[_currentModal]();
   else{toast('Saved ✓');closeModal();}
@@ -6020,6 +7764,20 @@ function _ldReferralFields(){
   const partner=allReferralPartners().find(p=>p.id===id);
   return {referralPartnerType:src, referralPartnerId:id||'', referralPartnerName:partner?.name||''};
 }
+// Finds an existing customer by case-insensitive name match, or creates one.
+// This is the single place a customer record actually gets created from a
+// Won lead/quotation — called from saveLead() and applyQuotationStatus()
+// so a customer never has to be re-typed by hand once a deal is won.
+function ensureCustomerExists(name, extra={}){
+  if(!name || !name.trim()) return null;
+  const existing=DB.customers.find(c=>c.name.trim().toLowerCase()===name.trim().toLowerCase());
+  if(existing) return existing;
+  const cust={id:'C'+uid(), name:name.trim(), phone:extra.phone||'', email:extra.email||'', location:extra.location||''};
+  DB.customers.push(cust);
+  refreshCustomerDatalist();
+  return cust;
+}
+
 function saveLead(){
   const referral=_ldReferralFields();
   if(_editingId){
@@ -6030,6 +7788,7 @@ function saveLead(){
       r.source=g('f-ld-src');r.value=+g('f-ld-val')||r.value;
       Object.assign(r, referral);
       maybeCreateEstimationRequest(r);
+      if(r.status==='Won') ensureCustomerExists(r.name,{phone:r.phone,location:r.location});
       closeModal();toast('Lead updated ✓','ok');renderLeads();
     }return;
   }
@@ -6038,6 +7797,7 @@ function saveLead(){
   DB.leads.push(newLead);
   logActivity('lead', newLead.id, 'Lead Created', `Source: ${newLead.source||'—'}${referral.referralPartnerName?' ('+referral.referralPartnerName+')':''}`);
   maybeCreateEstimationRequest(newLead);
+  if(newLead.status==='Won') ensureCustomerExists(newLead.name,{phone:newLead.phone,location:newLead.location});
   closeModal();toast('Lead added ✓','ok');renderLeads();
 }
 
@@ -6155,6 +7915,21 @@ function toast(msg,type=''){
 
 function saveDB(){
   try{localStorage.setItem('at_erp_db',JSON.stringify(DB));}catch(e){}
+}
+
+// Tracks record IDs removed from a top-level DB[key] array since the last
+// Supabase sync flush. Previously, deleting a record only ever meant it
+// stopped being re-upserted — the old row stayed in the Supabase table
+// forever and silently reappeared the next time the app did a full data
+// reload (e.g. a page refresh re-establishing the session pulls straight
+// from Supabase). Every top-level delete* function calls this alongside
+// its splice/filter so _flushToSupabase (Supabase layer, below) can issue
+// a real DELETE. Harmless no-op in builds with no Supabase layer (e.g.
+// the offline test build) — it just accumulates and is never read.
+window._pendingDeletes = window._pendingDeletes || {};
+function _trackDelete(key, id){
+  if(!window._pendingDeletes[key]) window._pendingDeletes[key] = new Set();
+  window._pendingDeletes[key].add(String(id));
 }
 (function _loadSavedDB(){
   try{
@@ -6421,21 +8196,21 @@ function _confirmDelete(label, onConfirm) {
 function deleteLabour(id) {
   _confirmDelete('labour entry', () => {
     const i = DB.labour.findIndex(x => x.id === id);
-    if (i > -1) { DB.labour.splice(i, 1); renderLabour(); toast('Labour entry deleted', 'ok'); }
+    if (i > -1) { DB.labour.splice(i, 1); _trackDelete('labour',id); saveDB(); renderLabour(); toast('Labour entry deleted', 'ok'); }
   });
 }
 
 function deleteExpense(id) {
   _confirmDelete('expense', () => {
     const i = DB.expenses.findIndex(x => x.id === id);
-    if (i > -1) { DB.expenses.splice(i, 1); renderExpenses(); toast('Expense deleted', 'ok'); }
+    if (i > -1) { DB.expenses.splice(i, 1); _trackDelete('expenses',id); saveDB(); renderExpenses(); toast('Expense deleted', 'ok'); }
   });
 }
 
 function deletePurchase(id) {
   _confirmDelete('purchase', () => {
     const i = DB.purchases.findIndex(x => x.id === id);
-    if (i > -1) { DB.purchases.splice(i, 1); renderPurchases(); toast('Purchase deleted', 'ok'); }
+    if (i > -1) { DB.purchases.splice(i, 1); _trackDelete('purchases',id); saveDB(); renderPurchases(); toast('Purchase deleted', 'ok'); }
   });
 }
 
@@ -6607,10 +8382,18 @@ function saveCostingTemplate(){
   });
   saveDB(); closeModal(); toast('Template added ✓','ok'); renderCostingMasters();
 }
+// Only one template can be the default at a time — used to pre-select the
+// Template dropdown whenever a new costed item is started (Estimation
+// Request Parametric Items or the Quotation BOQ Builder), so the most
+// commonly quoted furniture type doesn't need re-picking every time.
+function setDefaultCostingTemplate(id){
+  DB.costingTemplates.forEach(t=>{ t.isDefault = (t.id===id); });
+  saveDB(); toast('Default template set ✓','ok'); renderCostingMasters();
+}
 function deleteCostingTemplate(id){
   if(!confirm('Delete this costing template?')) return;
   DB.costingTemplates=DB.costingTemplates.filter(t=>t.id!==id);
-  saveDB(); renderCostingMasters();
+  _trackDelete('costingTemplates',id); saveDB(); renderCostingMasters();
 }
 
 function saveCostingMaterial(){
@@ -6625,7 +8408,7 @@ function saveCostingMaterial(){
 function deleteCostingMaterial(id){
   if(!confirm('Delete this material?')) return;
   DB.costingMaterials=DB.costingMaterials.filter(m=>m.id!==id);
-  saveDB(); renderCostingMasters();
+  _trackDelete('costingMaterials',id); saveDB(); renderCostingMasters();
 }
 
 function saveCostingHardware(){
@@ -6636,7 +8419,7 @@ function saveCostingHardware(){
 function deleteCostingHardware(id){
   if(!confirm('Delete this hardware item?')) return;
   DB.costingHardware=DB.costingHardware.filter(h=>h.id!==id);
-  saveDB(); renderCostingMasters();
+  _trackDelete('costingHardware',id); saveDB(); renderCostingMasters();
 }
 
 function saveCostingLabourRate(){
@@ -6649,7 +8432,7 @@ function saveCostingLabourRate(){
 function deleteCostingLabourRate(id){
   if(!confirm('Delete this labour rate?')) return;
   DB.costingLabourRates=DB.costingLabourRates.filter(l=>l.id!==id);
-  saveDB(); renderCostingMasters();
+  _trackDelete('costingLabourRates',id); saveDB(); renderCostingMasters();
 }
 
 // ── Partners & Referrals (Architects/Builders/B2B Partners) ──
@@ -6661,7 +8444,7 @@ function savePartner(key){
 function deletePartner(key,id){
   if(!confirm('Delete this partner?')) return;
   DB[key]=DB[key].filter(p=>p.id!==id);
-  saveDB(); renderPartners();
+  _trackDelete(key,id); saveDB(); renderPartners();
 }
 function allReferralPartners(){
   return [
@@ -6700,10 +8483,11 @@ function renderCostingMasters(){
   document.getElementById('cs-profit').value=DB.costingSettings.defaultProfit;
 
   document.getElementById('cm-templates-tb').innerHTML = DB.costingTemplates.map(t=>`<tr>
+    <td><button class="btn btn-ghost btn-xs" title="${t.isDefault?'Default template — used to pre-fill new costed items':'Set as default template'}" onclick="setDefaultCostingTemplate('${t.id}')">${t.isDefault?'⭐':'☆'}</button></td>
     <td>${escHtml(t.name)}</td><td>${t.constructionType}</td>
     <td>${t.hasDoors||t.slidingShutter?'✓':'—'}</td><td>${t.hasDrawers?'✓':'—'}</td><td>${t.hasShelves?'✓':'—'}</td>
     <td>${t.defaultWastagePct}%</td><td>${delBtn('deleteCostingTemplate',t.id)}</td>
-  </tr>`).join('') || `<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No templates yet</td></tr>`;
+  </tr>`).join('') || `<tr><td colspan="8" class="muted" style="text-align:center;padding:20px">No templates yet</td></tr>`;
 
   document.getElementById('cm-materials-tb').innerHTML = DB.costingMaterials.map(m=>`<tr>
     <td>${escHtml(m.name)}</td><td>${m.category}</td><td>${m.unit}</td>
@@ -6915,6 +8699,16 @@ let _poId = '';
 function poTotal(po){ return (po.items||[]).reduce((s,i)=>s+(+i.amount||0),0); }
 function poPendingValue(po){ return (po.items||[]).reduce((s,i)=>s+((i.qty-(i.receivedQty||0))*i.rate),0); }
 
+// Delegation of Authority (BOS Manual §1.6) — PO value tiers. Procurement
+// covers the combined Supervisor+Department Head tier since the ERP has
+// no separate junior/senior split within Procurement. Returns null if no
+// extra role is needed beyond Procurement itself.
+function poDoaApproverRole(total){
+  if(total<=500000) return null;
+  if(total<=2000000) return 'Accounts';
+  return 'CEO';
+}
+
 function renderPurchaseOrders(){
   const statusF = document.getElementById('po-status-f')?.value||'';
   const destF   = document.getElementById('po-dest-f')?.value||'';
@@ -6941,6 +8735,7 @@ function renderPurchaseOrders(){
     const proj = po.projectId ? DB.projects.find(p=>p.id===po.projectId) : null;
     const stColor = {Draft:'tag-grey',Sent:'tag-blue','Partially Received':'tag-gold',Received:'tag-green',Cancelled:'tag-red'}[po.status]||'tag-grey';
     const overdue  = po.expectedDate && new Date(po.expectedDate)<new Date() && po.status!=='Received'&&po.status!=='Cancelled';
+    const dueSoon  = !overdue && po.status!=='Received'&&po.status!=='Cancelled' && _isDueSoon(po.expectedDate,new Date());
     return `<tr>
       <td><span class="tag tag-dark">${escHtml(po.poNo)}</span></td>
       <td>${fmtDate(po.date)}</td>
@@ -6948,8 +8743,8 @@ function renderPurchaseOrders(){
       <td>${destTag}${proj?`<div class="muted small">${escHtml(proj.client)}</div>`:''}</td>
       <td class="small muted">${(po.items||[]).length} item${(po.items||[]).length!==1?'s':''}</td>
       <td class="mono"><strong>${INR(total)}</strong>${pending>0?`<div class="small" style="color:var(--amber)">₹${Number(pending).toLocaleString('en-IN')} pending</div>`:''}</td>
-      <td><span class="tag ${stColor}">${po.status}</span></td>
-      <td class="${overdue?'stock-zero':''}">${fmtDate(po.expectedDate)}</td>
+      <td><span class="tag ${stColor}">${po.status}</span>${po.approvedBy?`<div class="small muted">by ${escHtml(po.approvedBy)}</div>`:''}</td>
+      <td class="${overdue?'stock-zero':''}" style="${dueSoon?'color:var(--amber);font-weight:700':''}">${fmtDate(po.expectedDate)}${dueSoon?' ⏳':''}</td>
       <td style="white-space:nowrap">
         <button class="btn btn-outline btn-xs" onclick="openPOBuilder('${po.id}')">✏️ Open</button>
         ${po.status!=='Received'&&po.status!=='Cancelled'?`<button class="btn btn-gold btn-xs" onclick="openPOReceive('${po.id}')">📦 Receive</button>`:''}
@@ -6963,7 +8758,7 @@ function renderPurchaseOrders(){
 function deletePO(id){
   if(!confirm('Delete this purchase order?')) return;
   const i = DB.purchaseOrders.findIndex(x=>x.id===id);
-  if(i>-1){ DB.purchaseOrders.splice(i,1); renderPurchaseOrders(); toast('PO deleted','ok'); }
+  if(i>-1){ DB.purchaseOrders.splice(i,1); _trackDelete('purchaseOrders',id); saveDB(); renderPurchaseOrders(); toast('PO deleted','ok'); }
 }
 
 function openPOBuilder(poId){
@@ -7098,6 +8893,15 @@ function poUpdateTotal(po){
   const tc = document.getElementById('po-item-count');
   if(tv) tv.textContent = INR(total);
   if(tc) tc.textContent = cnt+' item'+(cnt!==1?'s':'');
+
+  // Delegation of Authority indicator (BOS Manual §1.6) — shown live so
+  // the approval tier is visible before anyone attempts to send the PO.
+  const doaEl = document.getElementById('po-doa-note');
+  if(doaEl){
+    const neededRole = poDoaApproverRole(total);
+    doaEl.textContent = neededRole ? `⚠ Requires ${neededRole} approval to send` : 'Within Procurement authority';
+    doaEl.style.color = neededRole ? 'var(--amber)' : 'var(--muted)';
+  }
 }
 
 function poSave(navigateBack){
@@ -7106,7 +8910,6 @@ function poSave(navigateBack){
   po.date        = document.getElementById('po-date')?.value || po.date;
   po.expectedDate= document.getElementById('po-expected')?.value||'';
   po.notes       = document.getElementById('po-notes')?.value||'';
-  po.status      = document.getElementById('po-builder-status')?.value||po.status;
   po.destination = document.getElementById('po-destination')?.value||'Warehouse';
   po.projectId   = document.getElementById('po-proj')?.value||'';
   const vSel     = document.getElementById('po-vendor');
@@ -7115,12 +8918,35 @@ function poSave(navigateBack){
     po.vendorId = vSel.value;
     po.vendor   = v ? v.name : po.vendor;
   }
+
+  // Delegation of Authority (BOS Manual §1.6) — issuing a PO to a vendor
+  // ("Sent") is the real financial commitment; gate that specific
+  // transition by PO value. Draft edits and every other status move are
+  // never blocked, and other field edits above always save regardless.
+  let statusBlocked = false;
+  const requestedStatus = document.getElementById('po-builder-status')?.value || po.status;
+  if(requestedStatus==='Sent' && po.status!=='Sent'){
+    const total = poTotal(po);
+    const neededRole = poDoaApproverRole(total);
+    if(neededRole && !requireRole(neededRole)){
+      statusBlocked = true;
+      document.getElementById('po-builder-status').value = po.status;
+      toast(`PO value ${INR(total)} requires ${neededRole} approval to be sent — status kept as ${po.status}`,'err');
+    } else {
+      po.status = requestedStatus;
+      po.approvedBy = _currentUser?.name||'';
+      po.approvedDate = new Date().toISOString().slice(0,10);
+    }
+  } else {
+    po.status = requestedStatus;
+  }
+
   document.getElementById('po-builder-title').textContent = po.vendor||'Purchase Order';
   document.getElementById('po-builder-sub').textContent   = po.poNo+' · '+po.status;
   const recSec = document.getElementById('po-receive-section');
   if(recSec) recSec.style.display = (po.status==='Sent'||po.status==='Partially Received')?'':'none';
   saveDB();
-  toast('Purchase Order saved ✓','ok');
+  if(!statusBlocked) toast('Purchase Order saved ✓','ok');
   if(navigateBack) nav('purchaseorders', null);
 }
 
@@ -7233,7 +9059,7 @@ function poPrintById(poId){
   </head><body>
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #C8973A">
       <div>
-        <div style="font-size:22px;font-weight:800">🍎 Appletree <span style="color:#C8973A">Interiors</span></div>
+        <div style="font-size:22px;font-weight:800;display:flex;align-items:center;gap:8px"><img src="logo.png" alt="Appletree Interiors" style="height:26px;width:auto">Appletree <span style="color:#C8973A">Interiors</span></div>
         <div style="font-size:10px;color:#9C8E7A;margin-top:3px">sales.appletreeinteriors@gmail.com</div>
       </div>
       <div style="text-align:right">
@@ -7321,7 +9147,7 @@ async function doLogin(){
   applyRoleNav(user.role);
   updateNavPendingBadge();
   renderNotifBell();
-  const landingPage={'CEO':'ceodash','Factory Supervisor':'factorydash','Site Supervisor':'sitedash','Accounts':'invoices','Sales':'leads','Estimator':'estimatordash','Procurement':'purchases','Admin':'dashboard'}[user.role]||'dashboard';
+  const landingPage={'CEO':'ceodash','Factory Supervisor':'factorydash','Site Supervisor':'sitedash','Accounts':'invoices','Sales':'leads','Estimator':'estimatordash','Procurement':'purchases','Project Manager':'projects','QC Manager':'stagegatedash','Admin':'dashboard'}[user.role]||'dashboard';
   nav(landingPage,document.querySelector(`[data-pg="${landingPage}"]`));
 }
 
@@ -7386,19 +9212,81 @@ function _accessDenied(){
 // ═══════════════════════════════════════════
 // Shared by renderDashboard() and renderCEODash() so alert logic
 // lives in exactly one place.
+// How many days before a due date counts as "at risk" — surfaced distinctly
+// from already-overdue so a job/PO gets flagged BEFORE it's late, not just
+// after (the gap that let a factory job silently slip past its deadline).
+const DUE_SOON_DAYS = 2;
+function _isDueSoon(dueDateStr, now){
+  if(!dueDateStr) return false;
+  const due = new Date(dueDateStr);
+  const soonCutoff = new Date(now); soonCutoff.setDate(soonCutoff.getDate()+DUE_SOON_DAYS);
+  return due>=now && due<=soonCutoff;
+}
+
 function computeAlerts(now){
   const alerts = [];
   const readyMS = DB.milestones.filter(m=>m.status==='Ready to Invoice');
   if(readyMS.length) alerts.push({icon:'🔔',color:'var(--amber)',text:`${readyMS.length} milestone${readyMS.length>1?'s':''} ready to invoice — ${INR(readyMS.reduce((s,m)=>s+m.amount,0))} pending`,link:'milestones'});
   const delayedJobs = DB.mfgJobs.filter(j=>j.status!=='Completed'&&j.dueDate&&new Date(j.dueDate)<now);
   if(delayedJobs.length) alerts.push({icon:'⚠️',color:'var(--red)',text:`${delayedJobs.length} manufacturing job${delayedJobs.length>1?'s':''} delayed in factory`,link:'mfgjobs'});
+  const dueSoonJobs = DB.mfgJobs.filter(j=>j.status!=='Completed'&&_isDueSoon(j.dueDate,now));
+  if(dueSoonJobs.length) alerts.push({icon:'⏳',color:'var(--amber)',text:`${dueSoonJobs.length} manufacturing job${dueSoonJobs.length>1?'s':''} due within ${DUE_SOON_DAYS} days`,link:'mfgjobs'});
   const qcPending = DB.qc.filter(q=>q.result==='Pending');
   if(qcPending.length) alerts.push({icon:'🔍',color:'var(--violet)',text:`${qcPending.length} QC inspection${qcPending.length>1?'s':''} awaiting sign-off`,link:'qc'});
   const lowStock = DB.warehouse.filter(w=>w.qty<=w.reorder);
   if(lowStock.length) alerts.push({icon:'📦',color:'var(--blue)',text:`${lowStock.length} item${lowStock.length>1?'s':''} below reorder level`,link:'warehouse'});
   const pendingDel = (DB.siteDeliveries||[]).filter(d=>d.status==='En Route');
   if(pendingDel.length) alerts.push({icon:'🚚',color:'var(--teal)',text:`${pendingDel.length} delivery pending confirmation at site`,link:'deliveries'});
-  return {alerts, readyMS, delayedJobs, qcPending, lowStock, pendingDel};
+  const overduePOs = (DB.purchaseOrders||[]).filter(p=>p.status!=='Received'&&p.status!=='Cancelled'&&p.expectedDate&&new Date(p.expectedDate)<now);
+  if(overduePOs.length) alerts.push({icon:'⚠️',color:'var(--red)',text:`${overduePOs.length} purchase order${overduePOs.length>1?'s':''} overdue from vendor`,link:'purchaseorders'});
+  const dueSoonPOs = (DB.purchaseOrders||[]).filter(p=>p.status!=='Received'&&p.status!=='Cancelled'&&_isDueSoon(p.expectedDate,now));
+  if(dueSoonPOs.length) alerts.push({icon:'⏳',color:'var(--amber)',text:`${dueSoonPOs.length} purchase order${dueSoonPOs.length>1?'s':''} due within ${DUE_SOON_DAYS} days`,link:'purchaseorders'});
+  return {alerts, readyMS, delayedJobs, dueSoonJobs, qcPending, lowStock, pendingDel, overduePOs, dueSoonPOs};
+}
+
+// Proactive notifications — the piece computeAlerts() alone doesn't cover:
+// pushing an actual notification to the responsible role the moment a job
+// or PO crosses into "due soon" or "overdue", instead of relying on someone
+// to happen to open the right dashboard. Each job/PO is only notified once
+// per threshold (dueSoonNotified / overdueNotified flags on the record
+// itself), so this is safe to call on every login/page load.
+function checkDueDateAlerts(){
+  const now = new Date();
+  let changed = false;
+
+  DB.mfgJobs.forEach(j=>{
+    if(j.status==='Completed') return;
+    if(!j.dueDate) return;
+    const due = new Date(j.dueDate);
+    if(due<now && !j.overdueNotified){
+      const p=DB.products.find(x=>x.id===j.productId);
+      pushNotification({forRole:'Factory Supervisor', title:'Manufacturing job overdue',
+        message:`${p?p.name:j.jobNo} was due ${fmtDate(j.dueDate)} and is still ${j.status}.`, link:'mfgjobs'});
+      j.overdueNotified=true; changed=true;
+    } else if(_isDueSoon(j.dueDate,now) && !j.dueSoonNotified){
+      const p=DB.products.find(x=>x.id===j.productId);
+      pushNotification({forRole:'Factory Supervisor', title:'Manufacturing job due soon',
+        message:`${p?p.name:j.jobNo} is due ${fmtDate(j.dueDate)} — ${j.status}.`, link:'mfgjobs'});
+      j.dueSoonNotified=true; changed=true;
+    }
+  });
+
+  (DB.purchaseOrders||[]).forEach(p=>{
+    if(p.status==='Received'||p.status==='Cancelled') return;
+    if(!p.expectedDate) return;
+    const due = new Date(p.expectedDate);
+    if(due<now && !p.overdueNotified){
+      pushNotification({forRole:'Procurement', title:'Purchase order overdue',
+        message:`PO ${p.poNo||p.id} to ${p.vendor||'vendor'} was expected ${fmtDate(p.expectedDate)} and hasn't been received.`, link:'purchaseorders'});
+      p.overdueNotified=true; changed=true;
+    } else if(_isDueSoon(p.expectedDate,now) && !p.dueSoonNotified){
+      pushNotification({forRole:'Procurement', title:'Purchase order due soon',
+        message:`PO ${p.poNo||p.id} to ${p.vendor||'vendor'} is expected ${fmtDate(p.expectedDate)}.`, link:'purchaseorders'});
+      p.dueSoonNotified=true; changed=true;
+    }
+  });
+
+  if(changed) saveDB();
 }
 
 function renderAlertStrip(elId, now){
@@ -7822,6 +9710,24 @@ function quotTotalAmount(q){
   return Math.round((afterDisc+gstAmt)*100)/100;
 }
 
+// Effective discount as a % of subtotal, regardless of discountType, so
+// the Delegation of Authority tiers below (all %-based per BOS Manual
+// §1.6) apply consistently even if a flat-amount discount is ever used.
+function quotDiscountPct(q){
+  if(q.discountType==='pct') return q.discountValue||0;
+  const sub = quotSubtotal(q);
+  return sub ? (q.discountValue||0)/sub*100 : 0;
+}
+// Delegation of Authority (BOS Manual §1.6) — quotation discount tiers.
+// Sales covers the Department Head tier; above 10% needs CEO regardless
+// of Accounts sign-off (CEO is "notified" per the manual — here CEO must
+// action it directly since there's no separate notify-only mechanism).
+function quotDoaApproverRole(pct){
+  if(pct<=5) return null;
+  if(pct<=10) return 'Accounts';
+  return 'CEO';
+}
+
 function renderQuotations(){
   const tb = document.getElementById('tb-quotations');
   tb.innerHTML = DB.quotations.map(q=>{
@@ -7832,7 +9738,7 @@ function renderQuotations(){
       <td><span class="tag tag-dark">${escHtml(q.refNo)}</span>${q.revisionNo>1?` <span class="muted small">Rev ${q.revisionNo}</span>`:''}</td>
       <td>${fmtDate(q.date)}</td>
       <td><strong>${escHtml(q.customer)}</strong><div class="muted small">${escHtml(q.site)||''}</div></td>
-      <td>${statusTag(q.status)}</td>
+      <td>${statusTag(q.status)}${q.discountApprovedBy?`<div class="small muted">disc. by ${escHtml(q.discountApprovedBy)}</div>`:''}</td>
       <td class="small muted">${roomCount} section${roomCount!==1?'s':''} · ${itemCount} items</td>
       <td class="mono right"><strong>${INR(total)}</strong></td>
       <td style="white-space:nowrap;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
@@ -7874,9 +9780,87 @@ function renderQuotKanban(){
 }
 function qkMoveStatus(id, newStatus){
   const q=DB.quotations.find(x=>x.id===id); if(!q) return;
-  applyQuotationStatus(q, newStatus);
+  const ok = applyQuotationStatus(q, newStatus);
+  if(!ok){ renderQuotKanban(); return; } // snap the dropdown back to the actual status
   saveDB();
   renderQuotKanban();
+}
+
+// ═══════════════════════════════════════════
+//  CALENDAR — quotation follow-ups, manufacturing due dates, PO expected
+//  dates, all in one month view. Ported concept from the standalone
+//  Costing Studio's follow-up calendar, extended to cover every date-driven
+//  thing the ERP already tracks rather than follow-ups alone.
+// ═══════════════════════════════════════════
+let _calYear = new Date().getFullYear();
+let _calMonth = new Date().getMonth();
+
+function _calEventsByDate(){
+  const map={};
+  const add=(dateStr,ev)=>{ if(!dateStr) return; if(!map[dateStr]) map[dateStr]=[]; map[dateStr].push(ev); };
+  DB.quotations.forEach(q=>{
+    (q.followUps||[]).forEach(fu=>{
+      if(fu.nextDate) add(fu.nextDate, {type:'followup', color:'var(--gold)', label:`Follow-up: ${q.customer||'—'} (${q.refNo})`, link:()=>openBOQ(q.id)});
+    });
+  });
+  DB.mfgJobs.forEach(j=>{
+    if(j.status==='Completed'||!j.dueDate) return;
+    const p=DB.products.find(x=>x.id===j.productId);
+    add(j.dueDate, {type:'mfg', color:'var(--violet)', label:`Due: ${p?p.name:j.jobNo}`, link:()=>nav('mfgjobs',null)});
+  });
+  (DB.purchaseOrders||[]).forEach(po=>{
+    if(po.status==='Received'||po.status==='Cancelled'||!po.expectedDate) return;
+    add(po.expectedDate, {type:'po', color:'var(--teal)', label:`PO expected: ${po.poNo} (${po.vendor||'vendor'})`, link:()=>nav('purchaseorders',null)});
+  });
+  return map;
+}
+
+function renderCalendar(){
+  const dow=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  document.getElementById('cal-dow-row').innerHTML=dow.map(d=>`<div>${d}</div>`).join('');
+  const first=new Date(_calYear,_calMonth,1);
+  const startDow=first.getDay();
+  const daysInMonth=new Date(_calYear,_calMonth+1,0).getDate();
+  const todayStr=new Date().toISOString().slice(0,10);
+  const evMap=_calEventsByDate();
+  document.getElementById('cal-month-label').textContent=first.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+  let cells='';
+  for(let i=0;i<startDow;i++) cells+='<div></div>';
+  for(let d=1;d<=daysInMonth;d++){
+    const dateStr=`${_calYear}-${String(_calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const evs=evMap[dateStr]||[];
+    const isToday=dateStr===todayStr;
+    cells+=`<div onclick="calShowDay('${dateStr}')" style="min-height:64px;border:1px solid var(--border);border-radius:6px;padding:6px;cursor:pointer;${isToday?'background:var(--gold-pale);border-color:var(--gold)':''}">
+      <div style="font-size:12px;font-weight:${isToday?'700':'500'};color:${isToday?'var(--gold-ink)':'var(--dark)'}">${d}</div>
+      <div style="display:flex;gap:3px;flex-wrap:wrap;margin-top:4px">${evs.slice(0,4).map(e=>`<span style="width:7px;height:7px;border-radius:50%;background:${e.color}" title="${escHtml(e.label)}"></span>`).join('')}${evs.length>4?`<span style="font-size:9px;color:var(--muted)">+${evs.length-4}</span>`:''}</div>
+    </div>`;
+  }
+  document.getElementById('cal-grid').innerHTML=cells;
+  document.getElementById('cal-day-detail').style.display='none';
+}
+function calShiftMonth(delta){
+  _calMonth+=delta;
+  if(_calMonth<0){_calMonth=11;_calYear--;} else if(_calMonth>11){_calMonth=0;_calYear++;}
+  renderCalendar();
+}
+function calGoToday(){
+  const t=new Date(); _calYear=t.getFullYear(); _calMonth=t.getMonth();
+  renderCalendar();
+}
+function calShowDay(dateStr){
+  const evMap=_calEventsByDate();
+  const evs=evMap[dateStr]||[];
+  document.getElementById('cal-day-detail').style.display='block';
+  document.getElementById('cal-day-title').textContent=fmtDate(dateStr)+` — ${evs.length} item${evs.length!==1?'s':''}`;
+  document.getElementById('cal-day-list').innerHTML = evs.length ? evs.map((e,i)=>`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border2);font-size:13px">
+    <span style="width:8px;height:8px;border-radius:50%;background:${e.color};flex-shrink:0"></span>
+    <span style="flex:1">${escHtml(e.label)}</span>
+    <button class="btn btn-ghost btn-xs" onclick="_calEventJump(${i},'${dateStr}')">Open</button>
+  </div>`).join('') : '<div class="muted" style="padding:8px 0">Nothing on this day.</div>';
+}
+function _calEventJump(idx,dateStr){
+  const evs=_calEventsByDate()[dateStr]||[];
+  if(evs[idx]) evs[idx].link();
 }
 
 function renderCostingDashboard(){
@@ -7936,10 +9920,94 @@ function renderCostingDashboard(){
   ).join('') || `<tr><td colspan="4" class="muted" style="text-align:center;padding:16px">No referred leads yet</td></tr>`;
 }
 
+// ═══════════════════════════════════════════
+//  COSTING REPORTS — ported from the standalone Costing Studio's project
+//  report pack. Sources costed line items from every Quotation linked to
+//  the selected project (q.projectId) rather than from Products, because
+//  convertQuotToProject only carries a Product's total cost forward, not
+//  the full material/hardware/labour breakdown a report needs — that
+//  breakdown only survives on the Quotation's own costed items.
+// ═══════════════════════════════════════════
+function _crCostedItemsForProject(projId){
+  const items=[];
+  DB.quotations.filter(q=>q.projectId===projId).forEach(q=>{
+    (q.rooms||[]).forEach(r=>(r.items||[]).forEach(item=>{
+      if(item.isCosted && item.costingResult) items.push({item, room:r.name, quotRef:q.refNo});
+    }));
+  });
+  return items;
+}
+
+function renderCostingReports(){
+  const sel=document.getElementById('cr-proj-sel');
+  sel.innerHTML = DB.projects.map(p=>`<option value="${p.id}">${escHtml(p.client||p.code)} — ${escHtml(p.code)}</option>`).join('')
+    || '<option value="">No projects yet</option>';
+  renderCostingReportButtons();
+}
+
+const CR_REPORTS=[
+  ['Internal Cost Sheet','internal'],['Material & Cutting Requirement','material'],
+  ['Hardware List','hardware'],['Labour Summary','labour'],['Profit Analysis','profit']
+];
+function renderCostingReportButtons(){
+  document.getElementById('cr-buttons').innerHTML = CR_REPORTS.map(([label,key])=>
+    `<button class="btn btn-outline btn-sm" onclick="generateCostingReport('${key}')">${label}</button>`
+  ).join('');
+  document.getElementById('cr-output').innerHTML='';
+}
+
+function generateCostingReport(key){
+  const projId=document.getElementById('cr-proj-sel').value;
+  const proj=DB.projects.find(p=>p.id===projId);
+  const out=document.getElementById('cr-output');
+  if(!proj){ out.innerHTML='<div class="muted" style="padding:16px">Select a project first.</div>'; return; }
+  const rows=_crCostedItemsForProject(projId);
+  if(!rows.length){ out.innerHTML='<div class="muted" style="padding:16px">This project has no costed line items yet — items priced with the Costing Engine (not manual entry) are what these reports are built from.</div>'; return; }
+
+  const titles={internal:'Internal Cost Sheet',material:'Material & Cutting Requirement',hardware:'Hardware List',labour:'Labour Summary',profit:'Profit Analysis'};
+  let html=`<div class="card"><div class="card-hd"><div><div class="card-title">${escHtml(proj.client||proj.code)} — ${titles[key]}</div><div class="card-sub">${escHtml(proj.code)} · ${rows.length} costed item${rows.length!==1?'s':''}</div></div><button class="btn btn-gold btn-sm no-print" onclick="window.print()">🖨️ Print / PDF</button></div>`;
+
+  if(key==='internal'){
+    html+=`<div class="tbl-wrap"><table><thead><tr><th>Item</th><th>Section</th><th>Template</th><th>Qty</th><th class="num">Cost ₹</th><th class="num">Selling ₹</th></tr></thead><tbody>`;
+    let gc=0,gs=0;
+    rows.forEach(({item,room})=>{ const r=item.costingResult; gc+=r.totalCost||0; gs+=item.amount||0;
+      html+=`<tr><td>${escHtml(item.desc)}</td><td>${escHtml(room)}</td><td>${escHtml(item.templateName||'—')}</td><td class="num">${item.qty}</td><td class="num">${INR(r.totalCost)}</td><td class="num">${INR(item.amount)}</td></tr>`; });
+    html+=`<tr style="font-weight:700"><td colspan="4">Grand Total</td><td class="num">${INR(gc)}</td><td class="num">${INR(gs)}</td></tr></tbody></table></div>`;
+  } else if(key==='material'){
+    const agg={};
+    rows.forEach(({item})=>{ (item.costingResult.materialLines||[]).forEach(l=>{ if(!agg[l.name]) agg[l.name]={qty:0,unit:l.unit,cost:0}; agg[l.name].qty+=(l.qty||0)*item.qty; agg[l.name].cost+=(l.cost||0)*item.qty; }); });
+    html+=`<div class="tbl-wrap"><table><thead><tr><th>Material</th><th class="num">Total Qty</th><th>Unit</th><th class="num">Est. Cost ₹</th></tr></thead><tbody>`;
+    Object.entries(agg).forEach(([k,v])=>{ html+=`<tr><td>${escHtml(k)}</td><td class="num">${Math.round(v.qty*100)/100}</td><td>${escHtml(v.unit)}</td><td class="num">${INR(v.cost)}</td></tr>`; });
+    html+='</tbody></table></div><div class="muted small" style="padding:8px 16px">This is the material requirement list — the engine doesn\'t yet generate an optimized panel cutting layout, only the quantities and cost per material.</div>';
+  } else if(key==='hardware'){
+    const agg={};
+    rows.forEach(({item})=>{ (item.costingResult.hardwareLines||[]).forEach(l=>{ if(!agg[l.name]) agg[l.name]={qty:0,unit:l.unit,cost:0}; agg[l.name].qty+=(l.qty||0)*item.qty; agg[l.name].cost+=(l.cost||0)*item.qty; }); });
+    html+=`<div class="tbl-wrap"><table><thead><tr><th>Hardware</th><th class="num">Total Qty</th><th>Unit</th><th class="num">Est. Cost ₹</th></tr></thead><tbody>`;
+    Object.entries(agg).forEach(([k,v])=>{ html+=`<tr><td>${escHtml(k)}</td><td class="num">${Math.round(v.qty*100)/100}</td><td>${escHtml(v.unit)}</td><td class="num">${INR(v.cost)}</td></tr>`; });
+    html+='</tbody></table></div>';
+  } else if(key==='labour'){
+    const agg={};
+    rows.forEach(({item})=>{ (item.costingResult.labourLines||[]).forEach(l=>{ if(!agg[l.name]) agg[l.name]=0; agg[l.name]+=(l.cost||0)*item.qty; }); });
+    html+=`<div class="tbl-wrap"><table><thead><tr><th>Labour</th><th class="num">Total Cost ₹</th></tr></thead><tbody>`;
+    Object.entries(agg).forEach(([k,v])=>{ html+=`<tr><td>${escHtml(k)}</td><td class="num">${INR(v)}</td></tr>`; });
+    html+='</tbody></table></div>';
+  } else if(key==='profit'){
+    html+=`<div class="tbl-wrap"><table><thead><tr><th>Item</th><th class="num">Cost ₹</th><th class="num">Selling ₹</th><th class="num">Profit ₹</th><th class="num">Margin %</th></tr></thead><tbody>`;
+    let gc=0,gs=0;
+    rows.forEach(({item})=>{ const r=item.costingResult; const cost=r.totalCost||0, sell=item.amount||0, profit=sell-cost, margin=sell?Math.round(profit/sell*100):0;
+      gc+=cost; gs+=sell;
+      html+=`<tr><td>${escHtml(item.desc)}</td><td class="num">${INR(cost)}</td><td class="num">${INR(sell)}</td><td class="num">${INR(profit)}</td><td class="num">${margin}%</td></tr>`; });
+    const gm=gs?Math.round((gs-gc)/gs*100):0;
+    html+=`<tr style="font-weight:700"><td>Total</td><td class="num">${INR(gc)}</td><td class="num">${INR(gs)}</td><td class="num">${INR(gs-gc)}</td><td class="num">${gm}%</td></tr></tbody></table></div>`;
+  }
+  html+='</div>';
+  out.innerHTML=html;
+}
+
 function deleteQuotation(id){
   if(!confirm('Delete this quotation?')) return;
   const i = DB.quotations.findIndex(x=>x.id===id);
-  if(i>-1){ DB.quotations.splice(i,1); renderQuotations(); toast('Quotation deleted','ok'); }
+  if(i>-1){ DB.quotations.splice(i,1); _trackDelete('quotations',id); saveDB(); renderQuotations(); toast('Quotation deleted','ok'); }
 }
 
 function convertQuotToProject(qId){
@@ -8001,6 +10069,7 @@ function createNewQuotation(){
     payment:'', warranty:'', includes:'', excludes:'', notes:'',
     discountType:'pct', discountValue:0, gstPct:18,
     followUps:[], lossReason:'', lossRemarks:'', wonDate:null, lostDate:null,
+    leadId:'', estimationRequestId:'',
     rooms:[ { id:'RM'+uid(), name:'Section 1', items:[] } ]
   };
   DB.quotations.push(newQ);
@@ -8013,12 +10082,19 @@ function openBOQ(qId){
 }
 
 function renderBOQBuilder(){
+  refreshCustomerDatalist();
   const q = DB.quotations.find(x=>x.id===_boqId);
   if(!q){ document.getElementById('boq-rooms-container').innerHTML='<div class="muted" style="padding:20px">No quotation loaded.</div>'; return; }
 
   // Header fields
   document.getElementById('boq-title').textContent    = q.customer || 'New Quotation';
   document.getElementById('boq-sub').textContent      = q.refNo + ' · ' + (q.status||'Draft');
+  const traceEl = document.getElementById('boq-source-trace');
+  if(traceEl){
+    traceEl.textContent = q.estimationRequestId
+      ? '🔗 Converted from Estimation Request '+q.estimationRequestId+(q.leadId?' · Lead '+q.leadId:'')
+      : (q.leadId ? '🔗 Linked to Lead '+q.leadId : '');
+  }
   document.getElementById('boq-refno').value          = q.refNo||'';
   document.getElementById('boq-revision').value       = q.revisionNo||1;
   document.getElementById('boq-date').value           = q.date||'';
@@ -8041,22 +10117,43 @@ function renderBOQBuilder(){
 }
 
 // Shared by the BOQ builder's status dropdown and the Kanban board's
-// per-card dropdown, so Won/Lost date-stamping and the loss-reason prompt
-// can never drift between the two entry points.
+// per-card dropdown, so Won/Lost date-stamping, the loss-reason prompt,
+// and Delegation of Authority enforcement can never drift between the
+// two entry points. Returns false (status left unchanged) if a discount
+// approval gate blocks the transition — callers must handle that.
 function applyQuotationStatus(q, newStatus){
+  // Delegation of Authority (BOS Manual §1.6) — leaving Draft is the
+  // commitment moment the quoted discount is actually sent to the client.
+  if(newStatus!=='Draft' && q.status==='Draft'){
+    const pct = quotDiscountPct(q);
+    const neededRole = quotDoaApproverRole(pct);
+    if(neededRole && !requireRole(neededRole)){
+      toast(`A ${pct.toFixed(1)}% discount requires ${neededRole} approval before this quotation can be sent`,'err');
+      return false;
+    }
+    q.discountApprovedBy = _currentUser?.name||'';
+    q.discountApprovedDate = new Date().toISOString().slice(0,10);
+  }
   if(newStatus==='Won' && q.status!=='Won'){
     q.wonDate = new Date().toISOString().slice(0,10);
+    // Read straight from the BOQ Builder's own field if it's the one open —
+    // boqStatusChange() calls this before boqSave() has synced q.customer,
+    // so q.customer can still be stale/empty at this point otherwise.
+    const liveName = document.getElementById('boq-client')?.value || q.customer;
+    ensureCustomerExists(liveName, {location: document.getElementById('boq-site')?.value || q.site});
   } else if(newStatus==='Lost' && q.status!=='Lost'){
     const reason = prompt('Reason for loss (e.g. Price too high, Went with competitor, Project cancelled):','');
     q.lossReason = reason||'';
     q.lostDate = new Date().toISOString().slice(0,10);
   }
   q.status = newStatus;
+  return true;
 }
 
 function boqStatusChange(){
   const q = DB.quotations.find(x=>x.id===_boqId); if(!q) return;
-  applyQuotationStatus(q, document.getElementById('boq-status').value);
+  const ok = applyQuotationStatus(q, document.getElementById('boq-status').value);
+  if(!ok){ document.getElementById('boq-status').value = q.status; return; }
   boqSave();
   renderBoqConvertBtn();
 }
@@ -8205,6 +10302,16 @@ function boqUpdateTotal(q){
   if(sc) sc.textContent = `${roomCount} section${roomCount!==1?'s':''} · ${itemCount} items`;
   const subEl = document.getElementById('boq-subtotal-line');
   if(subEl) subEl.textContent = `Subtotal ${INR(sub)}${q.discountValue?` − Disc ${INR(sub-sub*(1-(q.discountValue||0)/100))}`:''}${q.gstPct?` + GST ${q.gstPct}%`:''}`;
+
+  // Delegation of Authority indicator (BOS Manual §1.6) — shown live so
+  // the discount tier is visible before anyone attempts to send it.
+  const authEl = document.getElementById('boq-discount-authority');
+  if(authEl){
+    const pct = quotDiscountPct(q);
+    const neededRole = quotDoaApproverRole(pct);
+    authEl.textContent = neededRole ? `⚠ Requires ${neededRole} approval to send` : 'Within Sales authority';
+    authEl.style.color = neededRole ? 'var(--amber)' : 'var(--muted)';
+  }
 }
 
 function boqAddRoom(){
@@ -8267,8 +10374,13 @@ function boqSave(navigateBack){
 
   // Automation: creating a quotation for a lead moves that lead to "Quoted",
   // unless it's already further along the pipeline (Won/Lost/Quoted).
-  if(q.customer){
-    const lead = DB.leads.find(l=>l.name.trim().toLowerCase()===q.customer.trim().toLowerCase());
+  // Prefers the real leadId link (set when converted from an Estimation
+  // Request via convertEstimationToQuotation) — falls back to the older
+  // name-matching only for quotations created before that link existed.
+  if(q.leadId || q.customer){
+    const lead = q.leadId
+      ? DB.leads.find(l=>l.id===q.leadId)
+      : DB.leads.find(l=>l.name.trim().toLowerCase()===q.customer.trim().toLowerCase());
     if(lead && !['Quoted','Won','Lost'].includes(lead.status)){
       lead.status = 'Quoted';
       toast(`Quotation saved ✓ — lead "${lead.name}" moved to Quoted`,'ok');
@@ -8489,7 +10601,7 @@ function _quotHeader(q, tpl){
     : `<span class="status-badge" style="${_statusBadgeBg(q.status,tpl)}">${q.status}</span>`;
   return `<div class="hd">
     <div>
-      <div class="logo">🍎 Appletree <span>Interiors</span></div>
+      <div class="logo" style="display:flex;align-items:center;gap:8px"><img src="logo.png" alt="Appletree Interiors" style="height:26px;width:auto">Appletree <span>Interiors</span></div>
       <div style="font-size:10px;margin-top:3px;opacity:.7">Premium Interior Design & Manufacturing</div>
       <div style="font-size:10px;opacity:.7">sales.appletreeinteriors@gmail.com</div>
     </div>
@@ -8606,7 +10718,7 @@ function _poHTML(po, tpl){
   </head><body>
   <div class="hd">
     <div>
-      <div class="logo">🍎 Appletree <span>Interiors</span></div>
+      <div class="logo" style="display:flex;align-items:center;gap:8px"><img src="logo.png" alt="Appletree Interiors" style="height:26px;width:auto">Appletree <span>Interiors</span></div>
       <div style="font-size:10px;margin-top:3px;opacity:.7">sales.appletreeinteriors@gmail.com</div>
     </div>
     <div style="text-align:right">
@@ -8707,7 +10819,7 @@ function boqPrint(){
   </head><body>
     <div class="hd">
       <div>
-        <div class="logo">🍎 Appletree <span>Interiors</span></div>
+        <div class="logo" style="display:flex;align-items:center;gap:8px"><img src="logo.png" alt="Appletree Interiors" style="height:26px;width:auto">Appletree <span>Interiors</span></div>
         <div style="font-size:10px;color:#9C8E7A;margin-top:3px">Premium Interior Design & Manufacturing</div>
         <div style="font-size:10px;color:#9C8E7A">sales.appletreeinteriors@gmail.com</div>
       </div>
@@ -8793,6 +10905,28 @@ function renderFactoryDash(){
   document.getElementById('fd-delayed').textContent = delayed;
   document.getElementById('fd-qc').textContent      = qcPend;
   document.getElementById('fd-done').textContent    = done;
+
+  // At Risk — due soon or already overdue, so a job a supervisor got
+  // pulled away from doesn't just silently age past its deadline unseen.
+  const atRisk = DB.mfgJobs.filter(j=>j.status!=='Completed' && j.dueDate &&
+    (new Date(j.dueDate)<today || _isDueSoon(j.dueDate,today)));
+  const atRiskCard = document.getElementById('fd-at-risk-card');
+  if(atRisk.length){
+    atRiskCard.style.display='block';
+    atRisk.sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
+    document.getElementById('fd-at-risk-tb').innerHTML = atRisk.map(j=>{
+      const p=DB.products.find(x=>x.id===j.productId);
+      const overdue = new Date(j.dueDate)<today;
+      return `<tr>
+        <td>${escHtml(j.jobNo)}</td><td>${escHtml(p?p.name:'—')}</td>
+        <td class="${overdue?'stock-zero':''}">${fmtDate(j.dueDate)}</td>
+        <td>${overdue?'<span class="tag tag-red">Overdue</span>':'<span class="tag tag-gold">Due Soon</span>'}</td>
+        <td><button class="btn btn-ghost btn-xs" onclick="nav('mfgjobs',null)">Open</button></td>
+      </tr>`;
+    }).join('');
+  } else {
+    atRiskCard.style.display='none';
+  }
 
   // Kanban columns
   const cols = [
@@ -9028,15 +11162,18 @@ function advanceJobStatus(jobId){
 function deleteMfgOp(opId){
   if(!confirm('Delete this operation? This cannot be undone.')) return;
   const i = DB.mfgOps.findIndex(o=>o.id===opId);
-  if(i>-1){DB.mfgOps.splice(i,1);renderJobOps();toast('Operation deleted','ok');}
+  if(i>-1){DB.mfgOps.splice(i,1);_trackDelete('mfgOps',opId);saveDB();renderJobOps();toast('Operation deleted','ok');}
 }
 
 function deleteMfgJob(jobId){
   if(!confirm('Delete this job and all its operations?')) return;
   const i = DB.mfgJobs.findIndex(j=>j.id===jobId);
   if(i>-1){
+    DB.mfgOps.filter(o=>o.jobId===jobId).forEach(o=>_trackDelete('mfgOps',o.id));
     DB.mfgOps = DB.mfgOps.filter(o=>o.jobId!==jobId);
     DB.mfgJobs.splice(i,1);
+    _trackDelete('mfgJobs',jobId);
+    saveDB();
     renderMfgJobs(); toast('Job deleted','ok');
   }
 }
@@ -9352,6 +11489,8 @@ saveModal = function(){
   if(_currentModal==='machine')      { saveMachine(); return; }
   if(_currentModal==='jobcard')      { saveJobCard(); return; }
   if(_currentModal==='matrequest')   { saveMatRequest(); return; }
+  if(_currentModal==='capa')         { saveCapa(); return; }
+  if(_currentModal==='risk')         { saveRisk(); return; }
   if(_currentModal.startsWith('editmfgjob_')){ saveEditMfgJob(_currentModal.replace('editmfgjob_','')); return; }
   if(_currentModal.startsWith('editmfgop_')) { saveEditMfgOp(_currentModal.replace('editmfgop_','')); return; }
   if(_currentModal.startsWith('editmachine_')){ saveEditMachine(_currentModal.replace('editmachine_','')); return; }
@@ -10174,7 +12313,7 @@ function raiseInvoiceFromMilestone(msId){
 
 function deleteMilestone(msId){
   const i = DB.milestones.findIndex(x=>x.id===msId);
-  if(i>-1){ DB.milestones.splice(i,1); renderMilestones(); toast('Milestone deleted','ok'); }
+  if(i>-1){ DB.milestones.splice(i,1); _trackDelete('milestones',msId); saveDB(); renderMilestones(); toast('Milestone deleted','ok'); }
 }
 
 function editMilestone(msId){
@@ -10364,7 +12503,11 @@ function toggleEmpStatus(id){
   const e=DB.employees.find(x=>x.id===id);
   if(!e)return;
   e.status=e.status==='Active'?'Inactive':'Active';
-  toast('Status updated','ok'); renderEmployees();
+  // Exit-date tracking (BOS Manual §11, unlocks the Attrition Rate KPI, §6)
+  // — no separate termination workflow, just the one timestamp needed.
+  if(e.status==='Inactive') e.exitDate = new Date().toISOString().slice(0,10);
+  else e.exitDate = '';
+  toast('Status updated','ok'); saveDB(); renderEmployees();
 }
 
 function openAddEmployee(){
@@ -11595,7 +13738,7 @@ const ALL_MODULES = ['Overview','CRM & Sales','Estimation','Projects','Operation
 // the body was generated in (CEO, Factory Supervisor, Site Supervisor,
 // Accounts, ...), silently shifting every column after CEO by one and
 // showing each role's permissions under the wrong name.
-const ROLE_ORDER = ['CEO','Accounts','Factory Supervisor','Site Supervisor','Sales','Estimator','Procurement','Admin'];
+const ROLE_ORDER = ['CEO','Accounts','Factory Supervisor','Site Supervisor','Sales','Estimator','Procurement','Project Manager','QC Manager','Admin'];
 
 // Default permissions — the single source of truth for both what's shown
 // in the matrix AND what applyRoleNav() actually enforces in the sidebar
@@ -11613,6 +13756,8 @@ const DEFAULT_ROLE_PERMISSIONS = {
   'Sales':              ['Overview','CRM & Sales','Projects'],
   'Estimator':          ['Overview','Estimation','Projects'],
   'Procurement':        ['Overview','Inventory','Projects','Master Data'],
+  'Project Manager':    ['Overview','Projects','Operations','Site & Installation','Factory / MES','Reports'],
+  'QC Manager':         ['Overview','Projects','Operations','Factory / MES','Site & Installation'],
 };
 
 // DB.rolePermissions is an array of {id: roleName, modules: [...]} records
@@ -11679,6 +13824,7 @@ const ROLE_LANDING = {
   'CEO':'CEO Dashboard','Factory Supervisor':'Factory Dashboard',
   'Site Supervisor':'Site Dashboard','Accounts':'Sales Invoices',
   'Sales':'Leads & Enquiries','Estimator':'Estimator Dashboard','Procurement':'Purchases',
+  'Project Manager':'Projects','QC Manager':'Stage-Gate Dashboard',
   'Admin':'Dashboard',
 };
 
@@ -11911,6 +14057,7 @@ function approveUser(pendingId){
     role:u.role, active:true, supabaseUserId:u.supabaseUserId||null
   });
   DB.pendingUsers = DB.pendingUsers.filter(x=>x.id!==pendingId);
+  _trackDelete('pendingUsers',pendingId);
   saveDB();
   toast(`${u.name} approved and can now log in ✓`,'ok');
   renderUserMgmt();
@@ -11921,6 +14068,7 @@ function rejectUser(pendingId){
   if(!u) return;
   if(!confirm(`Reject access request from ${u.name}?`)) return;
   DB.pendingUsers = DB.pendingUsers.filter(x=>x.id!==pendingId);
+  _trackDelete('pendingUsers',pendingId);
   saveDB();
   toast(`Access request from ${u.name} rejected`,'ok');
   renderUserMgmt();
@@ -14032,7 +16180,13 @@ function seedVendorLists(){
     bankEntries:'bank_entries', vendorMaster:'vendor_master',
     purchaseOrders:'purchase_orders', siteDeliveries:'site_deliveries',
     mfgJobs:'mfg_jobs', mfgOps:'mfg_ops', pendingUsers:'pending_users',
-    qcChecklist:'qc_checklist', rolePermissions:'role_permissions',
+    qcChecklist:'qc_checklist', stageGates:'stage_gates',
+    capaRegister:'capa_register', riskRegister:'risk_register',
+    recruitmentRequisitions:'recruitment_requisitions', inductions:'inductions',
+    trainingRecords:'training_records', appraisals:'appraisals',
+    leaveRequests:'leave_requests', recognitions:'recognitions',
+    disciplinaryActions:'disciplinary_actions',
+    rolePermissions:'role_permissions',
     estimationRequests:'estimation_requests', activityLog:'activity_log',
     costingTemplates:'costing_templates', costingMaterials:'costing_materials',
     costingHardware:'costing_hardware', costingLabourRates:'costing_labour_rates',
@@ -14047,7 +16201,9 @@ function seedVendorLists(){
     'customers','workers','items','vendorMaster','deliveries','installation',
     'employees','attendance','payroll','advances','purchaseOrders','milestones',
     'siteDeliveries','installations','machines','mfgJobs','mfgOps','accounts',
-    'pendingUsers','dispatch','qcChecklist','rolePermissions',
+    'pendingUsers','dispatch','qcChecklist','stageGates','capaRegister','riskRegister',
+    'recruitmentRequisitions','inductions','trainingRecords','appraisals','leaveRequests','recognitions','disciplinaryActions',
+    'rolePermissions',
     'estimationRequests','notifications','activityLog',
     'costingTemplates','costingMaterials','costingHardware','costingLabourRates',
     'architects','builders','b2bPartners'
@@ -14064,6 +16220,20 @@ function seedVendorLists(){
 
   async function _flushToSupabase(){
     if(!_currentUser) return;
+
+    // Process real deletions FIRST, and only clear each table's pending
+    // set on success — a failed delete (network blip, RLS hiccup) stays
+    // queued and retries on the next flush instead of being silently
+    // dropped. This is the fix for deleted records reappearing after a
+    // refresh: previously nothing ever called .delete() on Supabase at all.
+    for(const key of Object.keys(window._pendingDeletes)){
+      const ids=[...window._pendingDeletes[key]];
+      if(!ids.length){ delete window._pendingDeletes[key]; continue; }
+      const {error}=await _sb.from(sbTable(key)).delete().in('id',ids);
+      if(error) console.warn('[ERP] Supabase delete-sync error for',key,error.message);
+      else delete window._pendingDeletes[key];
+    }
+
     const tables=[..._dirty]; _dirty.clear();
     for(const key of tables){
       const records=DB[key];
@@ -14203,9 +16373,12 @@ function seedVendorLists(){
     applyRoleNav(_currentUser.role);
     updateNavPendingBadge();
     renderNotifBell();
+    checkDueDateAlerts();
+    renderNotifBell();
     const landing={
       'CEO':'ceodash','Factory Supervisor':'factorydash','Site Supervisor':'sitedash',
-      'Accounts':'invoices','Sales':'leads','Estimator':'estimatordash','Procurement':'purchases','Admin':'dashboard'
+      'Accounts':'invoices','Sales':'leads','Estimator':'estimatordash','Procurement':'purchases',
+      'Project Manager':'projects','QC Manager':'stagegatedash','Admin':'dashboard'
     }[_currentUser.role]||'dashboard';
     nav(landing,document.querySelector(`[data-pg="${landing}"]`));
   }
