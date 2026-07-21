@@ -9,8 +9,8 @@ export const Role = {
   ADMIN: 'ADMIN',
   DESIGNER: 'DESIGNER',
   PRODUCTION_MANAGER: 'PRODUCTION_MANAGER',
-  CUTTING_MASTER: 'CUTTING_MASTER',
-  FACTORY_STAFF: 'FACTORY_STAFF',
+  FACTORY_USER: 'FACTORY_USER',
+  VIEWER: 'VIEWER',
 } as const;
 
 export type Role = (typeof Role)[keyof typeof Role];

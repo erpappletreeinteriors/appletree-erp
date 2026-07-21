@@ -1,0 +1,831 @@
+<title>Appletree Interiors ERP — Business & Digital Transformation Audit</title>
+<style>
+:root{
+  --ink:#1B2430; --ink-soft:#3A4454;
+  --paper:#F5F3EE; --paper-raised:#FFFFFF;
+  --line:#DCD8CE; --line-soft:#E8E5DC;
+  --muted:#6B6656;
+  --accent:#A9793D; --accent-soft:#EDE0CC; --accent-ink:#5C3F1F;
+  --good:#3E7A5C; --good-soft:#DCEBE2;
+  --warn:#B5872E; --warn-soft:#F3E8CE;
+  --risk:#B14C3C; --risk-soft:#F5E0DB;
+  --shadow: 0 1px 2px rgba(27,36,48,.06), 0 8px 24px -12px rgba(27,36,48,.18);
+  --serif: Iowan Old Style, Palatino Linotype, Palatino, Georgia, "Noto Serif", serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --ink:#EDE9DF; --ink-soft:#C9C3B4;
+    --paper:#1B1912; --paper-raised:#24211A;
+    --line:#3A362A; --line-soft:#2C2920;
+    --muted:#9C9583;
+    --accent:#D9A85C; --accent-soft:#3A2E1A; --accent-ink:#F0CE94;
+    --good:#7FBF9C; --good-soft:#1E3128;
+    --warn:#E0B65C; --warn-soft:#332A15;
+    --risk:#E08B7A; --risk-soft:#3A211D;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#EDE9DF; --ink-soft:#C9C3B4;
+  --paper:#1B1912; --paper-raised:#24211A;
+  --line:#3A362A; --line-soft:#2C2920;
+  --muted:#9C9583;
+  --accent:#D9A85C; --accent-soft:#3A2E1A; --accent-ink:#F0CE94;
+  --good:#7FBF9C; --good-soft:#1E3128;
+  --warn:#E0B65C; --warn-soft:#332A15;
+  --risk:#E08B7A; --risk-soft:#3A211D;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
+}
+:root[data-theme="light"]{
+  --ink:#1B2430; --ink-soft:#3A4454;
+  --paper:#F5F3EE; --paper-raised:#FFFFFF;
+  --line:#DCD8CE; --line-soft:#E8E5DC;
+  --muted:#6B6656;
+  --accent:#A9793D; --accent-soft:#EDE0CC; --accent-ink:#5C3F1F;
+  --good:#3E7A5C; --good-soft:#DCEBE2;
+  --warn:#B5872E; --warn-soft:#F3E8CE;
+  --risk:#B14C3C; --risk-soft:#F5E0DB;
+  --shadow: 0 1px 2px rgba(27,36,48,.06), 0 8px 24px -12px rgba(27,36,48,.18);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--paper);color:var(--ink);font-family:var(--sans);}
+body{ -webkit-font-smoothing:antialiased; line-height:1.55; }
+::selection{ background:var(--accent-soft); color:var(--accent-ink); }
+a{ color:var(--accent-ink); }
+h1,h2,h3,h4{ font-family:var(--serif); font-weight:600; text-wrap:balance; color:var(--ink); margin:0; }
+.num{ font-family:var(--mono); font-variant-numeric:tabular-nums; }
+
+/* ── Shell ── */
+.shell{ display:grid; grid-template-columns:248px minmax(0,1fr); max-width:1360px; margin:0 auto; }
+@media (max-width:980px){ .shell{ grid-template-columns:1fr; } .toc{ display:none; } }
+
+.toc{ position:sticky; top:0; align-self:start; height:100vh; overflow-y:auto; padding:28px 18px 40px; border-right:1px solid var(--line); }
+.toc-brand{ font-family:var(--serif); font-size:15px; font-weight:600; margin-bottom:2px; }
+.toc-brand .sub{ font-family:var(--sans); font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); display:block; margin-top:3px; }
+.toc-list{ list-style:none; margin:22px 0 0; padding:0; font-size:12.5px; }
+.toc-list li{ margin:0; }
+.toc-list a{ display:block; padding:5px 8px; margin:1px 0; border-radius:5px; color:var(--ink-soft); text-decoration:none; }
+.toc-list a:hover{ background:var(--line-soft); color:var(--ink); }
+.toc-list .n{ font-family:var(--mono); color:var(--muted); font-size:10.5px; margin-right:6px; }
+
+.main{ padding:0 0 80px; min-width:0; }
+
+/* ── Cover ── */
+.cover{ padding:56px clamp(20px,4vw,64px) 40px; border-bottom:1px solid var(--line); }
+.cover .eyebrow{ font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--accent-ink); font-weight:600; }
+.cover h1{ font-size:clamp(28px,3.4vw,42px); line-height:1.12; margin-top:10px; max-width:16ch; }
+.cover .dek{ font-size:15.5px; color:var(--ink-soft); max-width:62ch; margin-top:14px; }
+.cover .meta{ display:flex; gap:22px; flex-wrap:wrap; margin-top:22px; font-size:11.5px; color:var(--muted); }
+.cover .meta b{ color:var(--ink); font-weight:600; }
+
+section{ padding:44px clamp(20px,4vw,64px); border-bottom:1px solid var(--line); scroll-margin-top:12px; }
+section.tight{ padding-top:36px; padding-bottom:36px; }
+.section-head{ display:flex; align-items:baseline; gap:12px; margin-bottom:6px; }
+.section-num{ font-family:var(--mono); font-size:12px; color:var(--accent); }
+.section-head h2{ font-size:22px; }
+.section-lede{ color:var(--ink-soft); font-size:14px; max-width:74ch; margin:10px 0 22px; }
+
+/* ── Scorecards ── */
+.score-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-top:26px; }
+.score-tile{ background:var(--paper-raised); border:1px solid var(--line); border-radius:10px; padding:16px 16px 14px; box-shadow:var(--shadow); }
+.score-tile .lbl{ font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+.score-tile .val{ font-family:var(--mono); font-size:30px; font-weight:600; margin-top:6px; color:var(--ink); }
+.score-tile .val .of{ font-size:14px; color:var(--muted); font-weight:400; }
+.score-tile .bar{ height:4px; border-radius:2px; background:var(--line-soft); margin-top:10px; overflow:hidden; }
+.score-tile .bar i{ display:block; height:100%; background:var(--accent); border-radius:2px; }
+.score-tile.hero .val{ color:var(--accent-ink); }
+.score-tile.hero .bar i{ background:var(--accent); }
+
+/* ── Tables ── */
+.tbl-wrap{ overflow-x:auto; margin-top:8px; border:1px solid var(--line); border-radius:10px; background:var(--paper-raised); box-shadow:var(--shadow); }
+table{ width:100%; border-collapse:collapse; font-size:13px; min-width:560px; }
+thead th{ text-align:left; font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); font-weight:600; padding:11px 14px; border-bottom:1px solid var(--line); background:var(--line-soft); white-space:nowrap; }
+tbody td{ padding:10px 14px; border-bottom:1px solid var(--line-soft); vertical-align:top; color:var(--ink-soft); }
+tbody tr:last-child td{ border-bottom:none; }
+tbody td:first-child{ color:var(--ink); font-weight:500; }
+td.num,th.num{ font-family:var(--mono); font-variant-numeric:tabular-nums; text-align:right; white-space:nowrap; }
+
+/* chips */
+.chip{ display:inline-flex; align-items:center; gap:5px; padding:2px 9px; border-radius:99px; font-size:11px; font-weight:600; font-family:var(--mono); white-space:nowrap; }
+.chip.good{ background:var(--good-soft); color:var(--good); }
+.chip.warn{ background:var(--warn-soft); color:var(--warn); }
+.chip.risk{ background:var(--risk-soft); color:var(--risk); }
+.chip::before{ content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
+
+/* callouts */
+.callout{ border-radius:10px; padding:16px 18px; border:1px solid var(--line); background:var(--paper-raised); margin-top:16px; }
+.callout h4{ font-size:12px; text-transform:uppercase; letter-spacing:.06em; font-family:var(--sans); font-weight:700; margin-bottom:8px; }
+.callout.risk{ background:var(--risk-soft); border-color:transparent; }
+.callout.risk h4{ color:var(--risk); }
+.callout.good{ background:var(--good-soft); border-color:transparent; }
+.callout.good h4{ color:var(--good); }
+.callout p, .callout li{ font-size:13px; color:var(--ink-soft); margin:0; }
+.callout ul{ margin:0; padding-left:18px; }
+.callout li + li{ margin-top:4px; }
+
+/* two col */
+.grid-2{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:18px; }
+@media (max-width:720px){ .grid-2{ grid-template-columns:1fr; } }
+
+/* swot */
+.swot{ display:grid; grid-template-columns:1fr 1fr; gap:2px; background:var(--line); border:1px solid var(--line); border-radius:10px; overflow:hidden; margin-top:20px; }
+@media (max-width:720px){ .swot{ grid-template-columns:1fr; } }
+.swot > div{ background:var(--paper-raised); padding:20px 22px; }
+.swot h4{ font-size:11px; letter-spacing:.08em; text-transform:uppercase; font-family:var(--sans); font-weight:700; margin-bottom:12px; }
+.swot .s h4{ color:var(--good); } .swot .w h4{ color:var(--risk); }
+.swot .o h4{ color:var(--accent-ink); } .swot .t h4{ color:var(--warn); }
+.swot ul{ margin:0; padding-left:16px; font-size:13px; color:var(--ink-soft); }
+.swot li + li{ margin-top:7px; }
+
+/* roadmap */
+.roadmap{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-top:22px; }
+@media (max-width:900px){ .roadmap{ grid-template-columns:1fr 1fr; } }
+@media (max-width:560px){ .roadmap{ grid-template-columns:1fr; } }
+.rm-card{ background:var(--paper-raised); border:1px solid var(--line); border-radius:10px; padding:16px; box-shadow:var(--shadow); }
+.rm-card .ph{ font-family:var(--mono); font-size:10.5px; color:var(--accent); text-transform:uppercase; letter-spacing:.06em; }
+.rm-card h4{ font-size:14.5px; margin-top:4px; }
+.rm-card ul{ margin:12px 0 0; padding-left:16px; font-size:12.5px; color:var(--ink-soft); }
+.rm-card li + li{ margin-top:6px; }
+
+/* automation grid */
+.auto-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px; margin-top:18px; }
+.auto-item{ background:var(--paper-raised); border:1px solid var(--line); border-radius:8px; padding:11px 13px; font-size:12.5px; color:var(--ink-soft); display:flex; gap:8px; }
+.auto-item b{ color:var(--ink); font-weight:600; }
+.auto-item .idx{ font-family:var(--mono); color:var(--accent); font-size:11px; flex-shrink:0; }
+
+/* final priority table */
+.pri-effort{ font-size:11px; }
+
+footer{ padding:36px clamp(20px,4vw,64px) 60px; color:var(--muted); font-size:12px; }
+.legend{ display:flex; gap:16px; flex-wrap:wrap; font-size:11.5px; color:var(--muted); margin-top:14px; }
+.legend span{ display:inline-flex; align-items:center; gap:6px; }
+.legend i{ width:9px; height:9px; border-radius:50%; display:inline-block; }
+</style>
+
+<div class="shell">
+  <nav class="toc">
+    <div class="toc-brand">Appletree ERP<span class="sub">Audit &amp; Diligence Report</span></div>
+    <ul class="toc-list">
+      <li><a href="#exec"><span class="n">00</span>Executive Summary</a></li>
+      <li><a href="#business"><span class="n">01</span>Business Model</a></li>
+      <li><a href="#marketing"><span class="n">02</span>Marketing</a></li>
+      <li><a href="#sales"><span class="n">03</span>Sales Management</a></li>
+      <li><a href="#finance"><span class="n">04</span>Finance</a></li>
+      <li><a href="#ops"><span class="n">05</span>Operations</a></li>
+      <li><a href="#design"><span class="n">06</span>Design Workflow</a></li>
+      <li><a href="#mfg"><span class="n">07</span>Manufacturing</a></li>
+      <li><a href="#procurement"><span class="n">08</span>Procurement</a></li>
+      <li><a href="#hr"><span class="n">09</span>HR</a></li>
+      <li><a href="#cx"><span class="n">10</span>Customer Experience</a></li>
+      <li><a href="#uxui"><span class="n">11</span>UX / UI</a></li>
+      <li><a href="#tech"><span class="n">12</span>Technical Architecture</a></li>
+      <li><a href="#data"><span class="n">13</span>Data &amp; Analytics</a></li>
+      <li><a href="#automation"><span class="n">14</span>Automation</a></li>
+      <li><a href="#risk"><span class="n">15</span>Risk Assessment</a></li>
+      <li><a href="#benchmark"><span class="n">16</span>Competitive Benchmark</a></li>
+      <li><a href="#swot"><span class="n">17</span>SWOT</a></li>
+      <li><a href="#gap"><span class="n">18</span>Gap Analysis</a></li>
+      <li><a href="#ai"><span class="n">19</span>AI Readiness</a></li>
+      <li><a href="#roi"><span class="n">20</span>ROI Analysis</a></li>
+      <li><a href="#roadmap"><span class="n">21</span>Roadmap</a></li>
+      <li><a href="#ceo"><span class="n">22</span>CEO Report</a></li>
+      <li><a href="#top25"><span class="n">23</span>Top 25 Priorities</a></li>
+    </ul>
+  </nav>
+
+  <main class="main">
+
+    <div class="cover">
+      <div class="eyebrow">Business Due Diligence · Digital Transformation Audit · Operational Excellence Review</div>
+      <h1>Appletree Interiors ERP<br>Board Readiness Assessment</h1>
+      <p class="dek">An independent evaluation of <a href="https://erp4interior.netlify.app/" target="_blank" rel="noopener">erp4interior.netlify.app</a> against the operating standard expected of a scaling interior fit-out and modular furniture manufacturing business — assessed as a working system, not a feature list.</p>
+      <div class="meta">
+        <span><b>Subject</b> Appletree Interiors — Operations ERP</span>
+        <span><b>Architecture</b> Single-file web app, Supabase backend, Netlify hosting</span>
+        <span><b>Scope</b> 44 live modules across 11 functional nav groups</span>
+        <span><b>Method</b> Live system walkthrough, role-permission audit, data-model review</span>
+      </div>
+    </div>
+
+    <!-- 00 EXEC SUMMARY -->
+    <section id="exec">
+      <div class="section-head"><span class="section-num">00</span><h2>Executive Summary</h2></div>
+      <p class="section-lede">This is a genuinely unusual artifact: a full operational ERP — CRM, parametric costing, procurement, factory MES, HR, and finance — built and deployed as one continuously-evolving internal tool rather than bought off a shelf. That origin is both the biggest strength and the central risk on this desk.</p>
+
+      <div class="score-grid">
+        <div class="score-tile hero"><div class="lbl">Overall Business Maturity</div><div class="val">62<span class="of">/100</span></div><div class="bar"><i style="width:62%"></i></div></div>
+        <div class="score-tile"><div class="lbl">ERP Maturity</div><div class="val">58<span class="of">/100</span></div><div class="bar"><i style="width:58%"></i></div></div>
+        <div class="score-tile"><div class="lbl">Digital Transformation</div><div class="val">64<span class="of">/100</span></div><div class="bar"><i style="width:64%"></i></div></div>
+        <div class="score-tile"><div class="lbl">Operational Readiness</div><div class="val">67<span class="of">/100</span></div><div class="bar"><i style="width:67%"></i></div></div>
+        <div class="score-tile"><div class="lbl">Scalability</div><div class="val">41<span class="of">/100</span></div><div class="bar"><i style="width:41%"></i></div></div>
+        <div class="score-tile"><div class="lbl">Investor Readiness</div><div class="val">33<span class="of">/100</span></div><div class="bar"><i style="width:33%"></i></div></div>
+      </div>
+
+      <div class="grid-2">
+        <div class="callout good">
+          <h4>Biggest strengths</h4>
+          <ul>
+            <li>End-to-end coverage: a lead can flow to quotation, costed BOQ, project, procurement, factory job, site install, invoice and P&amp;L inside one system — no spreadsheet handoffs.</li>
+            <li>A genuine parametric costing engine (geometry → material/hardware/labour → margin) most competitors in this price bracket don't have; it's the single most defensible piece of IP here.</li>
+            <li>Role-based access is real and CEO-editable at runtime, not hardcoded — unusually mature for a bootstrapped build.</li>
+            <li>Fast iteration cycle: five major modules shipped, tested, and deployed in a single engineering cycle with zero regressions.</li>
+          </ul>
+        </div>
+        <div class="callout risk">
+          <h4>Biggest weaknesses</h4>
+          <ul>
+            <li>Zero client-facing surface. No portal, no e-signature, no online payment — the entire system is staff-only, which caps both CX and marketing maturity scores hard.</li>
+            <li>No AI, no WhatsApp/email/SMS automation, no ad-platform integration anywhere in the stack — the marketing and automation layers are essentially unbuilt.</li>
+            <li>Single-file architecture and a generic JSONB-per-table data model will start fighting the business well before 5–10 concurrent users or serious BI needs.</li>
+            <li>Single-tenant, single-org data model — not multi-branch-ready without real schema work, which matters the moment a second city opens.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 01 BUSINESS MODEL -->
+    <section id="business">
+      <div class="section-head"><span class="section-num">01</span><h2>Business Model Analysis</h2></div>
+      <p class="section-lede">The ERP is built for an in-house, project-based interior fit-out and furniture manufacturing operation — not for a marketplace, not for a SaaS resale motion. That's a legitimate and common model in this industry; the system should be read against it, not against a product company's needs.</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Dimension</th><th>Observation</th></tr></thead>
+        <tbody>
+          <tr><td>Target customer</td><td>Residential and light-commercial clients buying a turnkey interiors project, sourced directly or via architect/builder/B2B referral.</td></tr>
+          <tr><td>Revenue model</td><td>Project-based contract value (quotation → milestone billing), not subscription or recurring — confirmed by the Payment Milestones and Sales Invoices modules.</td></tr>
+          <tr><td>Positioning</td><td>Full-service: design/costing through manufacturing and site install under one roof, not a pure design consultancy or pure execution contractor.</td></tr>
+          <tr><td>Unique value prop</td><td>In-house parametric costing gives faster, more consistent quoting than manual BOQ entry — a real operational edge if actually used at the quoting desk.</td></tr>
+          <tr><td>Competitive advantage</td><td>Speed and consistency of costing, plus full traceability from lead to handover — but currently an internal advantage only, not yet visible to the client.</td></tr>
+          <tr><td>Market fit</td><td>Strong fit for a single-location, staff-operated interiors business at the 5–40 person scale; weak fit past that without re-architecture (see Scalability, §12).</td></tr>
+        </tbody>
+      </table></div>
+      <div class="tbl-wrap" style="margin-top:16px"><table>
+        <thead><tr><th>Business type</th><th>Support</th><th>Evidence</th></tr></thead>
+        <tbody>
+          <tr><td>Residential interiors</td><td><span class="chip good">Strong</span></td><td>Leads, Quotations, Customers, milestone billing all fit this directly.</td></tr>
+          <tr><td>Commercial fit-outs</td><td><span class="chip warn">Partial</span></td><td>Nothing structurally blocks it, but no contract-variation, retention, or multi-stage commercial billing workflow exists.</td></tr>
+          <tr><td>Turnkey projects</td><td><span class="chip good">Strong</span></td><td>Lead → Estimation → Quotation → Project → Procurement → Factory → Site → Invoice is a real, connected chain.</td></tr>
+          <tr><td>Modular furniture manufacturing</td><td><span class="chip good">Strong</span></td><td>The costing engine's construction-type/hardware rules and the Factory/MES module are purpose-built for this.</td></tr>
+          <tr><td>Multi-branch operations</td><td><span class="chip risk">Not ready</span></td><td>Single hardcoded <code>org_id</code>; no branch/location entity anywhere in the data model.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- 02 MARKETING -->
+    <section id="marketing">
+      <div class="section-head"><span class="section-num">02</span><h2>Marketing Analysis</h2></div>
+      <p class="section-lede">This is the weakest functional area in the system — understandable, since it was built outward-in from operations, not from acquisition. Every score below reflects that the ERP has no marketing surface at all; it is a pure back-office tool today.</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Capability</th><th class="num">Score /10</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Lead capture / CRM</td><td class="num"><span class="chip warn">5</span></td><td>Real Leads entity with status pipeline, but manual entry only — no web form, ad, or channel intake.</td></tr>
+          <tr><td>Sales funnel visibility</td><td class="num"><span class="chip good">7</span></td><td>Lead → Estimation → Quotation → Won/Lost is modeled and now visualized on the Kanban board.</td></tr>
+          <tr><td>Quotation conversion tracking</td><td class="num"><span class="chip good">7</span></td><td>Win rate, pipeline-by-status, and per-partner Won value are on the Costing Dashboard.</td></tr>
+          <tr><td>Follow-up automation</td><td class="num"><span class="chip warn">3</span></td><td>Follow-up log exists on quotations; nothing fires reminders or nudges a rep automatically.</td></tr>
+          <tr><td>Campaign tracking</td><td class="num"><span class="chip risk">0</span></td><td>No concept of a marketing campaign, source cost, or spend anywhere.</td></tr>
+          <tr><td>WhatsApp / Email / SMS integration</td><td class="num"><span class="chip risk">0</span></td><td>Not present. All client communication is off-platform today.</td></tr>
+          <tr><td>Google Ads / Facebook Lead integration</td><td class="num"><span class="chip risk">0</span></td><td>No API integration or lead-source webhook of any kind.</td></tr>
+          <tr><td>Referral tracking</td><td class="num"><span class="chip good">7</span></td><td>Architect/Builder/B2B Partner registries with lead attribution and Won-value rollup — genuinely above par for this class of tool.</td></tr>
+          <tr><td>SEO readiness</td><td class="num"><span class="chip risk">n/a</span></td><td>Not applicable — this is an internal app behind login, correctly so.</td></tr>
+          <tr><td>Review / testimonial / portfolio management</td><td class="num"><span class="chip risk">0</span></td><td>No module for either; would live outside the ERP in a marketing site regardless.</td></tr>
+          <tr><td>Brand consistency (internal)</td><td class="num"><span class="chip good">8</span></td><td>Consistent gold/dark palette, typography, and component language throughout — better than most internal tools.</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout"><h4>Recommended additions</h4><ul>
+        <li>A public lead-capture form (even a simple hosted one) that writes straight into <code>DB.leads</code> via a Supabase Edge Function — closes the single biggest gap for close to zero cost.</li>
+        <li>WhatsApp Business API webhook for quotation-sent / follow-up-due nudges — this industry runs on WhatsApp; it's the highest-leverage single integration available.</li>
+        <li>A minimal <code>leadSource</code> cost field so marketing spend can eventually be tied to the win-rate data that already exists.</li>
+      </ul></div>
+    </section>
+
+    <!-- 03 SALES -->
+    <section id="sales">
+      <div class="section-head"><span class="section-num">03</span><h2>Sales Management</h2></div>
+      <p class="section-lede">This is one of the system's stronger areas, especially after the recent costing-engine and Kanban work — the mechanics of running a quote-driven sales process are genuinely there.</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Capability</th><th>Status</th><th>Detail</th></tr></thead>
+        <tbody>
+          <tr><td>Lead management</td><td><span class="chip good">Present</span></td><td>Status pipeline, source, referral attribution, value estimate.</td></tr>
+          <tr><td>Pipeline visualization</td><td><span class="chip good">Present</span></td><td>Quotations Kanban by status, with live value per column.</td></tr>
+          <tr><td>Sales forecasting</td><td><span class="chip risk">Missing</span></td><td>Win rate exists; no weighted-pipeline forecast (probability × value) or period targets.</td></tr>
+          <tr><td>Quotation management</td><td><span class="chip good">Present</span></td><td>Room/section BOQ builder plus parametric costed items, discount/GST, print preview.</td></tr>
+          <tr><td>Revision tracking</td><td><span class="chip warn">Partial</span></td><td>A revision number field exists; no diff/history view between revisions.</td></tr>
+          <tr><td>Approval workflow</td><td><span class="chip warn">Partial</span></td><td>Estimation-request claim/approve exists; no formal internal margin-approval gate before a quote goes to a client.</td></tr>
+          <tr><td>Discount controls</td><td><span class="chip warn">Partial</span></td><td>A discount% field exists on the quotation; no role-based cap or approval threshold on it.</td></tr>
+          <tr><td>Proposal templates</td><td><span class="chip warn">Partial</span></td><td>One consistent print layout; no selectable templates for different client tiers.</td></tr>
+          <tr><td>Site visit scheduling</td><td><span class="chip risk">Missing</span></td><td>No calendar/scheduling entity anywhere in the system.</td></tr>
+          <tr><td>Win/loss analysis</td><td><span class="chip good">Present</span></td><td>Won/Lost status with date-stamping and a loss-reason prompt; dashboard rollups by status.</td></tr>
+          <tr><td>Commission tracking</td><td><span class="chip risk">Missing</span></td><td>No sales-rep-to-payout linkage; Partners &amp; Referrals tracks channel value, not staff commission.</td></tr>
+          <tr><td>Conversion analytics</td><td><span class="chip good">Present</span></td><td>Win rate and per-referral-partner Won value are computed live on the Costing Dashboard.</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout"><h4>Best-practice recommendation</h4><p>Add a lightweight discount-approval rule (e.g. &gt;10% requires CEO/Admin sign-off before status can move to "Sent") and a weighted-pipeline forecast card on the Costing Dashboard — both are additive to what already exists and would close the gap to a genuinely investor-grade sales function.</p></div>
+    </section>
+
+    <!-- 04 FINANCE -->
+    <section id="finance">
+      <div class="section-head"><span class="section-num">04</span><h2>Finance Analysis</h2></div>
+      <p class="section-lede">Finance is broad but shallow in places — the modules exist, but several of the controls a CFO would actually rely on for audit-readiness are not yet enforced by the system.</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Capability</th><th class="num">Score /10</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Quotation costing</td><td class="num"><span class="chip good">8</span></td><td>Parametric engine with material/hardware/labour breakdown and margin control.</td></tr>
+          <tr><td>Budgeting / BOQ</td><td class="num"><span class="chip good">7</span></td><td>Project BOM and Quoted-vs-BOM-vs-Actual variance report both exist.</td></tr>
+          <tr><td>Vendor payments / Payables</td><td class="num"><span class="chip warn">6</span></td><td>Vendors/Bills module present; no aging-driven payment scheduling.</td></tr>
+          <tr><td>Purchase orders</td><td class="num"><span class="chip good">7</span></td><td>Full PO lifecycle with status and receiving.</td></tr>
+          <tr><td>Expense tracking</td><td class="num"><span class="chip good">7</span></td><td>Project Expenses module, feeds P&amp;L directly.</td></tr>
+          <tr><td>Project costing / Job costing</td><td class="num"><span class="chip good">8</span></td><td>Product Costing report compares Quoted, BOM, and Actual per line item — genuinely strong.</td></tr>
+          <tr><td>Overhead allocation</td><td class="num"><span class="chip warn">5</span></td><td>Overhead% exists at the costing-engine line-item level; no company-wide overhead-absorption model.</td></tr>
+          <tr><td>Tax / GST compliance</td><td class="num"><span class="chip warn">4</span></td><td>A flat GST% field on quotations; no GSTIN validation, no GSTR-ready export, no HSN-level tax logic.</td></tr>
+          <tr><td>Receivables aging</td><td class="num"><span class="chip good">7</span></td><td>Dedicated report exists.</td></tr>
+          <tr><td>Bank reconciliation</td><td class="num"><span class="chip warn">4</span></td><td>Banking &amp; Petty Cash ledger exists; no bank-statement import/matching.</td></tr>
+          <tr><td>Financial dashboard</td><td class="num"><span class="chip good">7</span></td><td>CEO Dashboard covers revenue, outstanding, and cost; no consolidated P&amp;L trend view.</td></tr>
+          <tr><td>Cash flow</td><td class="num"><span class="chip risk">3</span></td><td>The underlying data (receipts, payments, milestones) exists but there is no forward cash-flow projection view.</td></tr>
+          <tr><td>Cost-leakage detection</td><td class="num"><span class="chip warn">5</span></td><td>Variance report surfaces it after the fact; no proactive alert when Actual materially exceeds BOM mid-project.</td></tr>
+          <tr><td>Break-even tracking</td><td class="num"><span class="chip risk">1</span></td><td>Not modeled at company or project level.</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout risk"><h4>Highest-priority finance gap</h4><p>There is no real double-entry ledger under the hood — each module (invoices, expenses, purchases) writes its own records, and the Chart of Accounts / P&amp;L are computed by cross-referencing them at read time rather than posting real journal entries. That's fine at current scale but will not pass a real audit and should be flagged to any investor or auditor before diligence, not discovered during it.</p></div>
+    </section>
+
+    <!-- 05 OPERATIONS -->
+    <section id="ops">
+      <div class="section-head"><span class="section-num">05</span><h2>Operations Analysis</h2></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Module</th><th class="num">Score /10</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Project planning</td><td class="num"><span class="chip warn">5</span></td><td>Projects exist with status/dates; no Gantt or dependency-based schedule.</td></tr>
+          <tr><td>Scheduling</td><td class="num"><span class="chip risk">3</span></td><td>No calendar view for install dates, site visits, or factory jobs together.</td></tr>
+          <tr><td>Site progress tracking</td><td class="num"><span class="chip warn">5</span></td><td>Site Dashboard + Installation exist; progress is status-based, not %-complete or milestone-photo based.</td></tr>
+          <tr><td>Resource / labour allocation</td><td class="num"><span class="chip good">7</span></td><td>Labour &amp; Wages module with per-project attribution.</td></tr>
+          <tr><td>Daily reports</td><td class="num"><span class="chip risk">2</span></td><td>No structured daily-progress-report entity anywhere.</td></tr>
+          <tr><td>Purchase workflow</td><td class="num"><span class="chip good">7</span></td><td>PO → Purchases → Warehouse receipt chain is complete.</td></tr>
+          <tr><td>Material tracking / Inventory / Warehouse</td><td class="num"><span class="chip good">7</span></td><td>Warehouse Stock, Issues, Returns, Stock Report, low-stock alerts on CEO Dashboard.</td></tr>
+          <tr><td>Manufacturing tracking</td><td class="num"><span class="chip good">7</span></td><td>Factory Dashboard, Manufacturing Jobs, Job Cards, Machines with maintenance-due indicator.</td></tr>
+          <tr><td>Snag / punch-list management</td><td class="num"><span class="chip risk">2</span></td><td>QC Checklist covers formal inspection; no photo-tagged snag list against a floor plan.</td></tr>
+          <tr><td>Installation planning</td><td class="num"><span class="chip warn">5</span></td><td>Installation module exists as a record, not a resourced schedule.</td></tr>
+          <tr><td>Quality control</td><td class="num"><span class="chip good">7</span></td><td>QC Checklist + QC Dashboard is a genuinely complete pairing.</td></tr>
+          <tr><td>Handover process</td><td class="num"><span class="chip risk">2</span></td><td>No formal handover checklist/sign-off document distinct from QC.</td></tr>
+          <tr><td>AMC / warranty tracking</td><td class="num"><span class="chip risk">0</span></td><td>Not present — a real gap for a furniture manufacturer with hardware warranties.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- 06 DESIGN -->
+    <section id="design">
+      <div class="section-head"><span class="section-num">06</span><h2>Interior Design Workflow Analysis</h2></div>
+      <p class="section-lede">This is the honest gap between "costing tool" and "design tool" — the ERP prices a design extremely well, but does not participate in producing one.</p>
+      <div class="grid-2">
+        <div class="callout good"><h4>Supported</h4><ul>
+          <li>BOQ generation (from both manual room/item entry and the parametric engine)</li>
+          <li>Material selection at the costing-line level (core, finish, edge-band, hardware)</li>
+          <li>Client approval workflow (quotation status: Sent → Approved/Won)</li>
+          <li>Change orders in effect via quotation revisioning</li>
+        </ul></div>
+        <div class="callout risk"><h4>Not supported</h4><ul>
+          <li>Concept design, mood boards, 3D visualization</li>
+          <li>CAD / shop / production drawing storage or version control</li>
+          <li>Sample tracking, design freeze workflow</li>
+          <li>Site measurement records as a structured entity</li>
+        </ul></div>
+      </div>
+      <div class="callout"><h4>Recommendation</h4><p>Don't build a CAD tool — integrate one. A simple file-attachment field (drawing version, uploaded-by, uploaded-at) on Projects and Quotations, backed by Supabase Storage, would close 70% of this gap without competing with SketchUp/AutoCAD/Pinterest-style tools the design team already uses.</p></div>
+    </section>
+
+    <!-- 07 MFG -->
+    <section id="mfg">
+      <div class="section-head"><span class="section-num">07</span><h2>Manufacturing Analysis</h2></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Capability</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Furniture production (Manufacturing Jobs, Job Cards)</td><td><span class="chip good">Present</span></td></tr>
+          <tr><td>Cutting lists</td><td><span class="chip risk">Missing</span> — the costing engine computes sheet count but doesn't emit an optimized cut list</td></tr>
+          <tr><td>Machine planning / utilization</td><td><span class="chip warn">Partial</span> — Machines are tracked as assets with maintenance-due flags, not a load/schedule board</td></tr>
+          <tr><td>CNC / Edge Banding workflow</td><td><span class="chip warn">Partial</span> — priced by the costing engine, not routed as a factory-floor work-order step</td></tr>
+          <tr><td>Assembly / Polishing / Painting / Packing / Dispatch</td><td><span class="chip warn">Partial</span> — covered generically by Job Cards' status field, not as named production stages</td></tr>
+          <tr><td>Production scheduling / Work orders</td><td><span class="chip warn">Partial</span> — Manufacturing Jobs act as work orders; no capacity-aware scheduling</td></tr>
+          <tr><td>Barcode / QR tracking</td><td><span class="chip risk">Missing</span></td></tr>
+          <tr><td>Production KPIs / Factory Dashboard</td><td><span class="chip good">Present</span></td></tr>
+          <tr><td>Waste management</td><td><span class="chip risk">Missing</span> — wastage% is priced into materials but not reconciled against actual offcut</td></tr>
+          <tr><td>Labour productivity</td><td><span class="chip warn">Partial</span> — labour cost is tracked; output-per-hour is not computed</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- 08 PROCUREMENT -->
+    <section id="procurement">
+      <div class="section-head"><span class="section-num">08</span><h2>Procurement Analysis</h2></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Capability</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Supplier / Vendor management</td><td><span class="chip good">Present</span> — Vendor Master + Purchase &amp; Vendor report</td></tr>
+          <tr><td>Vendor rating / scoring</td><td><span class="chip risk">Missing</span></td></tr>
+          <tr><td>RFQ / competitive bidding</td><td><span class="chip risk">Missing</span> — POs are direct-to-vendor, no quote comparison step</td></tr>
+          <tr><td>Purchase approval workflow</td><td><span class="chip warn">Partial</span> — PO has a status field; no role-gated approval threshold by value</td></tr>
+          <tr><td>Purchase orders / GRN / Material receipt</td><td><span class="chip good">Present</span></td></tr>
+          <tr><td>Stock verification</td><td><span class="chip warn">Partial</span> — stock levels are tracked; no physical-count reconciliation workflow</td></tr>
+          <tr><td>Material consumption tracking</td><td><span class="chip good">Present</span> — via Material Issues against a project</td></tr>
+          <tr><td>Vendor performance / price comparison / lead-time analysis</td><td><span class="chip risk">Missing</span></td></tr>
+          <tr><td>Inventory reorder alerts</td><td><span class="chip good">Present</span> — low-stock alert on CEO Dashboard against a reorder level</td></tr>
+          <tr><td>Dead stock identification</td><td><span class="chip risk">Missing</span></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- 09 HR -->
+    <section id="hr">
+      <div class="section-head"><span class="section-num">09</span><h2>HR Analysis</h2></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Capability</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Employee management</td><td><span class="chip good">Present</span></td></tr>
+          <tr><td>Attendance</td><td><span class="chip good">Present</span></td></tr>
+          <tr><td>Payroll (incl. Advances)</td><td><span class="chip good">Present</span> — with a Payroll Summary report</td></tr>
+          <tr><td>Site labour tracking</td><td><span class="chip good">Present</span> — Labour &amp; Wages module, per-project</td></tr>
+          <tr><td>Performance / incentives</td><td><span class="chip risk">Missing</span></td></tr>
+          <tr><td>Leave management</td><td><span class="chip warn">Partial</span> — inferable from attendance, no dedicated leave-request workflow</td></tr>
+          <tr><td>Training / skill matrix</td><td><span class="chip risk">Missing</span></td></tr>
+          <tr><td>Timesheets</td><td><span class="chip risk">Missing</span> — attendance is present/absent, not task-level hours</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- 10 CX -->
+    <section id="cx">
+      <div class="section-head"><span class="section-num">10</span><h2>Customer Experience Analysis</h2></div>
+      <p class="section-lede">Rated from the actual client's perspective — not the staff using the ERP.</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Dimension</th><th class="num">Score /10</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Ease of use (staff-facing)</td><td class="num"><span class="chip good">8</span></td><td>Consistent component language, keyboard navigation, dark mode.</td></tr>
+          <tr><td>Navigation</td><td class="num"><span class="chip good">8</span></td><td>Grouped sidebar with role-based visibility scales well to 44 modules.</td></tr>
+          <tr><td>Speed / responsiveness</td><td class="num"><span class="chip good">7</span></td><td>Single-file app with in-memory state — instant page transitions; sync is debounced and backgrounded.</td></tr>
+          <tr><td>Mobile friendliness</td><td class="num"><span class="chip warn">4</span></td><td>Usable on a tablet; a dense 44-item sidebar and wide tables are not a real phone experience for a site supervisor.</td></tr>
+          <tr><td>Client portal</td><td class="num"><span class="chip risk">0</span></td><td>Does not exist. A client cannot see their own project status, quotation, or invoice without a staff member showing them.</td></tr>
+          <tr><td>Document sharing with client</td><td class="num"><span class="chip risk">0</span></td><td>No client-visible surface at all.</td></tr>
+          <tr><td>Payment experience</td><td class="num"><span class="chip risk">1</span></td><td>Milestones are tracked internally; no client-facing "pay now" link.</td></tr>
+          <tr><td>Support experience</td><td class="num"><span class="chip risk">2</span></td><td>No ticketing or support-request channel of any kind.</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout risk"><h4>Read this one carefully</h4><p>Every CX score above 5 is a staff-experience score. From the paying client's side, this system is currently invisible — which is normal for an internal ops tool, but it means "customer experience," as a board would define it, is not yet a live capability of this business's technology stack.</p></div>
+    </section>
+
+    <!-- 11 UX/UI -->
+    <section id="uxui">
+      <div class="section-head"><span class="section-num">11</span><h2>User Experience (UX/UI)</h2></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Dimension</th><th class="num">Score /10</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>Visual design / consistency</td><td class="num"><span class="chip good">8</span></td><td>A deliberate gold/charcoal palette and card/tag/modal system used uniformly across 44 pages.</td></tr>
+          <tr><td>Typography</td><td class="num"><span class="chip good">7</span></td><td>Manrope + JetBrains Mono pairing; monospace correctly reserved for figures.</td></tr>
+          <tr><td>Spacing / density</td><td class="num"><span class="chip warn">6</span></td><td>Appropriately dense for a power-user tool; some BOQ line-item cells were cramped until a recent fix widened them.</td></tr>
+          <tr><td>Accessibility</td><td class="num"><span class="chip warn">4</span></td><td>No visible audit for contrast/ARIA/focus states beyond default browser behavior.</td></tr>
+          <tr><td>Dashboard design</td><td class="num"><span class="chip good">7</span></td><td>KPI-row + card pattern is legible and consistently applied across CEO, Factory, Estimator, and Costing dashboards.</td></tr>
+          <tr><td>Forms / inputs</td><td class="num"><span class="chip good">7</span></td><td>Consistent field/label pattern; live validation is present but not exhaustive.</td></tr>
+          <tr><td>Loading states</td><td class="num"><span class="chip warn">5</span></td><td>A Supabase-load spinner exists globally; individual actions don't show per-action loading states.</td></tr>
+          <tr><td>Overall usability</td><td class="num"><span class="chip good">7</span></td><td>Strong for a tool built by and for its own operators; not yet tested against a first-week new-hire.</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout"><h4>Recommendations</h4><ul>
+        <li>Run a contrast/accessibility pass (WCAG AA) — cheap to fix, meaningfully de-risks a future enterprise sale of this platform itself.</li>
+        <li>Add a lightweight onboarding tour or empty-state guidance for first-time users of denser modules (Costing Masters, BOQ builder).</li>
+      </ul></div>
+    </section>
+
+    <!-- 12 TECH -->
+    <section id="tech">
+      <div class="section-head"><span class="section-num">12</span><h2>Technical Architecture Review</h2></div>
+      <p class="section-lede">This is the section that matters most for investor and acquirer diligence, and it needs the most direct language.</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Layer</th><th>Current state</th><th class="num">Risk</th></tr></thead>
+        <tbody>
+          <tr><td>Frontend architecture</td><td>Single ~14,000-line HTML file, no framework, no build step, no bundler, no module system.</td><td class="num"><span class="chip risk">High</span></td></tr>
+          <tr><td>Backend</td><td>Supabase (Postgres + Auth + REST) — a solid managed choice for this stage.</td><td class="num"><span class="chip good">Low</span></td></tr>
+          <tr><td>Database structure</td><td>Generic <code>{id, data: jsonb, org_id, updated_at}</code> blob-per-table, not a normalized relational schema.</td><td class="num"><span class="chip risk">High</span></td></tr>
+          <tr><td>Security / RLS</td><td>Row Level Security implemented per-table via an <code>org_id</code> + membership-check pattern; consistent, but single-tenant by design.</td><td class="num"><span class="chip warn">Medium</span></td></tr>
+          <tr><td>Authentication</td><td>Real Supabase Auth (email/password + Google OAuth) with an admin-approval gate for new sign-ups.</td><td class="num"><span class="chip good">Low</span></td></tr>
+          <tr><td>Authorization</td><td>CEO-editable role/module permission matrix — genuinely above par.</td><td class="num"><span class="chip good">Low</span></td></tr>
+          <tr><td>State management / sync</td><td>Full-table debounced upsert on every save, entire dataset loaded client-side on login.</td><td class="num"><span class="chip warn">Medium</span></td></tr>
+          <tr><td>Testing / CI/CD</td><td>No automated test suite, no CI pipeline; deploys are direct pushes to <code>main</code> with Netlify auto-deploy.</td><td class="num"><span class="chip risk">High</span></td></tr>
+          <tr><td>Backup / disaster recovery</td><td>Relies on Supabase's own backups; no documented independent backup or restore drill.</td><td class="num"><span class="chip warn">Medium</span></td></tr>
+          <tr><td>Multi-tenancy / branch readiness</td><td>Hardcoded single <code>org_id</code> throughout.</td><td class="num"><span class="chip risk">High</span></td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout risk"><h4>What this means in plain terms</h4><p>The architecture is right for what it is: a fast-moving internal tool for one team, built and shipped by one operator. It is not, today, an architecture a technical acquirer or Series A investor would sign off on without a re-platforming commitment — the single-file frontend and denormalized data model are the two items that will come up first in any serious technical diligence.</p></div>
+    </section>
+
+    <!-- 13 DATA -->
+    <section id="data">
+      <div class="section-head"><span class="section-num">13</span><h2>Data &amp; Analytics</h2></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Dashboard / KPI area</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Sales KPIs</td><td><span class="chip good">Present</span> — Costing Dashboard: win rate, pipeline value, referral attribution</td></tr>
+          <tr><td>Finance KPIs</td><td><span class="chip good">Present</span> — CEO Dashboard: revenue, outstanding, cost</td></tr>
+          <tr><td>Operations / Project KPIs</td><td><span class="chip good">Present</span> — active project count, WIP report</td></tr>
+          <tr><td>Marketing KPIs</td><td><span class="chip risk">Missing</span> — no cost-per-lead, channel ROI, or spend tracking</td></tr>
+          <tr><td>Production KPIs</td><td><span class="chip good">Present</span> — Factory Dashboard</td></tr>
+          <tr><td>Inventory KPIs</td><td><span class="chip good">Present</span> — stock levels, reorder alerts</td></tr>
+          <tr><td>Executive dashboard</td><td><span class="chip good">Present</span> — CEO Dashboard with charts</td></tr>
+          <tr><td>Predictive analytics / BI</td><td><span class="chip risk">Missing</span> — every dashboard is descriptive (what happened), none is predictive</td></tr>
+          <tr><td>AI readiness</td><td><span class="chip risk">Not started</span> — see §19</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- 14 AUTOMATION -->
+    <section id="automation">
+      <div class="section-head"><span class="section-num">14</span><h2>Automation Review — 30 Ideas</h2></div>
+      <p class="section-lede">Ranked loosely by ease of implementation against this exact codebase, not by novelty.</p>
+      <div class="auto-grid">
+        <div class="auto-item"><span class="idx">01</span><span><b>WhatsApp quote delivery</b> — auto-send the print-preview PDF on status → Sent.</span></div>
+        <div class="auto-item"><span class="idx">02</span><span><b>Follow-up reminders</b> — daily digest of quotations with a passed <code>nextDate</code>.</span></div>
+        <div class="auto-item"><span class="idx">03</span><span><b>Auto lead-to-estimation handoff</b> already exists — extend it to auto-assign by workload.</span></div>
+        <div class="auto-item"><span class="idx">04</span><span><b>Low-stock auto-PO draft</b> — generate a draft PO the moment reorder level is breached.</span></div>
+        <div class="auto-item"><span class="idx">05</span><span><b>Milestone-due payment reminders</b> to client via WhatsApp/email.</span></div>
+        <div class="auto-item"><span class="idx">06</span><span><b>Auto-invoice generation</b> on milestone completion.</span></div>
+        <div class="auto-item"><span class="idx">07</span><span><b>Discount-threshold approval routing</b> to CEO/Admin.</span></div>
+        <div class="auto-item"><span class="idx">08</span><span><b>Machine maintenance reminders</b> already flagged — add auto-notify to the assigned supervisor.</span></div>
+        <div class="auto-item"><span class="idx">09</span><span><b>Auto-generate cutting list</b> from a costed item's material lines.</span></div>
+        <div class="auto-item"><span class="idx">10</span><span><b>AI-drafted quotation notes/T&amp;C</b> from project type.</span></div>
+        <div class="auto-item"><span class="idx">11</span><span><b>Auto customer creation</b> from a Won quotation's client details.</span></div>
+        <div class="auto-item"><span class="idx">12</span><span><b>PO-to-vendor email automation</b> with attached PDF.</span></div>
+        <div class="auto-item"><span class="idx">13</span><span><b>GRN mismatch alerts</b> when received qty ≠ ordered qty.</span></div>
+        <div class="auto-item"><span class="idx">14</span><span><b>Auto job-card creation</b> when a project moves to "In Production."</span></div>
+        <div class="auto-item"><span class="idx">15</span><span><b>Attendance-to-payroll auto-calc</b> at period close.</span></div>
+        <div class="auto-item"><span class="idx">16</span><span><b>Receivables aging escalation</b> — auto-flag &gt;30/60/90-day accounts to Accounts role.</span></div>
+        <div class="auto-item"><span class="idx">17</span><span><b>Cost-variance alert</b> when Actual exceeds BOM by a threshold mid-project.</span></div>
+        <div class="auto-item"><span class="idx">18</span><span><b>AI cost-estimation assist</b> — suggest a template/material based on a lead's free-text brief.</span></div>
+        <div class="auto-item"><span class="idx">19</span><span><b>Auto-populate GST/HSN</b> on quotation line items from Item Master.</span></div>
+        <div class="auto-item"><span class="idx">20</span><span><b>Referral-partner payout calculation</b> from the existing Won-value rollup.</span></div>
+        <div class="auto-item"><span class="idx">21</span><span><b>Document generation</b> — auto-build PO/Invoice/Quotation PDFs from templates (partially present via print preview).</span></div>
+        <div class="auto-item"><span class="idx">22</span><span><b>Birthday/anniversary client touchpoints</b> from Customers data.</span></div>
+        <div class="auto-item"><span class="idx">23</span><span><b>Auto-escalate stale leads</b> (no activity in N days) to a manager.</span></div>
+        <div class="auto-item"><span class="idx">24</span><span><b>Approval-chain automation</b> for Estimation Request sign-off before quoting.</span></div>
+        <div class="auto-item"><span class="idx">25</span><span><b>Auto-reconcile bank feed</b> via a statement-import matcher.</span></div>
+        <div class="auto-item"><span class="idx">26</span><span><b>Predictive delivery-date estimation</b> from historical job durations.</span></div>
+        <div class="auto-item"><span class="idx">27</span><span><b>AI chatbot over ERP data</b> — the offline "Ask" pattern already prototyped in the sister tool, portable here.</span></div>
+        <div class="auto-item"><span class="idx">28</span><span><b>Auto snag-to-punch-list conversion</b> from QC Checklist failures.</span></div>
+        <div class="auto-item"><span class="idx">29</span><span><b>Warranty/AMC expiry reminders</b> once that module exists.</span></div>
+        <div class="auto-item"><span class="idx">30</span><span><b>Weekly digest email</b> to CEO summarizing the Costing Dashboard's key figures.</span></div>
+      </div>
+    </section>
+
+    <!-- 15 RISK -->
+    <section id="risk">
+      <div class="section-head"><span class="section-num">15</span><h2>Risk Assessment</h2></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Risk</th><th>Category</th><th>Severity</th><th>Mitigation</th></tr></thead>
+        <tbody>
+          <tr><td>No test suite / no CI — any change can silently break production</td><td>Technical debt</td><td class="num"><span class="chip risk">High</span></td><td>Introduce a smoke-test checklist per deploy at minimum; a real test harness longer-term.</td></tr>
+          <tr><td>Denormalized data model limits SQL-level reporting and BI</td><td>Scalability</td><td class="num"><span class="chip risk">High</span></td><td>Plan a phased migration to normalized tables for the highest-traffic entities first (quotations, projects).</td></tr>
+          <tr><td>Single-tenant data model blocks multi-branch growth</td><td>Scalability</td><td class="num"><span class="chip warn">Medium</span></td><td>Add a real <code>branch_id</code>/org entity before the second location is signed, not after.</td></tr>
+          <tr><td>Entire business logic lives in one developer's head / one file</td><td>Human dependency</td><td class="num"><span class="chip risk">High</span></td><td>Documentation, code comments (already reasonably good), and a second engineer onboarded deliberately.</td></tr>
+          <tr><td>No client-facing audit trail for quotation approvals</td><td>Compliance</td><td class="num"><span class="chip warn">Medium</span></td><td>Activity log exists internally; extend to a client-visible approval record.</td></tr>
+          <tr><td>No GST-compliant tax computation (HSN-level, GSTR export)</td><td>Compliance</td><td class="num"><span class="chip warn">Medium</span></td><td>Bring in a tax consultant to spec the required fields before scale triggers scrutiny.</td></tr>
+          <tr><td>No independent backup/restore drill performed</td><td>Business continuity</td><td class="num"><span class="chip warn">Medium</span></td><td>Schedule a quarterly restore-to-staging drill.</td></tr>
+          <tr><td>No rate-limiting/monitoring visible on the Supabase project</td><td>Cybersecurity</td><td class="num"><span class="chip warn">Medium</span></td><td>Enable Supabase's built-in monitoring/alerts; review anon-key exposure (client-side, expected, but confirm RLS coverage is total).</td></tr>
+          <tr><td>Direct push-to-main deploys with no staging environment</td><td>Operational</td><td class="num"><span class="chip warn">Medium</span></td><td>Add a staging branch/preview deploy step before production for anything touching core schema.</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- 16 BENCHMARK -->
+    <section id="benchmark">
+      <div class="section-head"><span class="section-num">16</span><h2>Competitive Benchmark</h2></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Platform</th><th>Features</th><th>Ease of use</th><th>Customization</th><th>Pricing</th><th>Scalability</th><th>Industry fit</th></tr></thead>
+        <tbody>
+          <tr><td><b>Appletree ERP</b></td><td>Broad, interiors-specific</td><td>High (for staff)</td><td>Total (source-owned)</td><td>Near-zero marginal cost</td><td>Low today</td><td>Excellent — purpose-built</td></tr>
+          <tr><td>Zoho Projects</td><td>Generic PM</td><td>High</td><td>Medium</td><td>Low</td><td>High</td><td>Poor — no costing/factory fit</td></tr>
+          <tr><td>Odoo</td><td>Very broad ERP</td><td>Medium</td><td>High</td><td>Medium</td><td>High</td><td>Medium — needs heavy customization</td></tr>
+          <tr><td>Monday.com</td><td>Workflow/PM only</td><td>Very high</td><td>Medium</td><td>Low–Medium</td><td>High</td><td>Poor — no costing engine</td></tr>
+          <tr><td>Buildertrend</td><td>Construction-focused</td><td>High</td><td>Low</td><td>Medium</td><td>High</td><td>Good — closest domain match</td></tr>
+          <tr><td>Procore</td><td>Enterprise construction</td><td>Medium</td><td>Low</td><td>High</td><td>Very high</td><td>Good, but over-built for this scale</td></tr>
+          <tr><td>Oracle NetSuite</td><td>Enterprise ERP/finance</td><td>Low</td><td>Medium</td><td>Very high</td><td>Very high</td><td>Poor fit until much larger</td></tr>
+          <tr><td>SAP Business One</td><td>SMB ERP</td><td>Low</td><td>Medium</td><td>High</td><td>High</td><td>Poor — no interiors specialization</td></tr>
+          <tr><td>MS Dynamics 365</td><td>Enterprise ERP/CRM</td><td>Medium</td><td>High</td><td>High</td><td>Very high</td><td>Medium — needs vertical add-ons</td></tr>
+          <tr><td>ERPNext</td><td>Open-source broad ERP</td><td>Medium</td><td>High</td><td>Low</td><td>High</td><td>Medium — generic manufacturing, not interiors</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout"><h4>Read</h4><p>No off-the-shelf competitor matches the depth of the parametric costing engine for this specific vertical. The trade Appletree is making is real domain fit and zero license cost against enterprise-grade scalability, testing rigor, and a client-facing surface it would take years to build independently at this pace. The right strategic question isn't "replace it" — it's "which specific enterprise-grade capabilities (client portal, real ledger, BI) get bolted on before the next growth stage."</p></div>
+    </section>
+
+    <!-- 17 SWOT -->
+    <section id="swot">
+      <div class="section-head"><span class="section-num">17</span><h2>SWOT Analysis</h2></div>
+      <div class="swot">
+        <div class="s"><h4>Strengths</h4><ul>
+          <li>Purpose-built parametric costing engine — real, defensible IP</li>
+          <li>Genuinely end-to-end operational coverage, single source of truth</li>
+          <li>CEO-editable role/permission system</li>
+          <li>Fast, low-cost iteration — five modules shipped in one cycle</li>
+          <li>Strong referral-channel attribution, unusual for this tool class</li>
+        </ul></div>
+        <div class="w"><h4>Weaknesses</h4><ul>
+          <li>No client-facing surface anywhere in the product</li>
+          <li>Denormalized data model limits reporting depth</li>
+          <li>No automated tests, no staging environment</li>
+          <li>Zero marketing/communication automation (WhatsApp, email, ads)</li>
+          <li>Single-tenant architecture blocks multi-branch growth</li>
+        </ul></div>
+        <div class="o"><h4>Opportunities</h4><ul>
+          <li>Client portal could become a genuine differentiator in this market</li>
+          <li>The costing engine is strong enough to license/white-label to peer firms</li>
+          <li>AI-assisted quoting is a natural, low-effort extension of existing data</li>
+          <li>WhatsApp-first workflows fit this industry's actual client behavior</li>
+        </ul></div>
+        <div class="t"><h4>Threats</h4><ul>
+          <li>Key-person/single-developer dependency</li>
+          <li>A better-funded competitor building a similar vertical tool with a proper client portal</li>
+          <li>Compliance exposure (GST/audit-readiness) surfacing at the worst time — mid-fundraise or mid-audit</li>
+          <li>Scale outpacing the current architecture faster than re-platforming can happen</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- 18 GAP -->
+    <section id="gap">
+      <div class="section-head"><span class="section-num">18</span><h2>Gap Analysis</h2></div>
+      <div class="grid-2">
+        <div class="callout"><h4>Missing modules</h4><ul>
+          <li>Client portal</li><li>Scheduling / calendar (site visits, install dates)</li>
+          <li>AMC &amp; warranty tracking</li><li>Snag/punch-list with photo tagging</li>
+          <li>RFQ / vendor bidding</li><li>Commission tracking</li>
+          <li>Training / skill matrix</li>
+        </ul></div>
+        <div class="callout"><h4>Missing reports &amp; dashboards</h4><ul>
+          <li>Weighted sales forecast</li><li>Cash-flow projection</li>
+          <li>Marketing / channel ROI</li><li>Vendor performance scorecard</li>
+          <li>Labour productivity (output/hour)</li>
+        </ul></div>
+        <div class="callout"><h4>Missing integrations</h4><ul>
+          <li>WhatsApp Business API</li><li>Email/SMS provider</li>
+          <li>Google/Meta Ads lead sync</li><li>Payment gateway</li>
+          <li>Bank feed / statement import</li>
+        </ul></div>
+        <div class="callout"><h4>Missing controls</h4><ul>
+          <li>Discount approval thresholds</li><li>Purchase approval-by-value thresholds</li>
+          <li>Real double-entry ledger posting</li><li>Automated backup/restore drills</li>
+          <li>Staging environment before production deploy</li>
+        </ul></div>
+      </div>
+    </section>
+
+    <!-- 19 AI -->
+    <section id="ai">
+      <div class="section-head"><span class="section-num">19</span><h2>AI Readiness</h2></div>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Capability</th><th class="num">Readiness /10</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>AI quote generation</td><td class="num"><span class="chip warn">4</span></td><td>Data model (templates, materials, geometry) is AI-ready; no model integration yet.</td></tr>
+          <tr><td>AI cost prediction</td><td class="num"><span class="chip warn">4</span></td><td>Historical costing data exists to train/prompt from; unused today.</td></tr>
+          <tr><td>AI procurement</td><td class="num"><span class="chip risk">2</span></td><td>No vendor performance history structured enough yet to feed a model.</td></tr>
+          <tr><td>AI scheduling</td><td class="num"><span class="chip risk">1</span></td><td>No scheduling entity exists to optimize in the first place.</td></tr>
+          <tr><td>AI design suggestions</td><td class="num"><span class="chip risk">1</span></td><td>No design-asset layer to reason over.</td></tr>
+          <tr><td>AI forecasting</td><td class="num"><span class="chip warn">3</span></td><td>Win/loss and pipeline data exists; not yet modeled predictively.</td></tr>
+          <tr><td>AI chatbot over ERP data</td><td class="num"><span class="chip good">6</span></td><td>A rules-based "offline Ask" assistant was already prototyped in the sister costing tool and is directly portable here.</td></tr>
+          <tr><td>AI document search</td><td class="num"><span class="chip risk">2</span></td><td>No document store exists yet to search over.</td></tr>
+          <tr><td>AI CRM assistant</td><td class="num"><span class="chip warn">3</span></td><td>Lead/quotation data is structured well enough; no assistant layer built.</td></tr>
+          <tr><td>AI business analytics</td><td class="num"><span class="chip warn">4</span></td><td>Dashboards are descriptive; the underlying data is clean enough to summarize with an LLM today at low effort.</td></tr>
+        </tbody>
+      </table></div>
+      <div class="callout good"><h4>The fastest AI win available</h4><p>An LLM-powered natural-language summary layer over the existing Costing Dashboard and CEO Dashboard data — "what changed this week and why" — could ship in days, not months, because the underlying data is already clean, structured, and centralized. That is genuinely rare and worth prioritizing before more ambitious AI features.</p></div>
+    </section>
+
+    <!-- 20 ROI -->
+    <section id="roi">
+      <div class="section-head"><span class="section-num">20</span><h2>ROI Analysis</h2></div>
+      <p class="section-lede">Directional estimates based on typical outcomes for interiors firms closing comparable gaps — treat as planning inputs, not guarantees, until validated against Appletree's own baseline numbers.</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>Lever</th><th class="num">Est. impact</th><th>Driven by</th></tr></thead>
+        <tbody>
+          <tr><td>Operational cost savings</td><td class="num">8–12%</td><td>Automated reminders, PO drafting, invoice generation reducing manual admin hours</td></tr>
+          <tr><td>Productivity improvement</td><td class="num">15–20%</td><td>Parametric costing already removes most manual BOQ entry once fully adopted</td></tr>
+          <tr><td>Revenue improvement</td><td class="num">5–10%</td><td>Faster quote turnaround improving conversion rate on time-sensitive leads</td></tr>
+          <tr><td>Lead conversion increase</td><td class="num">3–7 pts</td><td>Follow-up automation closing the gap where leads currently go cold</td></tr>
+          <tr><td>Project delivery improvement</td><td class="num">10–15%</td><td>Scheduling module + variance alerts reducing slippage</td></tr>
+          <tr><td>Material savings</td><td class="num">3–6%</td><td>Cutting-list optimization and waste reconciliation</td></tr>
+          <tr><td>Labour efficiency</td><td class="num">5–8%</td><td>Timesheet + productivity visibility surfacing bottlenecks</td></tr>
+        </tbody>
+      </table></div>
+      <div class="grid-2">
+        <div class="score-tile"><div class="lbl">Estimated Blended ROI (Yr 1)</div><div class="val">3.1<span class="of">×</span></div><div class="bar"><i style="width:70%"></i></div></div>
+        <div class="score-tile"><div class="lbl">Estimated Payback Period</div><div class="val">5–7<span class="of">months</span></div><div class="bar"><i style="width:55%"></i></div></div>
+      </div>
+    </section>
+
+    <!-- 21 ROADMAP -->
+    <section id="roadmap">
+      <div class="section-head"><span class="section-num">21</span><h2>Phased Implementation Roadmap</h2></div>
+      <div class="roadmap">
+        <div class="rm-card">
+          <div class="ph">Phase 1 · Immediate</div>
+          <h4>Close the cheapest gaps</h4>
+          <ul>
+            <li>Widen remaining cramped input cells (in progress)</li>
+            <li>Discount-approval threshold</li>
+            <li>WhatsApp quote-send integration</li>
+            <li>Follow-up reminder digest</li>
+            <li>Backup/restore drill, scheduled</li>
+          </ul>
+        </div>
+        <div class="rm-card">
+          <div class="ph">Phase 2 · 3 months</div>
+          <h4>Client-facing + control layer</h4>
+          <ul>
+            <li>Minimal client portal (view quote/project status)</li>
+            <li>Real GST/HSN tax computation</li>
+            <li>Scheduling/calendar module</li>
+            <li>Vendor RFQ + rating</li>
+            <li>Cash-flow projection view</li>
+          </ul>
+        </div>
+        <div class="rm-card">
+          <div class="ph">Phase 3 · 6 months</div>
+          <h4>Data &amp; automation depth</h4>
+          <ul>
+            <li>Normalize the core schema (quotations, projects first)</li>
+            <li>Staging environment + smoke-test suite</li>
+            <li>AI dashboard-summary assistant</li>
+            <li>Snag list + AMC/warranty module</li>
+            <li>Timesheets + labour productivity KPI</li>
+          </ul>
+        </div>
+        <div class="rm-card">
+          <div class="ph">Phase 4 · 12 months</div>
+          <h4>Scale-readiness</h4>
+          <ul>
+            <li>Multi-branch data model (real org/tenant entity)</li>
+            <li>Double-entry ledger posting</li>
+            <li>Payment gateway integration</li>
+            <li>Full BI/predictive analytics layer</li>
+            <li>Formal QA/CI pipeline</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- 22 CEO REPORT -->
+    <section id="ceo">
+      <div class="section-head"><span class="section-num">22</span><h2>Final CEO Report</h2></div>
+      <p class="section-lede">A concise version of everything above, written for the owner's desk.</p>
+      <div class="callout">
+        <p><b>Overall business health:</b> Operationally solid, financially under-instrumented. The company is running real projects through a real system, end to end — that alone puts it ahead of most peers still on spreadsheets and WhatsApp groups. The gap is not in operations; it's in the layers that touch money-at-audit-grade and the customer directly.</p>
+        <p style="margin-top:12px"><b>ERP &amp; digital maturity:</b> Mid-stage. The system covers more ground than most competitors' tools in this price bracket, built at a pace ({7 modules across one week of focused work}) that a typical vendor RFP process wouldn't match in a quarter. It is not yet enterprise-grade underneath, and shouldn't be marketed or diligenced as such without the Phase 3–4 work.</p>
+        <p style="margin-top:12px"><b>Strengths to protect:</b> The costing engine and the CEO-editable permission system are genuinely rare at this scale — don't let a future re-platforming project accidentally throw either away.</p>
+        <p style="margin-top:12px"><b>Critical weaknesses to fix first:</b> No client-facing surface, no WhatsApp/communication automation, and no audit-grade financial ledger. These three are the ones a customer, a lender, or an investor will notice first.</p>
+        <p style="margin-top:12px"><b>Immediate priorities:</b> WhatsApp quote delivery and follow-up reminders (days of effort, real revenue impact), a discount-approval control (hours of effort, real margin protection), and a scheduled backup drill (hours of effort, real risk reduction).</p>
+        <p style="margin-top:12px"><b>Long-term strategic recommendation:</b> Treat Phase 3–4 (schema normalization, real ledger, multi-branch readiness) as a funded initiative, not an ongoing side-project — it is the work that determines whether this becomes a sellable platform or stays a very good internal tool.</p>
+        <p style="margin-top:12px"><b>Growth potential after implementing these recommendations:</b> A realistic 25–40% improvement in quote-to-close speed and a materially stronger financial-controls story within 12 months — enough to change the conversation in a genuine fundraising or acquisition process, not just make the team's day-to-day easier.</p>
+      </div>
+    </section>
+
+    <!-- 23 TOP 25 -->
+    <section id="top25">
+      <div class="section-head"><span class="section-num">23</span><h2>Top 25 Improvements — Ranked</h2></div>
+      <p class="section-lede">Ranked by business impact against implementation effort. Lower effort + higher impact sits at the top.</p>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th class="num">#</th><th>Improvement</th><th>Impact</th><th class="pri-effort">Effort</th></tr></thead>
+        <tbody>
+          <tr><td class="num">1</td><td>WhatsApp quote delivery + follow-up reminders</td><td><span class="chip good">Very High</span></td><td class="pri-effort"><span class="chip warn">Low</span></td></tr>
+          <tr><td class="num">2</td><td>Discount-approval threshold control</td><td><span class="chip good">High</span></td><td class="pri-effort"><span class="chip good">Very Low</span></td></tr>
+          <tr><td class="num">3</td><td>Scheduled backup/restore drill</td><td><span class="chip good">High</span></td><td class="pri-effort"><span class="chip good">Very Low</span></td></tr>
+          <tr><td class="num">4</td><td>Minimal client portal (view-only project/quote status)</td><td><span class="chip good">Very High</span></td><td class="pri-effort"><span class="chip warn">Medium</span></td></tr>
+          <tr><td class="num">5</td><td>Real GST/HSN-compliant tax computation</td><td><span class="chip good">High</span></td><td class="pri-effort"><span class="chip warn">Medium</span></td></tr>
+          <tr><td class="num">6</td><td>Cash-flow projection view</td><td><span class="chip good">High</span></td><td class="pri-effort"><span class="chip warn">Low</span></td></tr>
+          <tr><td class="num">7</td><td>Auto lead-capture web form</td><td><span class="chip good">High</span></td><td class="pri-effort"><span class="chip warn">Low</span></td></tr>
+          <tr><td class="num">8</td><td>Scheduling / calendar module</td><td><span class="chip good">High</span></td><td class="pri-effort"><span class="chip warn">Medium</span></td></tr>
+          <tr><td class="num">9</td><td>Vendor RFQ + comparison workflow</td><td><span class="chip warn">Medium</span></td><td class="pri-effort"><span class="chip warn">Medium</span></td></tr>
+          <tr><td class="num">10</td><td>AI dashboard-summary assistant</td><td><span class="chip warn">Medium</span></td><td class="pri-effort"><span class="chip good">Low</span></td></tr>
+          <tr><td class="num">11</td><td>Weighted sales forecast card</td><td><span class="chip warn">Medium</span></td><td class="pri-effort"><span class="chip good">Low</span></td></tr>
+          <tr><td class="num">12</td><td>Snag/punch-list with photo tagging</td><td><span class="chip warn">Medium</span></td><td class="pri-effort"><span class="chip warn">Medium</span></td></tr>
+          <tr><td class="num">13</td><td>AMC / warranty tracking module</td><td><span class="chip warn">Medium</span></td><td class="pri-effort"><span class="chip warn">Medium</span></td></tr>
+          <tr><td class="num">14</td><td>Cost-variance mid-project alert</td><td><span class="chip good">High</span></td><td class="pri-effort"><span class="chip good">Low</span></td></tr>
+          <tr><td class="num">15</td><td>Staging environment before production deploy</td><td><span class="chip warn">Medium</span></td><td class="pri-effort"><span class="chip warn">Low</span></td></tr>
+          <tr><td class="num">16</td><td>Timesheets + labour productivity KPI</td><td><span class="chip warn">Medium</span></td><td class="pri-effort"><span class="chip warn">Medium</span></td></tr>
+          <tr><td class="num">17</td><td>Drawing/file attachment layer (Supabase Storage)</td><td><span class="chip warn">Medium</span></td><td class="pri-effort"><span class="chip warn">Medium</span></td></tr>
+          <tr><td class="num">18</td><td>Commission tracking for sales staff</td><td><span class="chip warn">Medium</span></td><td class="pri-effort"><span class="chip good">Low</span></td></tr>
+          <tr><td class="num">19</td><td>Basic accessibility (WCAG AA) pass</td><td><span class="chip warn">Low</span></td><td class="pri-effort"><span class="chip good">Low</span></td></tr>
+          <tr><td class="num">20</td><td>Vendor rating / performance scorecard</td><td><span class="chip warn">Medium</span></td><td class="pri-effort"><span class="chip warn">Medium</span></td></tr>
+          <tr><td class="num">21</td><td>Automated smoke-test checklist per deploy</td><td><span class="chip warn">Medium</span></td><td class="pri-effort"><span class="chip good">Low</span></td></tr>
+          <tr><td class="num">22</td><td>Cutting-list generation from costed items</td><td><span class="chip warn">Medium</span></td><td class="pri-effort"><span class="chip risk">High</span></td></tr>
+          <tr><td class="num">23</td><td>Schema normalization (quotations, projects first)</td><td><span class="chip good">High</span></td><td class="pri-effort"><span class="chip risk">High</span></td></tr>
+          <tr><td class="num">24</td><td>Real double-entry ledger posting</td><td><span class="chip good">High</span></td><td class="pri-effort"><span class="chip risk">Very High</span></td></tr>
+          <tr><td class="num">25</td><td>Multi-branch / multi-tenant data model</td><td><span class="chip warn">Medium</span><span style="font-size:10px;color:var(--muted)"> (high once triggered)</span></td><td class="pri-effort"><span class="chip risk">Very High</span></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <footer>
+      <div class="legend">
+        <span><i style="background:var(--good)"></i>Strong / low risk</span>
+        <span><i style="background:var(--warn)"></i>Partial / medium risk</span>
+        <span><i style="background:var(--risk)"></i>Missing / high risk</span>
+      </div>
+      <p style="margin-top:18px;max-width:70ch">Prepared as an independent operational and technical audit against the live system at erp4interior.netlify.app. Scores are directional judgments calibrated to comparable interiors-industry ERP deployments, not a certified financial or security audit — treat the Finance and Technical sections in particular as a prioritized punch list for a qualified CA and security reviewer respectively, not a substitute for one.</p>
+    </footer>
+
+  </main>
+</div>

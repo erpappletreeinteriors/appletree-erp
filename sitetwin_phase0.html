@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SiteTwin — Offline Site Survey (Phase 0) · Appletree Interiors</title>
+<style>
+:root{
+  --ink:#1C1C1A; --ink-soft:#4A4842;
+  --paper:#F8F7F4; --paper-raised:#FFFFFF;
+  --line:#E4E1D6; --line-soft:#EFEDE4;
+  --muted:#7A776C;
+  --gold:#C3B152; --gold-l:#D4C47A; --gold-pale:#F4F1DC; --gold-dim:#9A8A3A;
+  --olive:#9D9A91;
+  --good:#3E7A5C; --good-soft:#DCEBE2;
+  --warn:#B5872E; --warn-soft:#F3E8CE;
+  --risk:#B14C3C; --risk-soft:#F5E0DB;
+  --shadow: 0 1px 2px rgba(28,28,26,.06), 0 8px 24px -12px rgba(28,28,26,.18);
+  --sans:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono: ui-monospace,"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --ink:#EDEBE2; --ink-soft:#C7C4B8;
+    --paper:#1A1A17; --paper-raised:#232320;
+    --line:#39372E; --line-soft:#2B2A24;
+    --muted:#9C9888;
+    --gold:#D9C868; --gold-l:#E6D98F; --gold-pale:#2E2A17; --gold-dim:#B7A64A;
+    --olive:#A9A69C;
+    --good:#7FBF9C; --good-soft:#1E3128;
+    --warn:#E0B65C; --warn-soft:#332A15;
+    --risk:#E08B7A; --risk-soft:#3A211D;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;}
+body{
+  font-family:var(--sans); background:var(--paper); color:var(--ink);
+  line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4{font-family:var(--sans);font-weight:800;color:var(--ink);margin:0;}
+p{margin:0 0 8px;}
+button,input,select,textarea{font-family:var(--sans);font-size:13px;color:var(--ink);}
+input,select,textarea{
+  padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--paper);
+  width:100%;outline:none;
+}
+input:focus,select:focus,textarea:focus{border-color:var(--gold);box-shadow:0 0 0 3px var(--gold-pale);}
+button{cursor:pointer;border:none;background:none;}
+textarea{resize:vertical;min-height:60px;}
+
+/* App shell */
+.app{display:flex;height:100vh;overflow:hidden;}
+.sidebar{
+  width:290px;flex:0 0 290px;background:var(--paper-raised);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.sidebar-brand{padding:16px 18px 14px;border-bottom:1px solid var(--line);}
+.sidebar-brand img{height:24px;width:auto;display:block;margin-bottom:8px;}
+.sidebar-brand .title{font-size:15px;font-weight:800;letter-spacing:.02em;color:var(--ink);}
+.sidebar-brand .sub{font-size:11px;color:var(--gold-dim);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:2px;}
+.sidebar-tree{flex:1;overflow-y:auto;padding:12px;}
+.sidebar-footer{padding:12px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px;}
+.sidebar-footer .save-status{font-size:11px;color:var(--muted);text-align:center;margin-bottom:2px;}
+
+.add-row-inline{display:flex;gap:6px;margin-bottom:10px;}
+.add-row-inline.sm{margin:6px 0 8px;}
+.add-row-inline input{font-size:12.5px;padding:6px 8px;}
+.btn-add-sm{background:var(--gold-pale);color:var(--gold-dim);border:1px solid var(--gold-l)!important;border-radius:6px;padding:0 10px;font-size:12px;font-weight:700;white-space:nowrap;}
+
+.tree-row{display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-radius:6px;cursor:pointer;font-size:13px;color:var(--ink-soft);margin-bottom:1px;}
+.tree-row:hover{background:var(--line-soft);}
+.tree-row.active{background:var(--gold-pale);color:var(--gold-dim);font-weight:700;}
+.tree-row .tree-label{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.tree-del{opacity:0;color:var(--risk);font-size:13px;padding:2px 4px;font-weight:700;}
+.tree-row:hover .tree-del{opacity:1;}
+.tree-children{padding-left:10px;border-left:2px solid var(--line);margin:2px 0 8px 10px;}
+.tree-empty{font-size:12px;color:var(--muted);padding:8px 9px;font-style:italic;}
+
+/* Workspace */
+.workspace{flex:1;display:flex;flex-direction:column;min-width:0;overflow:hidden;}
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:16px 28px;border-bottom:1px solid var(--line);background:var(--paper-raised);
+}
+.breadcrumb{font-size:13.5px;color:var(--muted);}
+.breadcrumb b{color:var(--ink);}
+.topbar-actions{display:flex;gap:8px;flex-wrap:wrap;}
+
+.tab-bar{display:flex;gap:2px;flex-wrap:wrap;padding:10px 24px 0;background:var(--paper-raised);border-bottom:1px solid var(--line);}
+.tab-btn{padding:9px 13px;border-radius:8px 8px 0 0;background:transparent;color:var(--muted);font-weight:700;font-size:12.5px;border:1px solid transparent;}
+.tab-btn:hover{color:var(--ink);}
+.tab-btn.active{background:var(--paper);border-color:var(--line);border-bottom-color:var(--paper);color:var(--gold-dim);position:relative;top:1px;}
+
+.content-scroll{flex:1;overflow-y:auto;padding:26px clamp(16px,3vw,44px) 70px;}
+
+/* Sections */
+.section-block{background:var(--paper-raised);border:1px solid var(--line);border-radius:12px;padding:20px 22px;margin-bottom:20px;box-shadow:var(--shadow);}
+.section-head{display:flex;align-items:center;gap:10px;margin-bottom:6px;}
+.section-head h3{font-size:16px;}
+.count-badge{background:var(--gold-pale);color:var(--gold-dim);font-size:11px;font-weight:800;padding:2px 8px;border-radius:20px;}
+.hint{font-size:12.5px;color:var(--muted);margin-bottom:14px;max-width:70ch;}
+
+.field-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;}
+.field{display:flex;flex-direction:column;gap:4px;}
+.field label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);}
+
+.table-wrap{overflow-x:auto;margin-bottom:12px;}
+.editor-table{width:100%;border-collapse:collapse;min-width:560px;}
+.editor-table th{background:var(--line-soft);color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;padding:7px 8px;text-align:left;white-space:nowrap;}
+.editor-table td{padding:5px 6px;border-bottom:1px solid var(--line);vertical-align:middle;}
+.editor-table input,.editor-table select{min-width:96px;font-size:12.5px;padding:5px 7px;}
+.editor-table td:last-child{width:34px;text-align:center;}
+.icon-btn{color:var(--risk);font-weight:800;font-size:14px;padding:4px 6px;border-radius:5px;}
+.icon-btn:hover{background:var(--risk-soft);}
+.btn-add{background:var(--gold-pale);color:var(--gold-dim);border:1px solid var(--gold-l);padding:8px 14px;border-radius:7px;font-weight:700;font-size:12.5px;}
+
+.btn-primary{background:var(--gold);color:#1C1C1A;padding:10px 18px;border-radius:8px;font-weight:800;font-size:13px;}
+.btn-primary:disabled{opacity:.45;cursor:not-allowed;}
+.btn-secondary{background:var(--paper);border:1px solid var(--line);padding:10px 18px;border-radius:8px;font-weight:700;font-size:13px;color:var(--ink);}
+.btn-secondary:hover{border-color:var(--gold-l);}
+
+.callout{padding:12px 16px;border-left:3px solid var(--gold);background:var(--gold-pale);border-radius:0 8px 8px 0;margin:10px 0;font-size:13px;color:var(--ink-soft);}
+.callout ul{margin:6px 0 0;padding-left:18px;}
+.callout.good{border-color:var(--good);background:var(--good-soft);}
+.callout.warn{border-color:var(--warn);background:var(--warn-soft);}
+.callout.danger{border-color:var(--risk);background:var(--risk-soft);}
+.callout b{color:var(--ink);}
+
+.photo-checklist{list-style:none;margin:0;padding:0;columns:2;gap:24px;}
+.photo-checklist li{margin-bottom:8px;break-inside:avoid;}
+.photo-checklist label{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;}
+.photo-checklist input[type=checkbox]{width:auto;accent-color:var(--gold-dim);}
+
+.sketch-toolbar{display:flex;gap:8px;margin-bottom:10px;}
+.btn-tool{background:var(--paper);border:1px solid var(--line);padding:6px 12px;border-radius:6px;font-size:12.5px;font-weight:700;color:var(--ink-soft);}
+.btn-tool.active{background:var(--gold-pale);color:var(--gold-dim);border-color:var(--gold-l);}
+#sketchCanvas{border:1px solid var(--line);border-radius:8px;background:#fff;touch-action:none;max-width:100%;display:block;}
+
+.plan-wrap{display:flex;justify-content:center;padding:10px 0;}
+.plan-svg{background:var(--paper);border-radius:8px;}
+.mark-door{fill:var(--gold-dim);}
+.mark-window{fill:var(--good);}
+.mark-elec{fill:var(--risk);}
+.plan-legend{display:flex;gap:16px;justify-content:center;margin-top:6px;font-size:12px;color:var(--muted);}
+.plan-legend .lg{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle;}
+.lg.door{background:var(--gold-dim);} .lg.window{background:var(--good);} .lg.elec{background:var(--risk);}
+.elev-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+.elev-btn{background:var(--paper);border:1px solid var(--line);padding:6px 12px;border-radius:20px;font-size:12px;font-weight:700;color:var(--muted);}
+.elev-btn.active{background:var(--gold-pale);color:var(--gold-dim);border-color:var(--gold-l);}
+.elev-label{font-family:var(--sans);font-size:9px;fill:var(--ink-soft);}
+
+.welcome{max-width:640px;margin:40px auto;text-align:center;}
+.welcome h2{font-size:22px;margin-bottom:10px;}
+.welcome p{color:var(--muted);font-size:14px;}
+
+.status-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;}
+.status-pill.validated{background:var(--good-soft);color:var(--good);}
+.status-pill.progress{background:var(--warn-soft);color:var(--warn);}
+
+@media(max-width:900px){
+  .sidebar{position:fixed;z-index:20;left:0;top:0;bottom:0;transform:translateX(-100%);transition:transform .2s;}
+  .sidebar.open{transform:translateX(0);box-shadow:var(--shadow);}
+  .field-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));}
+}
+
+#errorBanner{
+  display:none; position:fixed; top:0; left:0; right:0; z-index:999;
+  background:var(--risk-soft); color:var(--risk); border-bottom:2px solid var(--risk);
+  padding:12px 20px; font-size:13px; font-family:var(--sans);
+}
+#errorBanner b{display:block;margin-bottom:2px;}
+#errorBanner button{background:var(--risk);color:#fff;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;margin-left:12px;}
+</style>
+</head>
+<body>
+
+<div id="errorBanner"><b>Something went wrong.</b><span id="errorBannerMsg"></span><button onclick="document.getElementById('errorBanner').style.display='none'">Dismiss</button></div>
+
+<div class="app">
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <img src="logo.png" alt="Appletree Interiors">
+      <div class="title">SiteTwin <span style="color:var(--gold-dim)">· Phase 0</span></div>
+      <div class="sub">Offline site survey — no cloud, no login</div>
+    </div>
+    <div class="sidebar-tree" id="sidebarTree"></div>
+    <div class="sidebar-footer">
+      <div class="save-status" id="saveStatus">Not saved yet</div>
+      <button class="btn-secondary" id="btnExportAll">⬇ Export All Data (JSON)</button>
+      <button class="btn-secondary" id="btnImportAll">⬆ Import Data (JSON)</button>
+      <input type="file" id="importFile" accept=".json,application/json" style="display:none">
+    </div>
+  </nav>
+
+  <main class="workspace">
+    <div class="topbar">
+      <div class="breadcrumb" id="breadcrumb"></div>
+      <div class="topbar-actions" id="topbarActions"></div>
+    </div>
+    <div class="tab-bar" id="tabBar" style="display:none"></div>
+    <div class="content-scroll">
+      <div id="content"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+window.addEventListener("error", function(e){ showErrorBanner((e && e.message) || "Unknown error"); });
+function showErrorBanner(msg){
+  var b = document.getElementById("errorBanner");
+  var m = document.getElementById("errorBannerMsg");
+  if(!b || !m) return;
+  m.textContent = " " + msg + " — your data up to this point is still saved. Try reloading the page; if it keeps happening, export your data (JSON) as a backup and let the developer know what you were doing when this appeared.";
+  b.style.display = "block";
+}
+
+var STORE_KEY = "sitetwin_phase0_db_v1";
+var TABS = [
+  {id:"info", label:"Info"},
+  {id:"walls", label:"Walls"},
+  {id:"openings", label:"Doors & Windows"},
+  {id:"electrical", label:"Electrical"},
+  {id:"lighting", label:"Lighting"},
+  {id:"hvac", label:"HVAC & Appliances"},
+  {id:"plumbing", label:"Plumbing"},
+  {id:"photos", label:"Photos"},
+  {id:"sketch", label:"Sketch"},
+  {id:"refplan", label:"Reference Plan"},
+  {id:"validation", label:"Validation"},
+  {id:"plan", label:"Plan & Elevation"},
+  {id:"export", label:"Export"}
+];
+
+var ROOM_TYPES = ["Living Room","Master Bedroom","Bedroom","Kitchen","Dining","Bathroom","Powder Room","Utility","Balcony","Foyer / Entrance","Study / Office","Puja Room","Store Room","Other"];
+
+var SCHEMAS = {
+  walls: {
+    title:"Walls", addLabel:"+ Add Wall",
+    fields:[
+      {key:"wallCode",label:"Wall",type:"text",placeholder:"e.g. North"},
+      {key:"length_mm",label:"Length (mm)",type:"number"},
+      {key:"height_mm",label:"Height (mm)",type:"number"},
+      {key:"turnAngle_deg",label:"Turn to next wall (°)",type:"number",placeholder:"90"},
+      {key:"beam",label:"Beam",type:"text",placeholder:"position/size"},
+      {key:"column",label:"Column",type:"text",placeholder:"position/size"},
+      {key:"niche",label:"Niche",type:"text",placeholder:"position/size"},
+      {key:"projection_mm",label:"Projection (mm)",type:"number"},
+      {key:"finish",label:"Finish",type:"text"}
+    ]
+  },
+  doors: {
+    title:"Doors", addLabel:"+ Add Door",
+    fields:[
+      {key:"wallCode",label:"Wall",type:"wallSelect"},
+      {key:"width_mm",label:"Width (mm)",type:"number"},
+      {key:"height_mm",label:"Height (mm)",type:"number"},
+      {key:"swing",label:"Swing",type:"select",options:["In-Left","In-Right","Out-Left","Out-Right","Sliding"]},
+      {key:"distFromCorner_mm",label:"Dist. from corner (mm)",type:"number"}
+    ]
+  },
+  windows: {
+    title:"Windows", addLabel:"+ Add Window",
+    fields:[
+      {key:"wallCode",label:"Wall",type:"wallSelect"},
+      {key:"width_mm",label:"Width (mm)",type:"number"},
+      {key:"height_mm",label:"Height (mm)",type:"number"},
+      {key:"sillHeight_mm",label:"Sill height (mm)",type:"number"},
+      {key:"distFromCorner_mm",label:"Dist. from corner (mm)",type:"number"}
+    ]
+  },
+  switchboards: {
+    title:"Switchboards", addLabel:"+ Add Switchboard",
+    fields:[
+      {key:"wallCode",label:"Wall",type:"wallSelect"},
+      {key:"distFromCorner_mm",label:"Dist. from corner (mm)",type:"number"},
+      {key:"height_mm",label:"Height (mm)",type:"number"},
+      {key:"modules",label:"Modules",type:"number"},
+      {key:"purpose",label:"Purpose",type:"text"}
+    ]
+  },
+  sockets: {
+    title:"Socket Points", addLabel:"+ Add Socket",
+    fields:[
+      {key:"type",label:"Type",type:"select",options:["6A","16A","UPS","USB","Appliance"]},
+      {key:"wallCode",label:"Wall",type:"wallSelect"},
+      {key:"distFromCorner_mm",label:"Dist. from corner (mm)",type:"number"},
+      {key:"height_mm",label:"Height (mm)",type:"number"}
+    ]
+  },
+  lights: {
+    title:"Light Points", addLabel:"+ Add Light Point",
+    fields:[
+      {key:"type",label:"Type",type:"select",options:["Ceiling Light","Wall Light","Pendant Light","Cove Light","Strip Light","Mirror Light","Outdoor Light"]},
+      {key:"wallCode",label:"Wall (if applicable)",type:"wallSelect",optional:true},
+      {key:"height_mm",label:"Mounting height (mm)",type:"number"},
+      {key:"switchboardNote",label:"Switchboard / circuit",type:"text"}
+    ]
+  },
+  hvac: {
+    title:"HVAC & Appliance Points", addLabel:"+ Add Point",
+    fields:[
+      {key:"type",label:"Type",type:"select",options:["AC Indoor Unit","AC Outdoor Unit","TV Point","Internet Point","CCTV Point","Speaker Point","Refrigerator Point","Washing Machine Point","Dishwasher Point","Chimney Point","Water Purifier Point"]},
+      {key:"wallCode",label:"Wall (if applicable)",type:"wallSelect",optional:true},
+      {key:"note",label:"Notes",type:"text"}
+    ]
+  },
+  plumbing: {
+    title:"Plumbing Points", addLabel:"+ Add Point",
+    fields:[
+      {key:"type",label:"Type",type:"select",options:["Basin","Sink","WC","Shower","Mixer","Diverter","Drain","Floor Trap","Water Inlet","Water Outlet"]},
+      {key:"wallCode",label:"Wall (if applicable)",type:"wallSelect",optional:true},
+      {key:"note",label:"Notes",type:"text"}
+    ]
+  }
+};
+
+/* ---------- storage ---------- */
+var db = loadDB();
+migrateDB(db);
+var state = {projectId:null, floorId:null, roomId:null, tab:"info", elevIdx:0};
+var saveTimer = null;
+
+function loadDB(){
+  try{
+    var raw = localStorage.getItem(STORE_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return {projects:[]};
+}
+function migrateDB(d){
+  (d.projects||[]).forEach(function(p){
+    (p.floors||[]).forEach(function(f){
+      (f.rooms||[]).forEach(function(r){
+        if(r.shape===undefined) r.shape = "rectangular";
+        if(!r.referencePlan) r.referencePlan = {dataUrl:"", fileType:"", fileName:"", annotations:[]};
+      });
+    });
+  });
+}
+function scheduleSave(){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(function(){
+    var el = document.getElementById("saveStatus");
+    try{
+      localStorage.setItem(STORE_KEY, JSON.stringify(db));
+      if(el) el.textContent = "Saved on this device · " + new Date().toLocaleTimeString();
+    }catch(e){
+      if(el) el.textContent = "⚠ Save failed — storage may be full. Export a backup.";
+    }
+  }, 450);
+}
+
+/* ---------- factories ---------- */
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function newProject(name){ return {id:uid(), name:name||"Untitled Project", clientName:"", address:"", createdAt:new Date().toISOString(), floors:[]}; }
+function newFloor(name){ return {id:uid(), name:name||"Ground Floor", rooms:[]}; }
+function newRoom(name){
+  return {
+    id:uid(), name:name||"New Room", roomType:"", status:"in_progress", shape:"rectangular",
+    length_mm:"", width_mm:"", height_mm:"", diagonalA_mm:"", diagonalB_mm:"", wallThickness_mm:"", falseCeilingHeight_mm:"",
+    notes:"",
+    walls:[], doors:[], windows:[], switchboards:[], sockets:[], lights:[], hvac:[], plumbing:[],
+    photos:[], sketchDataUrl:"",
+    referencePlan:{dataUrl:"", fileType:"", fileName:"", annotations:[]}
+  };
+}
+
+/* ---------- helpers ---------- */
+function escapeHtml(v){
+  return String(v===undefined||v===null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function getProject(){ return db.projects.find(function(p){return p.id===state.projectId;}); }
+function getFloor(){ var p=getProject(); if(!p) return null; return p.floors.find(function(f){return f.id===state.floorId;}); }
+function getRoom(){ var f=getFloor(); if(!f) return null; return f.rooms.find(function(r){return r.id===state.roomId;}); }
+
+/* ---------- validation engine ---------- */
+function getPhotoChecklist(room){
+  var required = ["Complete room view","Ceiling","Floor","Doors","Windows","Electrical points","Plumbing points","Special details"];
+  room.walls.forEach(function(w,i){ required.push("Wall: " + (w.wallCode || ("Wall " + (i+1)))); });
+  var existing = {};
+  room.photos.forEach(function(p){ existing[p.label]=p; });
+  var list = required.map(function(label){ return existing[label] || {label:label, captured:false}; });
+  room.photos = list;
+  return room.photos;
+}
+function validateRoom(room){
+  var flags = [];
+  function add(sev,msg){ flags.push({severity:sev,message:msg}); }
+  if(!room.name) add("blocking","Room name is required.");
+  if(!room.roomType) add("blocking","Room type is required.");
+  if(!room.length_mm) add("blocking","Room length is required.");
+  if(!room.width_mm) add("blocking","Room width is required.");
+  if(!room.height_mm) add("blocking","Room ceiling height is required.");
+  room.walls.forEach(function(w,i){ if(!w.length_mm) add("blocking","Wall #"+(i+1)+" (" + (w.wallCode||"unnamed") + ") is missing a length."); });
+  room.doors.forEach(function(d,i){ if(!d.width_mm || !d.height_mm) add("blocking","Door #"+(i+1)+" is missing width/height."); });
+  room.windows.forEach(function(w,i){ if(!w.width_mm || !w.height_mm) add("blocking","Window #"+(i+1)+" is missing width/height."); });
+
+  if(room.length_mm && room.width_mm && room.diagonalA_mm){
+    var computed = Math.sqrt(Math.pow(Number(room.length_mm),2)+Math.pow(Number(room.width_mm),2));
+    var delta = Math.abs(computed-Number(room.diagonalA_mm))/computed;
+    if(delta>0.01) add("warning","Diagonal mismatch: measured "+room.diagonalA_mm+"mm vs computed "+computed.toFixed(0)+"mm (Δ"+(delta*100).toFixed(1)+"%). Re-check or confirm irregular room.");
+  }
+  if(room.falseCeilingHeight_mm && room.height_mm && Number(room.falseCeilingHeight_mm) >= Number(room.height_mm)){
+    add("blocking","False ceiling height must be less than the ceiling height.");
+  }
+  room.switchboards.forEach(function(s,i){
+    if(s.height_mm && (Number(s.height_mm)<300 || Number(s.height_mm)>1400)) add("warning","Switchboard #"+(i+1)+" height "+s.height_mm+"mm is outside the typical 300–1400mm range — confirm intentional.");
+  });
+  room.sockets.forEach(function(s,i){
+    if(s.height_mm && (Number(s.height_mm)<300 || Number(s.height_mm)>1400)) add("warning","Socket #"+(i+1)+" ("+(s.type||"—")+") height "+s.height_mm+"mm is outside the typical 300–1400mm range.");
+  });
+  var seen = {};
+  room.sockets.forEach(function(s,i){
+    if(!s.wallCode) return;
+    var key = s.wallCode+"|"+s.distFromCorner_mm+"|"+s.height_mm;
+    if(seen[key]!==undefined) add("warning","Possible duplicate socket at "+s.wallCode+", "+s.distFromCorner_mm+"mm from corner, height "+s.height_mm+"mm.");
+    seen[key]=i;
+  });
+  room.doors.forEach(function(d,i){
+    if(!d.wallCode) return;
+    var wall = room.walls.find(function(w){ return (w.wallCode||"")===d.wallCode; });
+    if(wall && wall.height_mm && d.height_mm && Number(d.height_mm) > Number(wall.height_mm)) add("blocking","Door #"+(i+1)+" height exceeds its wall's height.");
+  });
+
+  if(room.shape==="irregular" && room.walls.length>=3){
+    var walk = walkPolygon(room);
+    if(walk.complete && walk.closureGap>50){
+      add("warning","Traced wall shape does not close: gap of "+Math.round(walk.closureGap)+"mm between the last wall's end and the first wall's start. Check wall lengths and turn angles.");
+    }
+  }
+
+  var checklist = getPhotoChecklist(room);
+  var missing = checklist.filter(function(p){ return !p.captured; });
+  if(missing.length) add("blocking", missing.length + " required photo(s) not yet marked captured.");
+
+  return flags;
+}
+/* ---------- polygon walk (irregular rooms) ---------- */
+function walkPolygon(room){
+  var heading = 0, x = 0, y = 0, complete = true;
+  var points = [{x:x,y:y}];
+  room.walls.forEach(function(w){
+    var len = Number(w.length_mm);
+    if(!len) complete = false;
+    var rad = heading * Math.PI/180;
+    x += (len||0)*Math.cos(rad);
+    y += (len||0)*Math.sin(rad);
+    points.push({x:x,y:y});
+    var turn = (w.turnAngle_deg===undefined || w.turnAngle_deg==="") ? 90 : Number(w.turnAngle_deg);
+    heading += turn;
+  });
+  var last = points[points.length-1];
+  var gap = Math.sqrt(Math.pow(last.x-points[0].x,2)+Math.pow(last.y-points[0].y,2));
+  return {points:points, closureGap:gap, complete:complete};
+}
+
+/* ---------- field rendering ---------- */
+function renderField(room, f, value){
+  value = (value===undefined||value===null) ? "" : value;
+  if(f.type==="text") return '<input type="text" data-field="'+f.key+'" value="'+escapeHtml(value)+'" placeholder="'+escapeHtml(f.placeholder||"")+'">';
+  if(f.type==="number") return '<input type="number" data-field="'+f.key+'" value="'+escapeHtml(value)+'">';
+  if(f.type==="select"){
+    var opts = '<option value="">–</option>';
+    f.options.forEach(function(o){ opts += '<option value="'+escapeHtml(o)+'" '+(o===value?"selected":"")+'>'+escapeHtml(o)+'</option>'; });
+    return '<select data-field="'+f.key+'">'+opts+'</select>';
+  }
+  if(f.type==="wallSelect"){
+    var opts2 = '<option value="">'+(f.optional?"– none –":"– select –")+'</option>';
+    room.walls.forEach(function(w,i){
+      var code = w.wallCode || ("Wall "+(i+1));
+      opts2 += '<option value="'+escapeHtml(code)+'" '+(code===value?"selected":"")+'>'+escapeHtml(code)+'</option>';
+    });
+    return '<select data-field="'+f.key+'">'+opts2+'</select>';
+  }
+  return "";
+}
+function renderListEditor(room, listKey){
+  var schema = SCHEMAS[listKey];
+  var rows = room[listKey];
+  var html = '<div class="section-block"><div class="section-head"><h3>'+schema.title+'</h3><span class="count-badge">'+rows.length+'</span></div>';
+  html += '<div class="table-wrap"><table class="editor-table"><thead><tr>';
+  schema.fields.forEach(function(f){ html += '<th>'+f.label+'</th>'; });
+  html += '<th></th></tr></thead><tbody>';
+  rows.forEach(function(row,idx){
+    html += '<tr data-list="'+listKey+'" data-idx="'+idx+'">';
+    schema.fields.forEach(function(f){ html += '<td>'+renderField(room,f,row[f.key])+'</td>'; });
+    html += '<td><button class="icon-btn del-row" title="Remove">✕</button></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  html += '<button class="btn-add add-row" data-list="'+listKey+'">'+schema.addLabel+'</button>';
+  html += '</div>';
+  return html;
+}
+
+/* ---------- tab content builders ---------- */
+function renderInfoTab(room){
+  var html = '<div class="section-block"><div class="section-head"><h3>Room Information</h3></div>';
+  html += '<div class="field-grid">';
+  html += '<div class="field"><label>Room Name</label><input type="text" data-roomfield="name" value="'+escapeHtml(room.name)+'"></div>';
+  html += '<div class="field"><label>Room Type</label><select data-roomfield="roomType">'+
+    '<option value="">– select –</option>' + ROOM_TYPES.map(function(t){ return '<option value="'+t+'" '+(t===room.roomType?"selected":"")+'>'+t+'</option>'; }).join('') +
+    '</select></div>';
+  html += '<div class="field"><label>Room Shape</label><select data-roomfield="shape">'+
+    '<option value="rectangular" '+(room.shape!=="irregular"?"selected":"")+'>Rectangular (Length × Width)</option>'+
+    '<option value="irregular" '+(room.shape==="irregular"?"selected":"")+'>Irregular / L-shaped (trace wall-by-wall)</option>'+
+    '</select></div>';
+  html += '</div>';
+  if(room.shape==="irregular") html += '<div class="callout" style="margin-top:12px">Irregular shape selected — go to the <b>Walls</b> tab and add every wall in order, walking around the room. Each wall needs a length and a "turn to next wall" angle (90° for a normal corner; use a different angle for a non-square corner). The Plan tab will draw the actual traced shape and flag it if the walls don\'t close into a loop.</div>';
+  html += '</div>';
+
+  html += '<div class="section-block"><div class="section-head"><h3>Measurements</h3></div>';
+  html += '<p class="hint">Room-level dimensions. Per-wall detail lives in the Walls tab.</p>';
+  html += '<div class="field-grid">';
+  [["length_mm","Length (mm)"],["width_mm","Width (mm)"],["height_mm","Ceiling Height (mm)"],
+   ["diagonalA_mm","Diagonal A (mm)"],["diagonalB_mm","Diagonal B (mm)"],
+   ["wallThickness_mm","Wall Thickness (mm)"],["falseCeilingHeight_mm","False Ceiling Height (mm)"]
+  ].forEach(function(pair){
+    html += '<div class="field"><label>'+pair[1]+'</label><input type="number" data-roomfield="'+pair[0]+'" value="'+escapeHtml(room[pair[0]])+'"></div>';
+  });
+  html += '</div></div>';
+
+  html += '<div class="section-block"><div class="section-head"><h3>Notes</h3></div>';
+  html += '<textarea data-roomfield="notes" placeholder="Any other site notes for this room…">'+escapeHtml(room.notes)+'</textarea>';
+  html += '</div>';
+  return html;
+}
+function renderPhotosTab(room){
+  var items = getPhotoChecklist(room);
+  var html = '<div class="section-block"><div class="section-head"><h3>Photo Checklist</h3></div>';
+  html += '<p class="hint">Mark each item once the photo has been taken on your camera/phone. A room can\'t be marked validated until every item here is checked — this is what stops missing photo documentation reaching the office.</p>';
+  html += '<ul class="photo-checklist">';
+  items.forEach(function(p,idx){
+    html += '<li><label><input type="checkbox" data-photoidx="'+idx+'" '+(p.captured?"checked":"")+'> '+escapeHtml(p.label)+'</label></li>';
+  });
+  html += '</ul></div>';
+  return html;
+}
+function renderSketchTab(room){
+  return '<div class="section-block"><div class="section-head"><h3>Rough Sketch</h3></div>'+
+    '<p class="hint">Freehand sketch of the room for visual reference alongside the measured plan in the Plan &amp; Elevation tab.</p>'+
+    '<div class="sketch-toolbar">'+
+      '<button id="sketchPen" class="btn-tool active">✏ Pen</button>'+
+      '<button id="sketchEraser" class="btn-tool">🧽 Eraser</button>'+
+      '<button id="sketchClear" class="btn-tool">🗑 Clear</button>'+
+    '</div>'+
+    '<canvas id="sketchCanvas" width="640" height="420"></canvas>'+
+  '</div>';
+}
+function renderRefPlanTab(room){
+  var rp = room.referencePlan || {dataUrl:"",fileType:"",fileName:"",annotations:[]};
+  var html = '<div class="section-block"><div class="section-head"><h3>Reference Plan</h3></div>';
+  html += '<p class="hint">Attach an existing floor plan — from an architect, a previous survey, or a photo of a printed drawing — and drop labeled pins on top of it for doors, windows, electrical points, or any other marking. Useful when a plan already exists and you\'re verifying/annotating it rather than drawing from scratch.</p>';
+  html += '<div style="margin-bottom:14px"><input type="file" id="refPlanFile" accept="image/*,.pdf,application/pdf"></div>';
+  if(!rp.dataUrl){
+    html += '<p class="hint">No reference plan attached yet.</p>';
+  }else if(rp.fileType==="pdf"){
+    html += '<div class="callout">📄 PDF attached: <b>'+escapeHtml(rp.fileName)+'</b>. Direct pin markup isn\'t supported on PDFs in this version (the browser treats the PDF as an opaque viewer, not a paintable image). Click below to view/print it, or screenshot the page as an image and re-attach that image here to mark it up.</div>';
+    html += '<div style="display:flex;gap:10px"><button class="btn-secondary" id="btnOpenRefPdf">Open PDF</button><button class="btn-secondary" id="btnRemoveRefPlan">Remove</button></div>';
+  }else{
+    html += '<div id="refPlanImgWrap" style="position:relative;display:inline-block;max-width:100%;border:1px solid var(--line);border-radius:8px;overflow:hidden;cursor:crosshair">'+
+      '<img id="refPlanImg" src="'+rp.dataUrl+'" style="display:block;max-width:100%;height:auto">';
+    (rp.annotations||[]).forEach(function(a){
+      var color = a.type==="door" ? "var(--gold-dim)" : a.type==="window" ? "var(--good)" : a.type==="electrical" ? "var(--risk)" : "var(--gold-dim)";
+      html += '<div style="position:absolute;left:'+a.x+'%;top:'+a.y+'%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:'+color+';border:2px solid #fff;box-shadow:0 0 0 1px '+color+'" title="'+escapeHtml(a.label)+'"></div>';
+    });
+    html += '</div>';
+    html += '<p class="hint" style="margin-top:10px">Click anywhere on the image to drop a labeled pin.</p>';
+    html += '<div style="margin-bottom:10px"><button class="btn-secondary" id="btnRemoveRefPlan">Remove Plan</button></div>';
+    if((rp.annotations||[]).length){
+      html += '<div class="table-wrap"><table class="editor-table"><thead><tr><th>Label</th><th>Type</th><th></th></tr></thead><tbody>';
+      rp.annotations.forEach(function(a,idx){
+        html += '<tr><td>'+escapeHtml(a.label)+'</td><td>'+escapeHtml(a.type)+'</td><td><button class="icon-btn del-annotation" data-annidx="'+idx+'">✕</button></td></tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+  }
+  html += '</div>';
+  return html;
+}
+function renderValidationTab(room){
+  var flags = validateRoom(room);
+  var blocking = flags.filter(function(f){return f.severity==="blocking";});
+  var warnings = flags.filter(function(f){return f.severity==="warning";});
+  var html = '<div class="section-block"><div class="section-head"><h3>Validation</h3></div>';
+  if(!flags.length){
+    html += '<div class="callout good">✅ No issues found. This room can be marked validated.</div>';
+  }else{
+    if(blocking.length) html += '<div class="callout danger"><b>'+blocking.length+' blocking issue(s)</b> — must be resolved before this room can be marked validated.<ul>'+blocking.map(function(f){return '<li>'+escapeHtml(f.message)+'</li>';}).join('')+'</ul></div>';
+    if(warnings.length) html += '<div class="callout warn"><b>'+warnings.length+' warning(s)</b> — allowed to proceed, but review these.<ul>'+warnings.map(function(f){return '<li>'+escapeHtml(f.message)+'</li>';}).join('')+'</ul></div>';
+  }
+  var canValidate = blocking.length===0;
+  html += '<p>Status: <span class="status-pill '+(room.status==="validated"?"validated":"progress")+'">'+(room.status==="validated"?"Validated":"In Progress")+'</span></p>';
+  html += '<button class="btn-primary" id="btnMarkValidated" '+(canValidate?"":"disabled")+'>'+(room.status==="validated"?"✓ Re-confirm Validated":"Mark Room Validated")+'</button>';
+  html += '</div>';
+  return html;
+}
+function sideOf(code){
+  code = (code||"").toLowerCase();
+  if(code.indexOf("north")>-1 || code.indexOf("top")>-1) return "top";
+  if(code.indexOf("south")>-1 || code.indexOf("bottom")>-1) return "bottom";
+  if(code.indexOf("east")>-1 || code.indexOf("right")>-1) return "right";
+  if(code.indexOf("west")>-1 || code.indexOf("left")>-1) return "left";
+  return null;
+}
+function buildPlanSVG(room){
+  if(room.shape==="irregular" && room.walls.length>=3) return buildIrregularPlanSVG(room);
+  return buildRectPlanSVG(room);
+}
+function buildRectPlanSVG(room){
+  var L = Number(room.length_mm)||4000, W = Number(room.width_mm)||3000;
+  var maxDim = 340, scale = maxDim/Math.max(L,W);
+  var w = L*scale, h = W*scale, pad = 30;
+  var svg = '<svg viewBox="0 0 '+(w+pad*2)+' '+(h+pad*2)+'" width="100%" style="max-width:460px" class="plan-svg">';
+  svg += '<rect x="'+pad+'" y="'+pad+'" width="'+w+'" height="'+h+'" fill="var(--paper-raised)" stroke="var(--ink)" stroke-width="3"/>';
+  var unmapped = [];
+  function edgeInfo(side){
+    if(side==="top") return {x1:pad,y1:pad,x2:pad+w,y2:pad,len:L,horiz:true};
+    if(side==="bottom") return {x1:pad,y1:pad+h,x2:pad+w,y2:pad+h,len:L,horiz:true};
+    if(side==="left") return {x1:pad,y1:pad,x2:pad,y2:pad+h,len:W,horiz:false};
+    if(side==="right") return {x1:pad+w,y1:pad,x2:pad+w,y2:pad+h,len:W,horiz:false};
+  }
+  function placeOnEdge(side, dist, itemWidth, cls, label){
+    var e = edgeInfo(side); if(!e) return;
+    var t = Math.min(1,(Number(dist)||0)/(e.len||1));
+    var x = e.horiz ? e.x1+(e.x2-e.x1)*t : e.x1;
+    var y = e.horiz ? e.y1 : e.y1+(e.y2-e.y1)*t;
+    var wpx = itemWidth ? itemWidth*scale : 0;
+    if(e.horiz){
+      svg += '<rect x="'+x+'" y="'+(y-4)+'" width="'+Math.max(wpx,6)+'" height="8" class="'+cls+'"><title>'+label+'</title></rect>';
+    }else{
+      svg += '<rect x="'+(x-4)+'" y="'+y+'" width="8" height="'+Math.max(wpx,6)+'" class="'+cls+'"><title>'+label+'</title></rect>';
+    }
+  }
+  room.doors.forEach(function(d){
+    var side = sideOf(d.wallCode);
+    if(side) placeOnEdge(side,d.distFromCorner_mm,d.width_mm,"mark-door","Door "+(d.width_mm||"?")+"×"+(d.height_mm||"?")+"mm");
+    else if(d.wallCode) unmapped.push("Door on \""+d.wallCode+"\"");
+  });
+  room.windows.forEach(function(win){
+    var side = sideOf(win.wallCode);
+    if(side) placeOnEdge(side,win.distFromCorner_mm,win.width_mm,"mark-window","Window "+(win.width_mm||"?")+"×"+(win.height_mm||"?")+"mm");
+    else if(win.wallCode) unmapped.push("Window on \""+win.wallCode+"\"");
+  });
+  room.switchboards.forEach(function(s){
+    var side = sideOf(s.wallCode);
+    if(side) placeOnEdge(side,s.distFromCorner_mm,120,"mark-elec","Switchboard");
+    else if(s.wallCode) unmapped.push("Switchboard on \""+s.wallCode+"\"");
+  });
+  room.sockets.forEach(function(s){
+    var side = sideOf(s.wallCode);
+    if(side) placeOnEdge(side,s.distFromCorner_mm,60,"mark-elec","Socket "+(s.type||""));
+    else if(s.wallCode) unmapped.push("Socket on \""+s.wallCode+"\"");
+  });
+  svg += '</svg>';
+  return {svg:svg, unmapped:unmapped};
+}
+function buildIrregularPlanSVG(room){
+  var walk = walkPolygon(room);
+  var pts = walk.points;
+  var xs = pts.map(function(p){return p.x;}), ys = pts.map(function(p){return p.y;});
+  var minX = Math.min.apply(null,xs), maxX = Math.max.apply(null,xs);
+  var minY = Math.min.apply(null,ys), maxY = Math.max.apply(null,ys);
+  var spanX = Math.max(maxX-minX,1), spanY = Math.max(maxY-minY,1);
+  var maxDim = 340, scale = maxDim/Math.max(spanX,spanY), pad = 30;
+  function toSvg(p){ return {x:pad+(p.x-minX)*scale, y:pad+(p.y-minY)*scale}; }
+  var svgPts = pts.map(toSvg);
+  var w = spanX*scale, h = spanY*scale;
+  var svg = '<svg viewBox="0 0 '+(w+pad*2)+' '+(h+pad*2)+'" width="100%" style="max-width:460px" class="plan-svg">';
+  var pointsAttr = svgPts.slice(0, svgPts.length-1).map(function(p){ return p.x+","+p.y; }).join(" ");
+  svg += '<polygon points="'+pointsAttr+'" fill="var(--paper-raised)" stroke="var(--ink)" stroke-width="3"/>';
+  var unmapped = [];
+  function findWallIdx(code){ return room.walls.findIndex(function(w,i){ return (w.wallCode||("Wall "+(i+1)))===code; }); }
+  function placeOnWall(wallIdx, dist, itemWidth, cls, label){
+    if(wallIdx<0 || wallIdx>=svgPts.length-1) return;
+    var a = svgPts[wallIdx], b = svgPts[wallIdx+1];
+    var wallLenMm = Number(room.walls[wallIdx].length_mm)||1;
+    var t = Math.min(1,(Number(dist)||0)/wallLenMm);
+    var mx = a.x+(b.x-a.x)*t, my = a.y+(b.y-a.y)*t;
+    var dx = b.x-a.x, dy = b.y-a.y, len = Math.sqrt(dx*dx+dy*dy)||1;
+    var half = itemWidth ? Math.max((itemWidth*scale)/2,4) : 5;
+    var x1 = mx-(dx/len)*half, y1 = my-(dy/len)*half, x2 = mx+(dx/len)*half, y2 = my+(dy/len)*half;
+    svg += '<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'" class="'+cls+'" stroke-width="6"><title>'+label+'</title></line>';
+  }
+  room.doors.forEach(function(d){
+    var idx = findWallIdx(d.wallCode);
+    if(idx>-1) placeOnWall(idx,d.distFromCorner_mm,d.width_mm,"mark-door","Door "+(d.width_mm||"?")+"×"+(d.height_mm||"?")+"mm");
+    else if(d.wallCode) unmapped.push("Door on \""+d.wallCode+"\"");
+  });
+  room.windows.forEach(function(win){
+    var idx = findWallIdx(win.wallCode);
+    if(idx>-1) placeOnWall(idx,win.distFromCorner_mm,win.width_mm,"mark-window","Window "+(win.width_mm||"?")+"×"+(win.height_mm||"?")+"mm");
+    else if(win.wallCode) unmapped.push("Window on \""+win.wallCode+"\"");
+  });
+  room.switchboards.forEach(function(s){
+    var idx = findWallIdx(s.wallCode);
+    if(idx>-1) placeOnWall(idx,s.distFromCorner_mm,120,"mark-elec","Switchboard");
+    else if(s.wallCode) unmapped.push("Switchboard on \""+s.wallCode+"\"");
+  });
+  room.sockets.forEach(function(s){
+    var idx = findWallIdx(s.wallCode);
+    if(idx>-1) placeOnWall(idx,s.distFromCorner_mm,60,"mark-elec","Socket "+(s.type||""));
+    else if(s.wallCode) unmapped.push("Socket on \""+s.wallCode+"\"");
+  });
+  svg += '</svg>';
+  var closureNote = null;
+  if(walk.closureGap>50) closureNote = "This traced shape does not fully close — gap of "+Math.round(walk.closureGap)+"mm between the last wall's end and the first wall's start. Check wall lengths and turn angles in the Walls tab.";
+  return {svg:svg, unmapped:unmapped, closureNote:closureNote};
+}
+function buildElevationSVG(room, wall){
+  var len = Number(wall.length_mm)||Number(room.length_mm)||4000;
+  var ht = Number(wall.height_mm)||Number(room.height_mm)||2700;
+  var maxW = 420, scale = maxW/len;
+  var w = len*scale, h = ht*scale, pad = 20;
+  var svg = '<svg viewBox="0 0 '+(w+pad*2)+' '+(h+pad*2)+'" width="100%" style="max-width:520px" class="plan-svg">';
+  svg += '<rect x="'+pad+'" y="'+pad+'" width="'+w+'" height="'+h+'" fill="var(--paper-raised)" stroke="var(--ink)" stroke-width="3"/>';
+  var code = wall.wallCode;
+  room.doors.filter(function(d){return (d.wallCode||"")===code;}).forEach(function(d){
+    var dw=(Number(d.width_mm)||800)*scale, dh=(Number(d.height_mm)||2100)*scale;
+    var dx=pad+(Number(d.distFromCorner_mm)||0)*scale, dy=pad+h-dh;
+    svg += '<rect x="'+dx+'" y="'+dy+'" width="'+dw+'" height="'+dh+'" class="mark-door" fill-opacity="0.25" stroke="var(--gold-dim)"/><text x="'+(dx+4)+'" y="'+(dy+14)+'" class="elev-label">Door</text>';
+  });
+  room.windows.filter(function(win){return (win.wallCode||"")===code;}).forEach(function(win){
+    var dw=(Number(win.width_mm)||1200)*scale, dh=(Number(win.height_mm)||1200)*scale;
+    var dx=pad+(Number(win.distFromCorner_mm)||0)*scale;
+    var dy=pad+h-((Number(win.sillHeight_mm)||900)+(Number(win.height_mm)||1200))*scale;
+    svg += '<rect x="'+dx+'" y="'+dy+'" width="'+dw+'" height="'+dh+'" class="mark-window" fill-opacity="0.25" stroke="var(--good)"/><text x="'+(dx+4)+'" y="'+(dy+14)+'" class="elev-label">Window</text>';
+  });
+  ["switchboards","sockets","lights"].forEach(function(key){
+    room[key].filter(function(it){return (it.wallCode||"")===code;}).forEach(function(it){
+      var dx=pad+(Number(it.distFromCorner_mm)||0)*scale;
+      var dy=pad+h-(Number(it.height_mm)||1000)*scale;
+      var label = key==="switchboards"?"SB":key==="sockets"?(it.type||"Skt"):(it.type||"Light");
+      svg += '<circle cx="'+dx+'" cy="'+dy+'" r="6" class="mark-elec"/><text x="'+(dx+8)+'" y="'+(dy+4)+'" class="elev-label">'+escapeHtml(label)+'</text>';
+    });
+  });
+  svg += '</svg>';
+  return svg;
+}
+function renderPlanTab(room){
+  var html = '<div class="section-block"><div class="section-head"><h3>2D Floor Plan</h3></div>';
+  html += room.shape==="irregular"
+    ? '<p class="hint">Traced from your Walls tab entries (length + turn angle), in order. Doors/windows/electrical are placed along the specific wall they reference, regardless of its name.</p>'
+    : '<p class="hint">Auto-drawn to scale from your measurements. Walls named North/South/East/West (or Top/Bottom/Left/Right) are drawn on the matching edge; other wall names are listed below instead of guessed at. If this room isn\'t a rectangle, switch Room Shape to "Irregular" in the Info tab.</p>';
+  var built = buildPlanSVG(room);
+  html += '<div class="plan-wrap">'+built.svg+'</div>';
+  html += '<div class="plan-legend"><span><span class="lg door"></span>Door</span><span><span class="lg window"></span>Window</span><span><span class="lg elec"></span>Electrical</span></div>';
+  if(built.closureNote) html += '<div class="callout warn" style="margin-top:14px">⚠ '+escapeHtml(built.closureNote)+'</div>';
+  if(built.unmapped.length) html += '<div class="callout" style="margin-top:14px">Not shown on plan (wall reference not found): '+built.unmapped.map(escapeHtml).join("; ")+'</div>';
+  html += '</div>';
+
+  html += '<div class="section-block"><div class="section-head"><h3>Wall Elevation</h3></div>';
+  if(!room.walls.length){
+    html += '<p class="hint">Add walls in the Walls tab to view elevations.</p>';
+  }else{
+    if(state.elevIdx >= room.walls.length) state.elevIdx = 0;
+    html += '<div class="elev-tabs">' + room.walls.map(function(w,i){
+      return '<button class="elev-btn '+(i===state.elevIdx?"active":"")+'" data-elevidx="'+i+'">'+escapeHtml(w.wallCode||("Wall "+(i+1)))+'</button>';
+    }).join('') + '</div>';
+    html += '<div class="plan-wrap">'+buildElevationSVG(room, room.walls[state.elevIdx])+'</div>';
+  }
+  html += '</div>';
+  return html;
+}
+function renderExportTab(){
+  return '<div class="section-block"><div class="section-head"><h3>Export &amp; Backup</h3></div>'+
+    '<p class="hint">Everything stays on this device. Use these to back up, hand off between devices, or produce a client-ready report.</p>'+
+    '<div style="display:flex;gap:10px;flex-wrap:wrap">'+
+      '<button class="btn-primary" id="btnPrintRoom">🖨 Print / Save Room Report as PDF</button>'+
+      '<button class="btn-secondary" id="btnExportProjectJSON">⬇ Export This Project (JSON)</button>'+
+    '</div>'+
+  '</div>';
+}
+
+/* ---------- print report ---------- */
+function reportTable(title, list, cols){
+  if(!list.length) return "";
+  var t = "<h2>"+title+"</h2><table><tr>"+cols.map(function(c){return "<th>"+c.label+"</th>";}).join("")+"</tr>";
+  list.forEach(function(row){
+    t += "<tr>"+cols.map(function(c){ var v=row[c.key]; return "<td>"+(v!==undefined && v!=="" ? escapeHtml(v) : "–")+"</td>"; }).join("")+"</tr>";
+  });
+  t += "</table>";
+  return t;
+}
+function printRoomReport(project, floor, room){
+  var flags = validateRoom(room);
+  var win = window.open("", "_blank");
+  if(!win){ alert("Please allow pop-ups to print the report."); return; }
+  var html = '<!doctype html><html><head><meta charset="utf-8"><title>'+escapeHtml(room.name)+' — Survey Report</title><style>'+
+    'body{font-family:Arial,Helvetica,sans-serif;color:#1C1C1A;padding:32px;}'+
+    'h1{margin-bottom:2px;font-size:22px;} h2{margin-top:26px;border-bottom:2px solid #C3B152;padding-bottom:4px;font-size:15px;}'+
+    'table{width:100%;border-collapse:collapse;margin:8px 0 18px;font-size:12px;}'+
+    'th,td{border:1px solid #ccc;padding:5px 7px;text-align:left;}'+
+    'th{background:#F4F1DC;}'+
+    '.meta{color:#555;font-size:12.5px;margin-bottom:16px;line-height:1.6;}'+
+    '.flag-block{padding:8px 12px;border-left:4px solid #B5872E;background:#F3E8CE;margin:8px 0;font-size:12.5px;}'+
+    '.flag-block.danger{border-color:#B14C3C;background:#F5E0DB;}'+
+    'img{max-width:100%;border:1px solid #ccc;margin-top:8px;}'+
+    '@media print{ body{padding:10mm;} }'+
+    '</style></head><body>';
+  html += "<h1>Appletree Interiors — Site Survey Report</h1>";
+  html += '<div class="meta">Project: <b>'+escapeHtml(project.name)+'</b>'+(project.clientName?(" · Client: "+escapeHtml(project.clientName)):"")+(project.address?(" · "+escapeHtml(project.address)):"")+'<br>Floor: '+escapeHtml(floor.name)+' · Room: <b>'+escapeHtml(room.name)+'</b> ('+escapeHtml(room.roomType||"—")+')<br>Generated: '+new Date().toLocaleString()+'</div>';
+  html += '<h2>Measurements</h2><table><tr><th>Length</th><th>Width</th><th>Height</th><th>Diagonal A</th><th>Diagonal B</th><th>Wall Thickness</th><th>False Ceiling Ht</th></tr>'+
+    '<tr><td>'+(room.length_mm||"–")+' mm</td><td>'+(room.width_mm||"–")+' mm</td><td>'+(room.height_mm||"–")+' mm</td><td>'+(room.diagonalA_mm||"–")+' mm</td><td>'+(room.diagonalB_mm||"–")+' mm</td><td>'+(room.wallThickness_mm||"–")+' mm</td><td>'+(room.falseCeilingHeight_mm||"–")+' mm</td></tr></table>';
+  html += reportTable("Walls", room.walls, [{key:"wallCode",label:"Wall"},{key:"length_mm",label:"Length (mm)"},{key:"height_mm",label:"Height (mm)"},{key:"beam",label:"Beam"},{key:"column",label:"Column"},{key:"niche",label:"Niche"},{key:"projection_mm",label:"Projection (mm)"},{key:"finish",label:"Finish"}]);
+  html += reportTable("Door Schedule", room.doors, [{key:"wallCode",label:"Wall"},{key:"width_mm",label:"Width (mm)"},{key:"height_mm",label:"Height (mm)"},{key:"swing",label:"Swing"},{key:"distFromCorner_mm",label:"Dist. from corner (mm)"}]);
+  html += reportTable("Window Schedule", room.windows, [{key:"wallCode",label:"Wall"},{key:"width_mm",label:"Width (mm)"},{key:"height_mm",label:"Height (mm)"},{key:"sillHeight_mm",label:"Sill Ht (mm)"},{key:"distFromCorner_mm",label:"Dist. from corner (mm)"}]);
+  html += reportTable("Switchboards", room.switchboards, [{key:"wallCode",label:"Wall"},{key:"distFromCorner_mm",label:"Dist. from corner (mm)"},{key:"height_mm",label:"Height (mm)"},{key:"modules",label:"Modules"},{key:"purpose",label:"Purpose"}]);
+  html += reportTable("Socket Points", room.sockets, [{key:"type",label:"Type"},{key:"wallCode",label:"Wall"},{key:"distFromCorner_mm",label:"Dist. from corner (mm)"},{key:"height_mm",label:"Height (mm)"}]);
+  html += reportTable("Light Points", room.lights, [{key:"type",label:"Type"},{key:"wallCode",label:"Wall"},{key:"height_mm",label:"Height (mm)"},{key:"switchboardNote",label:"Circuit / Notes"}]);
+  html += reportTable("HVAC & Appliance Points", room.hvac, [{key:"type",label:"Type"},{key:"wallCode",label:"Wall"},{key:"note",label:"Notes"}]);
+  html += reportTable("Plumbing Points", room.plumbing, [{key:"type",label:"Type"},{key:"wallCode",label:"Wall"},{key:"note",label:"Notes"}]);
+  var built = buildPlanSVG(room);
+  html += "<h2>Floor Plan</h2>" + built.svg.replace('class="plan-svg"','width="360"');
+  if(flags.length){
+    html += "<h2>Validation Notes</h2>";
+    flags.forEach(function(f){ html += '<div class="flag-block '+(f.severity==="blocking"?"danger":"")+'">'+f.severity.toUpperCase()+": "+escapeHtml(f.message)+"</div>"; });
+  }
+  if(room.sketchDataUrl){ html += "<h2>Rough Sketch</h2><img src=\""+room.sketchDataUrl+"\">"; }
+  html += "</body></html>";
+  win.document.write(html);
+  win.document.close();
+  setTimeout(function(){ win.print(); }, 400);
+}
+function exportAllJSON(){
+  var blob = new Blob([JSON.stringify(db,null,2)], {type:"application/json"});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = "sitetwin-backup-" + new Date().toISOString().slice(0,10) + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+function exportProjectJSON(project){
+  var blob = new Blob([JSON.stringify({projects:[project]},null,2)], {type:"application/json"});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = "sitetwin-" + project.name.replace(/[^a-z0-9]+/gi,"-").toLowerCase() + ".json";
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+function importJSONFile(file){
+  var reader = new FileReader();
+  reader.onload = function(){
+    try{
+      var parsed = JSON.parse(reader.result);
+      if(!parsed || !Array.isArray(parsed.projects)) throw new Error("bad shape");
+      if(!confirm("Import "+parsed.projects.length+" project(s) from this file? They will be ADDED alongside your existing projects.")) return;
+      parsed.projects.forEach(function(p){ p.id = uid(); db.projects.push(p); });
+      scheduleSave();
+      renderAll();
+      alert("Import complete.");
+    }catch(e){
+      alert("Could not read this file — is it a SiteTwin export?");
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* ---------- sketch canvas ---------- */
+function initSketchCanvas(room){
+  var canvas = document.getElementById("sketchCanvas");
+  if(!canvas) return;
+  var ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+  if(room.sketchDataUrl){
+    var img = new Image();
+    img.onload = function(){ ctx.drawImage(img,0,0); };
+    img.src = room.sketchDataUrl;
+  }
+  var mode = "pen", drawing = false;
+  function getPos(e){
+    var r = canvas.getBoundingClientRect();
+    var cx = (e.touches ? e.touches[0].clientX : e.clientX);
+    var cy = (e.touches ? e.touches[0].clientY : e.clientY);
+    return [ (cx-r.left)*(canvas.width/r.width), (cy-r.top)*(canvas.height/r.height) ];
+  }
+  canvas.addEventListener("pointerdown", function(e){ drawing=true; var p=getPos(e); ctx.beginPath(); ctx.moveTo(p[0],p[1]); });
+  canvas.addEventListener("pointermove", function(e){
+    if(!drawing) return;
+    var p = getPos(e);
+    ctx.lineTo(p[0],p[1]);
+    ctx.strokeStyle = mode==="eraser" ? "#fff" : "#1C1C1A";
+    ctx.lineWidth = mode==="eraser" ? 20 : 2.2;
+    ctx.lineCap = "round"; ctx.lineJoin="round";
+    ctx.stroke();
+  });
+  window.addEventListener("pointerup", function(){ if(drawing){ drawing=false; room.sketchDataUrl = canvas.toDataURL("image/png"); scheduleSave(); } });
+  var penBtn = document.getElementById("sketchPen"), eraserBtn = document.getElementById("sketchEraser"), clearBtn = document.getElementById("sketchClear");
+  if(penBtn) penBtn.onclick = function(){ mode="pen"; penBtn.classList.add("active"); eraserBtn.classList.remove("active"); };
+  if(eraserBtn) eraserBtn.onclick = function(){ mode="eraser"; eraserBtn.classList.add("active"); penBtn.classList.remove("active"); };
+  if(clearBtn) clearBtn.onclick = function(){
+    if(!confirm("Clear the sketch?")) return;
+    ctx.fillStyle="#fff"; ctx.fillRect(0,0,canvas.width,canvas.height);
+    room.sketchDataUrl = canvas.toDataURL("image/png"); scheduleSave();
+  };
+}
+
+/* ---------- main render ---------- */
+function renderTab(tabId){
+  state.tab = tabId;
+  var room = getRoom();
+  var content = document.getElementById("content");
+  if(!room){ content.innerHTML = ""; return; }
+  var html = "";
+  switch(tabId){
+    case "info": html = renderInfoTab(room); break;
+    case "walls":
+      html = (room.shape==="irregular"
+        ? '<div class="callout">Add walls in order, walking around the room one direction (e.g. clockwise). Leave "Turn to next wall" at 90° for a normal square corner; change it for an L-shaped or angled corner. Check the Plan tab to see the traced shape and whether it closes.</div>'
+        : '<p class="hint">Turn angle is only used when Room Shape (Info tab) is set to Irregular — leave it as-is for a standard rectangular room.</p>')
+        + renderListEditor(room,"walls");
+      break;
+    case "openings": html = renderListEditor(room,"doors") + renderListEditor(room,"windows"); break;
+    case "electrical": html = renderListEditor(room,"switchboards") + renderListEditor(room,"sockets"); break;
+    case "lighting": html = renderListEditor(room,"lights"); break;
+    case "hvac": html = renderListEditor(room,"hvac"); break;
+    case "plumbing": html = renderListEditor(room,"plumbing"); break;
+    case "photos": html = renderPhotosTab(room); break;
+    case "sketch": html = renderSketchTab(room); break;
+    case "refplan": html = renderRefPlanTab(room); break;
+    case "validation": html = renderValidationTab(room); break;
+    case "plan": html = renderPlanTab(room); break;
+    case "export": html = renderExportTab(); break;
+  }
+  content.innerHTML = html;
+  if(tabId==="sketch") initSketchCanvas(room);
+  document.querySelectorAll(".tab-btn").forEach(function(b){ b.classList.toggle("active", b.dataset.tab===tabId); });
+}
+
+function renderSidebar(){
+  var html = '<div class="add-row-inline"><input id="newProjectName" placeholder="New project name…"><button id="btnAddProject" class="btn-add-sm">+ Add</button></div>';
+  if(!db.projects.length) html += '<div class="tree-empty">No projects yet — add one above to start a survey.</div>';
+  db.projects.forEach(function(p){
+    var activeP = state.projectId===p.id;
+    html += '<div class="tree-row '+(activeP?"active":"")+'"><span class="tree-label" data-projectid="'+p.id+'">📁 '+escapeHtml(p.name)+'</span><button class="tree-del" data-delproject="'+p.id+'">✕</button></div>';
+    if(activeP){
+      html += '<div class="tree-children">';
+      html += '<div class="add-row-inline sm"><input id="newFloorName" placeholder="New floor name…"><button id="btnAddFloor" class="btn-add-sm">+ Add</button></div>';
+      if(!p.floors.length) html += '<div class="tree-empty">No floors yet.</div>';
+      p.floors.forEach(function(f){
+        var activeF = state.floorId===f.id;
+        html += '<div class="tree-row '+(activeF?"active":"")+'"><span class="tree-label" data-floorid="'+f.id+'">🏢 '+escapeHtml(f.name)+'</span><button class="tree-del" data-delfloor="'+f.id+'">✕</button></div>';
+        if(activeF){
+          html += '<div class="tree-children">';
+          html += '<div class="add-row-inline sm"><input id="newRoomName" placeholder="New room name…"><button id="btnAddRoom" class="btn-add-sm">+ Add</button></div>';
+          if(!f.rooms.length) html += '<div class="tree-empty">No rooms yet.</div>';
+          f.rooms.forEach(function(r){
+            var activeR = state.roomId===r.id;
+            var flags = validateRoom(r);
+            var dot = r.status==="validated" ? "✅" : (flags.some(function(x){return x.severity==="blocking";}) ? "○" : "◐");
+            html += '<div class="tree-row '+(activeR?"active":"")+'"><span class="tree-label" data-roomid="'+r.id+'">'+dot+' '+escapeHtml(r.name)+'</span><button class="tree-del" data-delroom="'+r.id+'">✕</button></div>';
+          });
+          html += '</div>';
+        }
+      });
+      html += '</div>';
+    }
+  });
+  document.getElementById("sidebarTree").innerHTML = html;
+}
+
+function renderMain(){
+  var project = getProject();
+  var tabBar = document.getElementById("tabBar");
+  var breadcrumb = document.getElementById("breadcrumb");
+  var topbarActions = document.getElementById("topbarActions");
+  var content = document.getElementById("content");
+
+  if(!project){
+    tabBar.style.display = "none";
+    breadcrumb.innerHTML = "";
+    topbarActions.innerHTML = "";
+    content.innerHTML = '<div class="welcome"><h2>Welcome to SiteTwin — Phase 0</h2><p>A fully offline site-survey tool. Add a project on the left to begin a guided room-by-room survey — measurements, walls, doors, windows, electrical, plumbing, HVAC, photos, and a sketch — with nothing leaving this device.</p></div>';
+    return;
+  }
+  var floor = getFloor();
+  if(!floor){
+    tabBar.style.display = "none";
+    breadcrumb.innerHTML = '<b>'+escapeHtml(project.name)+'</b>';
+    topbarActions.innerHTML = '<button class="btn-secondary" id="btnExportProjectJSON2">⬇ Export Project</button>';
+    content.innerHTML = '<div class="section-block"><div class="section-head"><h3>Project Details</h3></div><div class="field-grid">'+
+      '<div class="field"><label>Project Name</label><input type="text" data-projfield="name" value="'+escapeHtml(project.name)+'"></div>'+
+      '<div class="field"><label>Client Name</label><input type="text" data-projfield="clientName" value="'+escapeHtml(project.clientName)+'"></div>'+
+      '<div class="field"><label>Site Address</label><input type="text" data-projfield="address" value="'+escapeHtml(project.address)+'"></div>'+
+      '</div></div>'+
+      '<div class="callout">Add a floor from the sidebar on the left to start adding rooms.</div>';
+    return;
+  }
+  var room = getRoom();
+  if(!room){
+    tabBar.style.display = "none";
+    breadcrumb.innerHTML = '<b>'+escapeHtml(project.name)+'</b> / '+escapeHtml(floor.name);
+    topbarActions.innerHTML = "";
+    var rows = floor.rooms.map(function(r){
+      var flags = validateRoom(r);
+      var status = r.status==="validated" ? '<span class="status-pill validated">Validated</span>' : (flags.some(function(x){return x.severity==="blocking";}) ? '<span class="status-pill progress">Incomplete</span>' : '<span class="status-pill progress">Ready to validate</span>');
+      return '<tr><td>'+escapeHtml(r.name)+'</td><td>'+escapeHtml(r.roomType||"—")+'</td><td>'+status+'</td></tr>';
+    }).join("");
+    content.innerHTML = '<div class="section-block"><div class="section-head"><h3>Floor Details</h3></div><div class="field-grid">'+
+      '<div class="field"><label>Floor Name</label><input type="text" data-floorfield="name" value="'+escapeHtml(floor.name)+'"></div>'+
+      '</div></div>'+
+      '<div class="section-block"><div class="section-head"><h3>Rooms on this floor</h3><span class="count-badge">'+floor.rooms.length+'</span></div>'+
+      (floor.rooms.length ? '<div class="table-wrap"><table class="editor-table"><thead><tr><th>Room</th><th>Type</th><th>Status</th></tr></thead><tbody>'+rows+'</tbody></table></div>' : '<p class="hint">Add a room from the sidebar to begin its guided survey.</p>')+
+      '</div>';
+    return;
+  }
+
+  tabBar.style.display = "flex";
+  tabBar.innerHTML = TABS.map(function(t){ return '<button class="tab-btn '+(t.id===state.tab?"active":"")+'" data-tab="'+t.id+'">'+t.label+'</button>'; }).join("");
+  breadcrumb.innerHTML = '<b>'+escapeHtml(project.name)+'</b> / '+escapeHtml(floor.name)+' / <b>'+escapeHtml(room.name)+'</b>';
+  var flags = validateRoom(room);
+  var statusHtml = room.status==="validated" ? '<span class="status-pill validated">Validated</span>' : '<span class="status-pill progress">In Progress</span>';
+  topbarActions.innerHTML = statusHtml;
+  renderTab(state.tab);
+}
+
+function renderAll(){ renderSidebar(); renderMain(); }
+
+/* ---------- events ---------- */
+document.addEventListener("click", function(e){
+  var t = e.target;
+
+  if(t.id==="btnAddProject"){
+    var input = document.getElementById("newProjectName");
+    var name = (input && input.value ? input.value.trim() : "") || ("Untitled Project " + (db.projects.length+1));
+    var p = newProject(name);
+    db.projects.push(p);
+    state = {projectId:p.id, floorId:null, roomId:null, tab:"info", elevIdx:0};
+    scheduleSave(); renderAll(); return;
+  }
+  if(t.id==="btnAddFloor"){
+    var project = getProject(); if(!project) return;
+    var input2 = document.getElementById("newFloorName");
+    var name2 = (input2 && input2.value ? input2.value.trim() : "") || ("Floor " + (project.floors.length+1));
+    var f = newFloor(name2);
+    project.floors.push(f);
+    state.floorId = f.id; state.roomId = null;
+    scheduleSave(); renderAll(); return;
+  }
+  if(t.id==="btnAddRoom"){
+    var floor2 = getFloor(); if(!floor2) return;
+    var input3 = document.getElementById("newRoomName");
+    var name3 = (input3 && input3.value ? input3.value.trim() : "") || ("Room " + (floor2.rooms.length+1));
+    var r = newRoom(name3);
+    floor2.rooms.push(r);
+    state.roomId = r.id; state.tab = "info"; state.elevIdx = 0;
+    scheduleSave(); renderAll(); return;
+  }
+
+  var pid = t.closest("[data-projectid]");
+  if(pid && pid.dataset.projectid){ state.projectId = pid.dataset.projectid; state.floorId=null; state.roomId=null; renderAll(); return; }
+  var fid = t.closest("[data-floorid]");
+  if(fid && fid.dataset.floorid){ state.floorId = fid.dataset.floorid; state.roomId=null; renderAll(); return; }
+  var rid = t.closest("[data-roomid]");
+  if(rid && rid.dataset.roomid){ state.roomId = rid.dataset.roomid; state.tab="info"; state.elevIdx=0; renderAll(); return; }
+
+  if(t.dataset.delproject){
+    if(confirm("Delete this project and everything in it? This cannot be undone.")){
+      db.projects = db.projects.filter(function(p){return p.id!==t.dataset.delproject;});
+      if(state.projectId===t.dataset.delproject) state = {projectId:null,floorId:null,roomId:null,tab:"info",elevIdx:0};
+      scheduleSave(); renderAll();
+    }
+    return;
+  }
+  if(t.dataset.delfloor){
+    var proj = getProject();
+    if(confirm("Delete this floor and all its rooms? This cannot be undone.")){
+      proj.floors = proj.floors.filter(function(f){return f.id!==t.dataset.delfloor;});
+      if(state.floorId===t.dataset.delfloor){ state.floorId=null; state.roomId=null; }
+      scheduleSave(); renderAll();
+    }
+    return;
+  }
+  if(t.dataset.delroom){
+    var fl = getFloor();
+    if(confirm("Delete this room? This cannot be undone.")){
+      fl.rooms = fl.rooms.filter(function(r){return r.id!==t.dataset.delroom;});
+      if(state.roomId===t.dataset.delroom) state.roomId=null;
+      scheduleSave(); renderAll();
+    }
+    return;
+  }
+
+  if(t.dataset.tab){ renderTab(t.dataset.tab); return; }
+  if(t.dataset.elevidx!==undefined){ state.elevIdx = Number(t.dataset.elevidx); renderTab("plan"); return; }
+
+  if(t.classList.contains("add-row")){
+    var room2 = getRoom(); var listKey = t.dataset.list;
+    room2[listKey].push({});
+    scheduleSave(); renderTab(state.tab); return;
+  }
+  if(t.classList.contains("del-row")){
+    var tr = t.closest("[data-list]");
+    var room3 = getRoom(); var listKey2 = tr.dataset.list, idx = Number(tr.dataset.idx);
+    room3[listKey2].splice(idx,1);
+    scheduleSave(); renderTab(state.tab); return;
+  }
+
+  if(t.id==="btnMarkValidated"){
+    var room4 = getRoom();
+    var flags2 = validateRoom(room4);
+    if(flags2.some(function(f){return f.severity==="blocking";})){ return; }
+    room4.status = "validated";
+    scheduleSave(); renderAll(); return;
+  }
+  if(t.id==="btnPrintRoom"){ printRoomReport(getProject(), getFloor(), getRoom()); return; }
+  if(t.id==="btnExportProjectJSON" || t.id==="btnExportProjectJSON2"){ exportProjectJSON(getProject()); return; }
+  if(t.id==="btnExportAll"){ exportAllJSON(); return; }
+  if(t.id==="btnImportAll"){ document.getElementById("importFile").click(); return; }
+
+  if(t.id==="refPlanImg"){
+    var roomR = getRoom(); if(!roomR) return;
+    var rect = t.getBoundingClientRect();
+    var xPct = ((e.clientX-rect.left)/rect.width*100);
+    var yPct = ((e.clientY-rect.top)/rect.height*100);
+    var label = prompt("Label for this point (e.g. 'Switchboard', 'Door', 'AC unit'):", "");
+    if(label===null || !label.trim()) return;
+    var type = (prompt("Type: door / window / electrical / note", "note") || "note").toLowerCase().trim();
+    if(["door","window","electrical","note"].indexOf(type)===-1) type = "note";
+    roomR.referencePlan.annotations.push({x:xPct.toFixed(2), y:yPct.toFixed(2), label:label.trim(), type:type});
+    scheduleSave(); renderTab("refplan"); return;
+  }
+  if(t.id==="btnRemoveRefPlan"){
+    if(confirm("Remove the attached reference plan and all its pins?")){
+      var roomRP = getRoom();
+      roomRP.referencePlan = {dataUrl:"", fileType:"", fileName:"", annotations:[]};
+      scheduleSave(); renderTab("refplan");
+    }
+    return;
+  }
+  if(t.id==="btnOpenRefPdf"){
+    var roomPdf = getRoom();
+    if(roomPdf && roomPdf.referencePlan && roomPdf.referencePlan.dataUrl) window.open(roomPdf.referencePlan.dataUrl, "_blank");
+    return;
+  }
+  if(t.classList.contains("del-annotation")){
+    var roomDel = getRoom();
+    roomDel.referencePlan.annotations.splice(Number(t.dataset.annidx), 1);
+    scheduleSave(); renderTab("refplan"); return;
+  }
+});
+
+document.addEventListener("keydown", function(e){
+  if(e.key!=="Enter") return;
+  if(e.target.id==="newProjectName") document.getElementById("btnAddProject").click();
+  if(e.target.id==="newFloorName") document.getElementById("btnAddFloor").click();
+  if(e.target.id==="newRoomName") document.getElementById("btnAddRoom").click();
+});
+
+document.getElementById("importFile").addEventListener("change", function(e){
+  var file = e.target.files[0];
+  if(file) importJSONFile(file);
+  e.target.value = "";
+});
+
+document.addEventListener("input", function(e){
+  var t = e.target;
+  if(t.dataset.projfield){ var p=getProject(); if(p){ p[t.dataset.projfield]=t.value; scheduleSave(); } return; }
+  if(t.dataset.floorfield){ var f=getFloor(); if(f){ f[t.dataset.floorfield]=t.value; scheduleSave(); renderSidebar(); } return; }
+  if(t.dataset.roomfield){
+    var room = getRoom(); if(!room) return;
+    var val = t.value;
+    if(t.type==="number") val = val===""?"":Number(val);
+    room[t.dataset.roomfield] = val;
+    scheduleSave(); return;
+  }
+  if(t.dataset.field){
+    var tr = t.closest("[data-list]"); if(!tr) return;
+    var room2 = getRoom(); if(!room2) return;
+    var listKey = tr.dataset.list, idx = Number(tr.dataset.idx);
+    var v = t.value;
+    if(t.type==="number") v = v===""?"":Number(v);
+    room2[listKey][idx][t.dataset.field] = v;
+    scheduleSave(); return;
+  }
+});
+document.addEventListener("change", function(e){
+  var t = e.target;
+  if(t.dataset.photoidx!==undefined){
+    var room = getRoom(); if(!room) return;
+    var idx = Number(t.dataset.photoidx);
+    room.photos[idx].captured = t.checked;
+    scheduleSave(); return;
+  }
+  if(t.id==="refPlanFile"){
+    var file = t.files[0]; if(!file) return;
+    var roomRef = getRoom(); if(!roomRef) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      roomRef.referencePlan = {
+        dataUrl: reader.result,
+        fileType: file.type==="application/pdf" ? "pdf" : "image",
+        fileName: file.name,
+        annotations: []
+      };
+      scheduleSave(); renderTab("refplan");
+    };
+    reader.readAsDataURL(file);
+    t.value = "";
+    return;
+  }
+});
+
+try{ renderAll(); }catch(e){ showErrorBanner(e.message); }
+})();
+</script>
+</body>
+</html>

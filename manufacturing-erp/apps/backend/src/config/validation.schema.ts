@@ -13,6 +13,17 @@ export const validationSchema = Joi.object({
   BCRYPT_SALT_ROUNDS: Joi.number().min(10).max(15).default(12),
 
   CORS_ORIGIN: Joi.string().default('http://localhost:5173'),
+  FRONTEND_URL: Joi.string().default('http://localhost:5173'),
+
+  PASSWORD_RESET_TOKEN_TTL_MS: Joi.number().default(60 * 60 * 1000),
+  OAUTH_TICKET_TTL_MS: Joi.number().default(60 * 1000),
+
+  // Google OAuth is optional at boot (defaults let the app start without it);
+  // real Google Sign-In will only work once these are set to a real app's
+  // credentials from the Google Cloud Console.
+  GOOGLE_CLIENT_ID: Joi.string().default('not-configured'),
+  GOOGLE_CLIENT_SECRET: Joi.string().default('not-configured'),
+  GOOGLE_CALLBACK_URL: Joi.string().default('http://localhost:3000/auth/google/callback'),
 
   SEED_ADMIN_EMAIL: Joi.string().email().optional(),
   SEED_ADMIN_PASSWORD: Joi.string().optional(),

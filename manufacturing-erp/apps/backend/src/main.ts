@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { ValidationPipe } from '@nestjs/common';
 import { Logger } from 'nestjs-pino';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfig } from './config/configuration';
 
@@ -12,6 +13,8 @@ async function bootstrap(): Promise<void> {
   app.useLogger(app.get(Logger));
 
   const configService = app.get(ConfigService<AppConfig, true>);
+
+  app.use(helmet());
 
   app.enableCors({
     origin: configService.get('corsOrigin', { infer: true }),

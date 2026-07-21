@@ -1,6 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { User } from '../../../generated/prisma';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../../common/constants/audit-actions';
+import { RequestMeta } from '../auth/request-meta.interface';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 
 export type SafeUser = Omit<User, 'passwordHash'>;
@@ -12,13 +15,32 @@ export interface PaginatedUsers {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLog: AuditLogService,
+  ) {}
 
   async findById(id: string): Promise<SafeUser> {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    return this.toSafeUser(user);
+  }
+
+  async updateProfile(userId: string, fullName: string, meta: RequestMeta): Promise<SafeUser> {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { fullName },
+    });
+
+    await this.auditLog.record({
+      userId,
+      action: AuditAction.PROFILE_UPDATED,
+      success: true,
+      ...meta,
+    });
+
     return this.toSafeUser(user);
   }
 

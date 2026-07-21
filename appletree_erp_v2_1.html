@@ -2664,6 +2664,7 @@ textarea.inp{resize:vertical;min-height:72px;}
             <div id="pb-grand-total" style="font-size:18px;font-weight:700;color:var(--gold);font-family:'JetBrains Mono',monospace">₹0</div>
           </div>
         </div>
+        <button id="pb-fetch-btn" onclick="_pbFetchFromEstimation()" style="display:none;font-size:11px;padding:6px 10px" class="btn btn-outline" title="Pull materials &amp; labour from the estimator's Costing Engine breakdown for this item">⚡ Fetch from Estimation</button>
         <button onclick="closeProdBom()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;padding:4px 8px">✕</button>
       </div>
     </div>
@@ -2777,6 +2778,11 @@ textarea.inp{resize:vertical;min-height:72px;}
         <button onclick="closeEstCosting()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);line-height:1;padding:4px 8px">✕</button>
       </div>
     </div>
+    <div style="padding:12px 20px 0;display:flex;align-items:center;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+      <span style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-right:2px">Items:</span>
+      <div id="ec-item-tabs" style="display:flex;gap:6px;flex-wrap:wrap;flex:1"></div>
+      <button class="btn btn-outline" onclick="_ecAddItem()" style="font-size:11px;padding:4px 10px;margin-bottom:8px">+ Add Item</button>
+    </div>
     <div style="display:flex;border-bottom:1px solid var(--border);padding:0 20px;gap:2px">
       <button class="budget-tab active" onclick="_ecTab('mat',this)">📦 Raw Materials</button>
       <button class="budget-tab" onclick="_ecTab('lab',this)">👷 Labour & Wages</button>
@@ -2785,7 +2791,7 @@ textarea.inp{resize:vertical;min-height:72px;}
     </div>
     <div id="ec-tab-item" style="display:none;padding:14px 20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-size:11px;color:var(--muted)">Costed with the Costing Engine (templates/materials/hardware/labour from Costing Masters) — quantity-driven, no manual line-by-line entry.</div>
+        <div style="font-size:11px;color:var(--muted)">Costed with the Costing Engine (templates/materials/hardware/labour from Costing Masters) — quantity-driven, no manual line-by-line entry. Shared across the whole request; each costed item already stands on its own.</div>
         <button class="btn btn-gold" onclick="openCostedItemModal()" style="font-size:11px;padding:4px 10px">+ Add Costed Item</button>
       </div>
       <div style="overflow-x:auto">
@@ -2806,7 +2812,7 @@ textarea.inp{resize:vertical;min-height:72px;}
     </div>
     <div id="ec-tab-mat" style="padding:14px 20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-size:11px;color:var(--muted)">List every raw material needed. Net Qty = Qty × (1 + Waste%/100).</div>
+        <div style="font-size:11px;color:var(--muted)">List every raw material needed for the selected item above. Net Qty = Qty × (1 + Waste%/100).</div>
         <button class="btn btn-outline" onclick="_ecAddMat()" style="font-size:11px;padding:4px 10px">+ Add Material</button>
       </div>
       <div style="overflow-x:auto">
@@ -2834,7 +2840,7 @@ textarea.inp{resize:vertical;min-height:72px;}
     </div>
     <div id="ec-tab-lab" style="display:none;padding:14px 20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-size:11px;color:var(--muted)">Factory carpentry, polishing, site installation, wages, subcontractors. Amount = Hours × Rate, or enter directly.</div>
+        <div style="font-size:11px;color:var(--muted)">Factory carpentry, polishing, site installation, wages, subcontractors — for the selected item above. Amount = Hours × Rate, or enter directly.</div>
         <button class="btn btn-gold" onclick="_ecAddLab()" style="font-size:11px;padding:4px 10px">+ Add Labour</button>
       </div>
       <div style="overflow-x:auto">
@@ -2859,7 +2865,7 @@ textarea.inp{resize:vertical;min-height:72px;}
     </div>
     <div id="ec-tab-exp" style="display:none;padding:20px 22px">
       <div style="max-width:500px">
-        <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Additional estimated costs — transport, installation accessories, finishing, etc.</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:14px">Additional estimated costs for the selected item above — transport, installation accessories, finishing, etc.</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
           <div><label class="fl">Transport / Delivery ₹</label><input class="inp" type="number" id="ec-exp-transport" placeholder="0" oninput="_ecUpdateGrand()"></div>
           <div><label class="fl">Installation Accessories ₹</label><input class="inp" type="number" id="ec-exp-install" placeholder="0" oninput="_ecUpdateGrand()"></div>
@@ -6406,11 +6412,13 @@ function convertEstimationToQuotation(erId){
   });
   (er.costing.materials||[]).forEach(m=>{
     if(!m.amount) return;
-    items.push({id:'IT'+uid(), desc:'Material: '+m.itemName, unit:m.unit||'Nos', qty:m.netQty||m.qty||1, rate:m.rate||0, amount:m.amount});
+    const prefix=m.sourceItemName?m.sourceItemName+' — ':'';
+    items.push({id:'IT'+uid(), desc:prefix+'Material: '+m.itemName, unit:m.unit||'Nos', qty:m.netQty||m.qty||1, rate:m.rate||0, amount:m.amount});
   });
   (er.costing.labour||[]).forEach(l=>{
     if(!l.amount) return;
-    items.push({id:'IT'+uid(), desc:'Labour: '+l.workCenter+(l.type?' ('+l.type+')':''), unit:'Lot', qty:1, rate:l.amount, amount:l.amount});
+    const prefix=l.sourceItemName?l.sourceItemName+' — ':'';
+    items.push({id:'IT'+uid(), desc:prefix+'Labour: '+l.workCenter+(l.type?' ('+l.type+')':''), unit:'Lot', qty:1, rate:l.amount, amount:l.amount});
   });
   const expLabels = {transport:'Transport', install:'Installation', finish:'Finishing', other:'Other Expenses'};
   Object.entries(er.costing.expenses||{}).forEach(([k,v])=>{
@@ -6509,6 +6517,16 @@ function claimEstimationRequest(id){
 // ═══════════════════════════════════════════
 let _ecMatId=0, _ecLabId=0;
 let _ecCostedItems=[]; // costed line items for the estimation request currently open (Costing Engine)
+// _ecItems: named items within the request (e.g. Wardrobe, TV Unit), each with
+// its own manual materials/labour/expenses breakdown — mirrors the Quotation
+// rooms→items model so a multi-piece job doesn't dump every material into one
+// shared pool. Only the item at _ecActiveItemIdx has its rows live in the DOM;
+// switching items syncs the DOM back into _ecItems first.
+let _ecItems=[], _ecActiveItemIdx=0;
+
+function _ecBlankItem(name){
+  return {id:'ECIT'+uid(), name:name||'Item 1', materials:[], labour:[], expenses:{transport:0,install:0,finish:0,other:0}};
+}
 
 function openEstCosting(erId){
   if(!requireRole('CEO','Admin','Estimator')){_accessDenied();return;}
@@ -6519,33 +6537,155 @@ function openEstCosting(erId){
   document.getElementById('ec-subtitle').textContent=(er.location?er.location+' · ':'')+'Est. Value '+INR(er.estimatedValue||0);
 
   const saved=er.costing||{};
-  const materials=saved.materials||[];
-  const labour=saved.labour||[];
-  const exp=saved.expenses||{};
   _ecCostedItems=(saved.costedItems||[]).map(x=>({...x}));
   _ecRenderCostedItems();
 
+  if(saved.items && saved.items.length){
+    _ecItems=saved.items.map(it=>({id:it.id, name:it.name,
+      materials:(it.materials||[]).map(m=>({...m})),
+      labour:(it.labour||[]).map(l=>({...l})),
+      expenses:{...(it.expenses||{})}}));
+  } else if(saved.materials||saved.labour||saved.expenses){
+    // Migrate legacy flat (pre-items) costing into a single "General" item.
+    _ecItems=[{id:'ECIT'+uid(), name:'General', materials:saved.materials||[], labour:saved.labour||[], expenses:{...(saved.expenses||{})}}];
+  } else {
+    _ecItems=[_ecBlankItem('Item 1')];
+  }
+  _ecActiveItemIdx=0;
+  _ecRenderItemTabs();
+  _ecLoadActiveIntoDOM();
+
+  _ecTab('mat',document.querySelector('#est-cost-overlay .budget-tab'));
+  _ecUpdateGrand();
+  document.getElementById('est-cost-overlay').style.display='flex';
+}
+
+function _ecRenderItemTabs(){
+  document.getElementById('ec-item-tabs').innerHTML=_ecItems.map((it,idx)=>`
+    <button onclick="_ecSwitchItem(${idx})" ondblclick="event.stopPropagation();_ecRenameItem(${idx})" title="Double-click, or use ✎, to rename" style="padding:5px 12px;border-radius:16px;border:1px solid ${idx===_ecActiveItemIdx?'var(--gold)':'var(--border)'};background:${idx===_ecActiveItemIdx?'var(--gold-pale)':'var(--white)'};color:${idx===_ecActiveItemIdx?'var(--dark)':'var(--muted)'};font-size:11px;font-weight:600;cursor:pointer;margin-bottom:8px;white-space:nowrap">
+      ${escHtml(it.name)}
+      <span onclick="event.stopPropagation();_ecRenameItem(${idx})" title="Rename" style="margin-left:4px;opacity:.7">✎</span>${_ecItems.length>1?` <span onclick="event.stopPropagation();_ecRemoveItem(${idx})" style="color:var(--red);margin-left:2px">×</span>`:''}
+    </button>`).join('');
+}
+
+function _ecRenameItem(idx){
+  const item=_ecItems[idx];
+  if(!item) return;
+  const name=prompt('Rename item:', item.name);
+  if(!name||!name.trim()) return;
+  item.name=name.trim();
+  _ecRenderItemTabs();
+}
+
+function _ecAddItem(){
+  const name=prompt('Item name (e.g. Wardrobe, TV Unit, Bed):','');
+  if(!name||!name.trim()) return;
+  _ecSyncActiveFromDOM();
+  _ecItems.push(_ecBlankItem(name.trim()));
+  _ecActiveItemIdx=_ecItems.length-1;
+  _ecRenderItemTabs();
+  _ecLoadActiveIntoDOM();
+  _ecUpdateGrand();
+}
+
+function _ecRemoveItem(idx){
+  if(_ecItems.length<=1) return;
+  if(!confirm(`Remove "${_ecItems[idx].name}" and all its materials/labour/expenses?`)) return;
+  _ecItems.splice(idx,1);
+  if(_ecActiveItemIdx>=_ecItems.length) _ecActiveItemIdx=_ecItems.length-1;
+  else if(idx<_ecActiveItemIdx) _ecActiveItemIdx--;
+  _ecRenderItemTabs();
+  _ecLoadActiveIntoDOM();
+  _ecUpdateGrand();
+}
+
+function _ecSwitchItem(idx){
+  if(idx===_ecActiveItemIdx) return;
+  _ecSyncActiveFromDOM();
+  _ecActiveItemIdx=idx;
+  _ecRenderItemTabs();
+  _ecLoadActiveIntoDOM();
+  _ecUpdateGrand();
+}
+
+// Reads the currently-rendered materials/labour/expenses rows out of the DOM
+// and writes them into _ecItems[_ecActiveItemIdx] — same extraction logic as
+// saveEstCosting(), just scoped to one item instead of the whole request.
+function _ecSyncActiveFromDOM(){
+  const item=_ecItems[_ecActiveItemIdx];
+  if(!item) return;
+  const fl=id=>parseFloat(document.getElementById(id)?.value)||0;
+
+  const materials=[];
+  document.querySelectorAll('[id^="ecm-qty-"]').forEach(el=>{
+    const id=el.id.replace('ecm-qty-','');
+    const qty=parseFloat(el.value)||0;
+    const rate=parseFloat(document.getElementById('ecm-rate-'+id)?.value)||0;
+    if(!qty&&!rate) return;
+    const sel=document.getElementById('ecm-item-'+id);
+    const nameInp=document.getElementById('ecm-name-'+id);
+    const isCustom=!sel?.value||sel.value==='__custom__';
+    const itemId=isCustom?'':sel?.value||'';
+    const itemName=isCustom?(nameInp?.value||''):(sel?.options[sel.selectedIndex]?.text||'');
+    if(!itemName) return;
+    const waste=parseFloat(document.getElementById('ecm-waste-'+id)?.value)||0;
+    const netQty=qty*(1+waste/100);
+    materials.push({
+      id:'BM'+uid(), itemId, itemName,
+      unit:document.getElementById('ecm-unit-'+id)?.value||'',
+      qty, wastage:waste, netQty:parseFloat(netQty.toFixed(3)),
+      rate, amount:parseFloat((netQty*rate).toFixed(2)),
+      remarks:document.getElementById('ecm-rem-'+id)?.value||''
+    });
+  });
+
+  const labour=[];
+  document.querySelectorAll('[id^="ecl-amt-"]').forEach(el=>{
+    const id=el.id.replace('ecl-amt-','');
+    const amount=parseFloat(el.value)||0;
+    if(!amount) return;
+    const wcSel=document.getElementById('ecl-wc-'+id);
+    const wcCustom=document.getElementById('ecl-wc-custom-'+id);
+    const workCenter=wcSel?.value==='__custom__'?(wcCustom?.value||'Custom'):(wcSel?.value||'');
+    labour.push({
+      id:'BL'+uid(), workCenter,
+      type:document.getElementById('ecl-type-'+id)?.value||'Factory',
+      hours:parseFloat(document.getElementById('ecl-hrs-'+id)?.value)||0,
+      rate:parseFloat(document.getElementById('ecl-rate-'+id)?.value)||0,
+      amount, remarks:document.getElementById('ecl-rem-'+id)?.value||''
+    });
+  });
+
+  item.materials=materials;
+  item.labour=labour;
+  item.expenses={transport:fl('ec-exp-transport'), install:fl('ec-exp-install'), finish:fl('ec-exp-finish'), other:fl('ec-exp-other')};
+}
+
+// Renders _ecItems[_ecActiveItemIdx]'s rows into the DOM — the inverse of
+// _ecSyncActiveFromDOM(), called whenever the active item changes.
+function _ecLoadActiveIntoDOM(){
+  const item=_ecItems[_ecActiveItemIdx];
+  if(!item) return;
   document.getElementById('ec-mat-rows').innerHTML='';
   document.getElementById('ec-lab-rows').innerHTML='';
   _ecMatId=0; _ecLabId=0;
 
-  if(materials.length){ materials.forEach(m=>_ecAddMat(m)); }
+  if(item.materials.length){ item.materials.forEach(m=>_ecAddMat(m)); }
   else{ _ecAddMat(); _ecAddMat(); _ecAddMat(); }
 
-  if(labour.length){ labour.forEach(l=>_ecAddLab(l)); }
+  if(item.labour.length){ item.labour.forEach(l=>_ecAddLab(l)); }
   else{
     _ecAddLab({workCenter:'Carpentry',type:'Factory'});
     _ecAddLab({workCenter:'Site Installation',type:'Site'});
   }
 
+  const exp=item.expenses||{};
   document.getElementById('ec-exp-transport').value=exp.transport||'';
   document.getElementById('ec-exp-install').value=exp.install||'';
   document.getElementById('ec-exp-finish').value=exp.finish||'';
   document.getElementById('ec-exp-other').value=exp.other||'';
-
-  _ecTab('mat',document.querySelector('#est-cost-overlay .budget-tab'));
-  _ecUpdateGrand();
-  document.getElementById('est-cost-overlay').style.display='flex';
+  _ecUpdateMatTotal();
+  _ecUpdateLabTotal();
 }
 
 function closeEstCosting(){
@@ -6561,14 +6701,14 @@ function _ecTab(tab, btn){
 
 function _ecAddMat(data){
   const id=++_ecMatId;
-  const items=DB.warehouse.map(w=>`<option value="${w.id}" data-unit="${w.unit}" data-rate="${w.rate}">${escHtml(w.name)}</option>`).join('');
+  const items=DB.items.map(it=>`<option value="${it.id}" data-unit="${it.unit}" data-rate="${it.rate}">${escHtml(it.name)}</option>`).join('');
   const tr=document.createElement('tr');
   tr.id='ecm-row-'+id;
   tr.innerHTML=`
     <td style="text-align:center;color:var(--muted);font-size:11px;font-weight:600">${id}</td>
     <td style="min-width:200px">
       <select class="bom-inp" id="ecm-item-${id}" onchange="_ecOnItemChange(${id})" style="width:100%;margin-bottom:3px">
-        <option value="">— Select from warehouse —</option>${items}
+        <option value="">— Select from Item Master —</option>${items}
         <option value="__custom__">+ Custom / unlisted material</option>
       </select>
       <input class="bom-inp" id="ecm-name-${id}" placeholder="Custom material name" style="display:${data&&!data.itemId?'block':'none'};font-size:11px" value="${data?escHtml(data.itemName||''):''}">
@@ -6689,20 +6829,31 @@ function _ecUpdateLabTotal(){
   _ecUpdateGrand();
 }
 
+// Sums materials+labour+expenses across every item in _ecItems. The active
+// item's live values come straight from the DOM (so typing updates the total
+// instantly); every other item uses its last-synced stored values.
 function _ecUpdateGrand(){
   const fl=id=>parseFloat(document.getElementById(id)?.value)||0;
-  let mat=0;
-  document.querySelectorAll('[id^="ecm-qty-"]').forEach(el=>{
-    const id=el.id.replace('ecm-qty-','');
-    const qty=parseFloat(el.value)||0, waste=parseFloat(document.getElementById('ecm-waste-'+id)?.value)||0;
-    const rate=parseFloat(document.getElementById('ecm-rate-'+id)?.value)||0;
-    mat+=qty*(1+waste/100)*rate;
+  let mat=0, lab=0, exp=0;
+  _ecItems.forEach((item,idx)=>{
+    if(idx===_ecActiveItemIdx){
+      document.querySelectorAll('[id^="ecm-qty-"]').forEach(el=>{
+        const id=el.id.replace('ecm-qty-','');
+        const qty=parseFloat(el.value)||0, waste=parseFloat(document.getElementById('ecm-waste-'+id)?.value)||0;
+        const rate=parseFloat(document.getElementById('ecm-rate-'+id)?.value)||0;
+        mat+=qty*(1+waste/100)*rate;
+      });
+      document.querySelectorAll('[id^="ecl-amt-"]').forEach(el=>{ lab+=parseFloat(el.value)||0; });
+      exp+=fl('ec-exp-transport')+fl('ec-exp-install')+fl('ec-exp-finish')+fl('ec-exp-other');
+    } else {
+      mat+=(item.materials||[]).reduce((s,m)=>s+(+m.amount||0),0);
+      lab+=(item.labour||[]).reduce((s,l)=>s+(+l.amount||0),0);
+      const ie=item.expenses||{};
+      exp+=(+ie.transport||0)+(+ie.install||0)+(+ie.finish||0)+(+ie.other||0);
+    }
   });
-  let lab=0;
-  document.querySelectorAll('[id^="ecl-amt-"]').forEach(el=>{ lab+=parseFloat(el.value)||0; });
-  const exp=fl('ec-exp-transport')+fl('ec-exp-install')+fl('ec-exp-finish')+fl('ec-exp-other');
-  const items=_ecCostedItems.reduce((s,ci)=>s+(ci.result?.totalCost||0),0);
-  const gt=mat+lab+exp+items;
+  const itemsCosted=_ecCostedItems.reduce((s,ci)=>s+(ci.result?.totalCost||0),0);
+  const gt=mat+lab+exp+itemsCosted;
   const expEl=document.getElementById('ec-exp-total');
   if(expEl) expEl.textContent=INR(exp);
   document.getElementById('ec-grand-total').textContent=INR(gt);
@@ -6809,52 +6960,26 @@ function saveEstCosting(){
   const erId=document.getElementById('ec-er-id').value;
   const er=DB.estimationRequests.find(x=>x.id===erId);
   if(!er) return;
-  const fl=id=>parseFloat(document.getElementById(id)?.value)||0;
 
-  const materials=[];
-  document.querySelectorAll('[id^="ecm-qty-"]').forEach(el=>{
-    const id=el.id.replace('ecm-qty-','');
-    const qty=parseFloat(el.value)||0;
-    const rate=parseFloat(document.getElementById('ecm-rate-'+id)?.value)||0;
-    if(!qty&&!rate) return;
-    const sel=document.getElementById('ecm-item-'+id);
-    const nameInp=document.getElementById('ecm-name-'+id);
-    const isCustom=!sel?.value||sel.value==='__custom__';
-    const itemId=isCustom?'':sel?.value||'';
-    const itemName=isCustom?(nameInp?.value||''):(sel?.options[sel.selectedIndex]?.text||'');
-    if(!itemName) return;
-    const waste=parseFloat(document.getElementById('ecm-waste-'+id)?.value)||0;
-    const netQty=qty*(1+waste/100);
-    materials.push({
-      id:'BM'+uid(), itemId, itemName,
-      unit:document.getElementById('ecm-unit-'+id)?.value||'',
-      qty, wastage:waste, netQty:parseFloat(netQty.toFixed(3)),
-      rate, amount:parseFloat((netQty*rate).toFixed(2)),
-      remarks:document.getElementById('ecm-rem-'+id)?.value||''
-    });
+  _ecSyncActiveFromDOM(); // pull the on-screen item's rows into _ecItems before flattening
+
+  const items=_ecItems.map(it=>({id:it.id, name:it.name, materials:it.materials, labour:it.labour, expenses:it.expenses}));
+
+  // Flattened, item-tagged arrays kept at the top level too — this is what
+  // convertEstimationToQuotation() and older code paths read directly, so a
+  // multi-item costing still converts into one line per material/labour
+  // entry, each labelled with the furniture item it came from.
+  const multiItem=items.length>1;
+  const materials=[], labour=[];
+  const expenses={transport:0,install:0,finish:0,other:0};
+  items.forEach(it=>{
+    (it.materials||[]).forEach(m=>materials.push({...m, sourceItemName:multiItem?it.name:''}));
+    (it.labour||[]).forEach(l=>labour.push({...l, sourceItemName:multiItem?it.name:''}));
+    const ie=it.expenses||{};
+    expenses.transport+=(+ie.transport||0); expenses.install+=(+ie.install||0);
+    expenses.finish+=(+ie.finish||0); expenses.other+=(+ie.other||0);
   });
 
-  const labour=[];
-  document.querySelectorAll('[id^="ecl-amt-"]').forEach(el=>{
-    const id=el.id.replace('ecl-amt-','');
-    const amount=parseFloat(el.value)||0;
-    if(!amount) return;
-    const wcSel=document.getElementById('ecl-wc-'+id);
-    const wcCustom=document.getElementById('ecl-wc-custom-'+id);
-    const workCenter=wcSel?.value==='__custom__'?(wcCustom?.value||'Custom'):(wcSel?.value||'');
-    labour.push({
-      id:'BL'+uid(), workCenter,
-      type:document.getElementById('ecl-type-'+id)?.value||'Factory',
-      hours:parseFloat(document.getElementById('ecl-hrs-'+id)?.value)||0,
-      rate:parseFloat(document.getElementById('ecl-rate-'+id)?.value)||0,
-      amount, remarks:document.getElementById('ecl-rem-'+id)?.value||''
-    });
-  });
-
-  const expenses={
-    transport:fl('ec-exp-transport'), install:fl('ec-exp-install'),
-    finish:fl('ec-exp-finish'), other:fl('ec-exp-other')
-  };
   const expTotal=Object.values(expenses).reduce((s,v)=>s+v,0);
   const matTotal=materials.reduce((s,m)=>s+m.amount,0);
   const labTotal=labour.reduce((s,l)=>s+l.amount,0);
@@ -6864,10 +6989,10 @@ function saveEstCosting(){
   const grandTotal=matTotal+labTotal+expTotal+itemsTotal;
 
   const isFirstSave=!er.costing;
-  er.costing={materials, labour, expenses, costedItems, matTotal, labTotal, expTotal, itemsTotal, itemsSellingTotal, grandTotal, updatedAt:new Date().toISOString()};
+  er.costing={items, materials, labour, expenses, costedItems, matTotal, labTotal, expTotal, itemsTotal, itemsSellingTotal, grandTotal, updatedAt:new Date().toISOString()};
 
   logActivity('estimationRequest', er.id, isFirstSave?'Costing Prepared':'Costing Updated',
-    `${materials.length} materials, ${labour.length} labour lines, ${costedItems.length} costed items — total ${INR(grandTotal)}`);
+    `${items.length} item${items.length!==1?'s':''}, ${materials.length} materials, ${labour.length} labour lines, ${costedItems.length} costed items — total ${INR(grandTotal)}`);
 
   closeEstCosting();
   toast(`Costing saved — ${INR(grandTotal)}`,'ok');
@@ -10010,6 +10135,40 @@ function deleteQuotation(id){
   if(i>-1){ DB.quotations.splice(i,1); _trackDelete('quotations',id); saveDB(); renderQuotations(); toast('Quotation deleted','ok'); }
 }
 
+// Turns a Costing Engine result (materialLines/hardwareLines/labourLines,
+// captured when a BOQ item was priced with "+ Costed Item") into the same
+// materials/labour row shape saveProdBom() already produces — so a product's
+// BOM can be pre-filled from data the estimator already worked out instead of
+// re-typed from scratch. Still fully editable afterward via Save BOM.
+function _bomRowsFromCostingResult(result){
+  const materials=[...(result.materialLines||[]), ...(result.hardwareLines||[])].map(l=>({
+    id:'BM'+uid(), itemId:'', itemName:l.name, unit:l.unit||'Nos',
+    qty:l.qty||1, wastage:0, netQty:l.qty||1,
+    rate: l.qty ? parseFloat((l.cost/l.qty).toFixed(2)) : (l.cost||0),
+    amount: l.cost||0, remarks:'From Costing Engine — auto-filled, values editable'
+  }));
+  const labour=(result.labourLines||[]).map(l=>({
+    id:'BL'+uid(), workCenter:l.name, type:'Factory', hours:0, rate:0,
+    amount:l.cost||0, remarks:l.basis||'From Costing Engine'
+  }));
+  return {materials, labour};
+}
+
+// Finds the Costing Engine result behind a Product, by tracing back through
+// its boqItemId to the quotation line item it was created from. Returns null
+// for products that were never priced with the Costing Engine (manual BOQ
+// lines) — nothing to fetch for those.
+function _findCostingResultForProduct(prod){
+  if(!prod || !prod.boqItemId) return null;
+  for(const q of DB.quotations){
+    for(const room of (q.rooms||[])){
+      const item=(room.items||[]).find(i=>i.id===prod.boqItemId);
+      if(item && item.isCosted && item.costingResult) return item.costingResult;
+    }
+  }
+  return null;
+}
+
 function convertQuotToProject(qId){
   const q = DB.quotations.find(x=>x.id===qId);
   if(!q) return;
@@ -10030,13 +10189,14 @@ function convertQuotToProject(qId){
   DB.projects.push(proj);
 
   // Create one product per BOQ line item, carrying quoted price
-  let prodSeq = 0;
+  let prodSeq = 0, bomsAutoBuilt = 0;
   (q.rooms||[]).forEach(room=>{
     (room.items||[]).forEach(item=>{
       if(!item.desc && !item.amount) return;
       prodSeq++;
+      const productId = code+'_'+String(prodSeq).padStart(3,'0');
       DB.products.push({
-        id: code+'_'+String(prodSeq).padStart(3,'0'),
+        id: productId,
         projectId: code,
         name: item.desc || 'Item '+prodSeq,
         category: room.name || '',
@@ -10049,6 +10209,29 @@ function convertQuotToProject(qId){
         notes: item.isCosted?`Costed via ${item.templateName||'Costing Engine'}`:'',
         boqItemId: item.id
       });
+
+      // Auto-build this product's BOM from the estimator's Costing Engine
+      // breakdown, if one exists — no need to re-key materials/labour by
+      // hand for every product a Won quotation produces. Still fully
+      // editable afterward (Prepare/Edit BOM → Save BOM overwrites it).
+      if(item.isCosted && item.costingResult){
+        const {materials, labour}=_bomRowsFromCostingResult(item.costingResult);
+        const matTotal=materials.reduce((s,m)=>s+m.amount,0);
+        const labTotal=labour.reduce((s,l)=>s+l.amount,0);
+        let budget=DB.projectBudgets.find(b=>b.projectId===code);
+        if(!budget){
+          budget={id:'PB'+uid(), projectId:code, bom:[], labourItems:[], productBOMs:[], createdAt:new Date().toISOString().slice(0,10)};
+          DB.projectBudgets.push(budget);
+        }
+        if(!budget.productBOMs) budget.productBOMs=[];
+        budget.productBOMs.push({
+          productId, productName:item.desc||'Item '+prodSeq,
+          materials, labour, expenses:{transport:0,install:0,finish:0,other:0},
+          matTotal, labTotal, expTotal:0, grandTotal:matTotal+labTotal,
+          autoGenerated:true, updatedAt:new Date().toISOString().slice(0,10)
+        });
+        bomsAutoBuilt++;
+      }
     });
   });
 
@@ -10056,7 +10239,9 @@ function convertQuotToProject(qId){
   q.projectId = code;
   q.status    = q.status === 'Draft' ? 'Approved' : q.status;
   saveDB();
-  toast(`Project ${code} created with ${prodSeq} products from BOQ ✓`, 'ok');
+  toast(`Project ${code} created with ${prodSeq} products from BOQ`
+    +(bomsAutoBuilt?` — ${bomsAutoBuilt} BOM${bomsAutoBuilt!==1?'s':''} auto-filled from estimation data (editable)`:'')
+    +' ✓', 'ok');
   renderQuotations();
 }
 
@@ -14523,7 +14708,7 @@ function switchBudgetTab(tab, btn){
 // ── MATERIAL BOM ROWS ────────────────────────────────────────
 function addBomRow(data){
   const id = ++_bomRowId;
-  const items = DB.warehouse.map(w=>`<option value="${w.id}" data-unit="${w.unit}" data-rate="${w.rate}" data-code="${w.code}" data-cat="${w.category}">${w.name}</option>`).join('');
+  const items = DB.items.map(it=>`<option value="${it.id}" data-unit="${it.unit}" data-rate="${it.rate}" data-code="${it.code}" data-cat="${it.category}">${it.name}</option>`).join('');
   const catOpts = BOM_CATEGORIES.map(c=>`<option value="${c}" ${data&&data.category===c?'selected':''}>${c}</option>`).join('');
   const tr = document.createElement('tr');
   tr.id = 'bom-row-'+id;
@@ -14573,11 +14758,11 @@ function onBomItemChange(id){
     document.getElementById('bom-code-'+id).value = opt.dataset.code||'';
     document.getElementById('bom-unit-'+id).value = opt.dataset.unit||'';
     document.getElementById('bom-rate-'+id).value = opt.dataset.rate||'';
-    // Auto-set category based on warehouse category
-    const wItem = DB.warehouse.find(w=>w.id===sel.value);
-    if(wItem){
+    // Auto-set category based on Item Master category
+    const masterItem = DB.items.find(it=>it.id===sel.value);
+    if(masterItem && masterItem.category){
       const cat = document.getElementById('bom-cat-'+id);
-      const match = BOM_CATEGORIES.find(c=>c.toLowerCase().includes(wItem.category.toLowerCase().split('/')[0].trim()));
+      const match = BOM_CATEGORIES.find(c=>c.toLowerCase().includes(masterItem.category.toLowerCase().split('/')[0].trim()));
       if(match && cat) cat.value = match;
     }
     calcBomRow(id);
@@ -14768,9 +14953,30 @@ function openProdBom(projectId, productId){
     mBlock.style.display = 'none';
   }
 
+  // "Fetch from Estimation" is only offered when this product traces back to
+  // a BOQ line that was priced with the Costing Engine — nothing to fetch
+  // for manually-typed BOQ lines.
+  _pbFetchableResult = _findCostingResultForProduct(prod);
+  const fetchBtn = document.getElementById('pb-fetch-btn');
+  if(fetchBtn) fetchBtn.style.display = _pbFetchableResult ? 'inline-block' : 'none';
+
   _pbTab('mat',document.querySelector('#prod-bom-overlay .budget-tab'));
   _pbUpdateGrand();
   document.getElementById('prod-bom-overlay').style.display='flex';
+}
+
+let _pbFetchableResult=null;
+function _pbFetchFromEstimation(){
+  if(!_pbFetchableResult){ toast('No estimation costing data linked to this product','err'); return; }
+  if(!confirm('Replace the current Raw Materials and Labour rows with data from the estimation costing? You can still edit before saving.')) return;
+  const {materials, labour}=_bomRowsFromCostingResult(_pbFetchableResult);
+  document.getElementById('pb-mat-rows').innerHTML='';
+  document.getElementById('pb-lab-rows').innerHTML='';
+  _pbMatId=0; _pbLabId=0;
+  materials.forEach(m=>_pbAddMat(m));
+  labour.forEach(l=>_pbAddLab(l));
+  _pbUpdateGrand();
+  toast('Fetched from estimation costing — review and Save BOM to keep it','ok');
 }
 
 function closeProdBom(){
@@ -14786,14 +14992,14 @@ function _pbTab(tab, btn){
 
 function _pbAddMat(data){
   const id=++_pbMatId;
-  const items=DB.warehouse.map(w=>`<option value="${w.id}" data-unit="${w.unit}" data-rate="${w.rate}">${escHtml(w.name)}</option>`).join('');
+  const items=DB.items.map(it=>`<option value="${it.id}" data-unit="${it.unit}" data-rate="${it.rate}">${escHtml(it.name)}</option>`).join('');
   const tr=document.createElement('tr');
   tr.id='pbm-row-'+id;
   tr.innerHTML=`
     <td style="text-align:center;color:var(--muted);font-size:11px;font-weight:600">${id}</td>
     <td style="min-width:200px">
       <select class="bom-inp" id="pbm-item-${id}" onchange="_pbOnItemChange(${id})" style="width:100%;margin-bottom:3px">
-        <option value="">— Select from warehouse —</option>${items}
+        <option value="">— Select from Item Master —</option>${items}
         <option value="__custom__">+ Custom / unlisted material</option>
       </select>
       <input class="bom-inp" id="pbm-name-${id}" placeholder="Custom material name" style="display:${data&&!data.itemId?'block':'none'};font-size:11px" value="${data?escHtml(data.itemName||''):''}">

@@ -1,0 +1,153 @@
+APPLETREE INTERIORS ERP — OFFLINE TEST BUILD
+==============================================
+Refreshed 2026-07-21 (updated) — includes everything from the 2026-07-14 refresh
+(Stage-Gate Tracker, Delegation of Authority enforcement, CAPA & Risk
+Registers, the KPI Dashboard, all HR modules, the connected Lead →
+Estimation → Quotation pipeline) plus the Sales & Estimation Studio
+merge (parametric Costing Engine, Costing Masters, Costing Dashboard,
+Quotations Kanban, Partners & Referrals), customer name suggestions,
+automatic Customer creation on Won, self-initiated Estimation
+Requests, due-date alerts with a Factory Dashboard "At Risk" panel,
+the Calendar, and Costing Reports.
+
+This is a fully offline test copy. It does NOT connect to the internet
+or to any live company data — everything you do here stays only on
+this computer, in this browser. Nothing you enter will affect the real
+Appletree Interiors system or its database. This build has no Supabase
+connection at all (it was surgically removed), so there is no way for
+test data entered here to reach production, even by accident.
+
+HOW TO OPEN
+-----------
+1. Unzip this whole folder somewhere on your computer.
+2. Double-click "appletree_erp_offline.html".
+   It will open in your default web browser (Chrome or Edge recommended).
+3. That's it — no installation, no internet connection required.
+
+If double-clicking doesn't open it properly (some browsers can be picky
+about local files), right-click the file → Open with → choose Chrome
+or Edge directly.
+
+FALLBACK: if the app gets stuck or looks broken after opening the file
+directly, double-click "run-with-local-server.bat" instead — it starts
+a tiny local server on your machine and opens the app through that,
+which avoids any local-file browser restrictions. (Windows may show a
+security prompt the first time — click "More info" → "Run anyway", it's
+just a local script, nothing is sent anywhere.)
+
+LOGIN — TEST ACCOUNTS
+----------------------
+All passwords are: test1234
+
+  CEO (full access):          ceo@test.local
+  Factory Supervisor:         factory@test.local
+  Site Supervisor:            site@test.local
+  Accounts:                   accounts@test.local
+  Sales:                      sales@test.local
+  Estimator:                  estimator@test.local
+  Procurement:                procurement@test.local
+  Project Manager:            pm@test.local
+  QC Manager:                 qc@test.local
+  Admin:                      admin@test.local
+
+Log in as CEO first to see everything. Try the other roles to see how
+the menu and permissions change per role.
+
+STARTING DATA
+-------------
+The app starts completely empty (no sample projects/invoices/etc.) —
+add your own test data as you explore.
+
+WHAT TO TEST — CORE MODULES
+----------------------------
+- Create a Lead, convert it to a Quotation, approve it, convert to a
+  Project
+- Add Products to the project, build a Project BOM
+- Raise a Purchase Order, receive it, check Warehouse stock updates
+- Raise a Material Request against the project
+- Add a Machine and check the maintenance-due indicator
+- Try the CEO Dashboard charts and Milestone billing flow
+- Log in as different roles to see what changes
+
+WHAT TO TEST — CARRIED OVER FROM 2026-07-14
+----------------------------------------------
+- Stage-Gate Tracker (Projects → 🚦 Stage button on any project): work
+  through the 6 gates in order, and try skipping a gate's sign-off
+  before the previous one is complete — it should block you.
+- Delegation of Authority: build a Purchase Order or a Quotation
+  discount above the thresholds shown live next to the total, and
+  try sending/approving it as a role below that tier — it should
+  require Accounts or CEO before it will go through.
+- CAPA Register (Operations): log a CAPA and try closing it before
+  moving it to "Pending Effectiveness Check" with a check date filled
+  in — it should refuse.
+- Risk Register (Operations): add a risk, change Likelihood/Impact,
+  watch the severity compute live instead of being picked by hand.
+- KPI Dashboard (Reports): sit on a project or two, add a few
+  invoices/POs, and see which KPI tiles go from "Not Yet Tracked" to
+  a real computed number.
+- HR & Payroll: try Recruitment → Induction → Training → Appraisals →
+  Leave Requests → Recognition & Awards → Disciplinary Actions. For
+  Disciplinary specifically, try skipping straight to "Final Written
+  Warning" for a fresh employee — it should only offer "Verbal
+  Warning" as the next step, unless you tick Gross Misconduct.
+- Lead → Quotation pipeline: on a Lead, click "📝 Request Quote" —
+  it should create a linked Estimation Request automatically. Cost it
+  from the Estimator Dashboard, then click "➡ Convert to Quotation" —
+  every costed line should appear in the quotation with nothing
+  retyped by hand.
+
+WHAT TO TEST — NEW THIS REFRESH (2026-07-21)
+-----------------------------------------------
+- Costing Masters (Estimation): set up a Template, a Material, some
+  Hardware, and Labour Rates, then star one Template as the default —
+  it should auto-select next time you add a costed item.
+- Estimator Dashboard → "+ New Estimation Request": start pricing a
+  job with no Lead behind it at all — it should go straight into your
+  own queue, already claimed.
+- Quotation BOQ Builder → "+ Costed Item": price a piece of furniture
+  using the Costing Engine (dimensions in, material/hardware/labour
+  cost and selling price out automatically) instead of typing a
+  manual line.
+- Mark a Lead or a Quotation "Won" and check Customers — a matching
+  customer record should appear automatically, no manual "+ Add
+  Customer" needed.
+- Type a customer name you've already used somewhere else (Leads,
+  Quotations, BOQ Builder) — it should suggest the existing name
+  instead of you retyping it from scratch.
+- Give a Manufacturing Job or a Purchase Order a due/expected date
+  in the past, or within the next 2 days, then check: the Factory
+  Dashboard's "At Risk" panel, the notification bell, and the
+  Purchase Orders list's amber "due soon" marker should all pick it
+  up without you doing anything else.
+- Calendar (CRM & Sales): add a follow-up date on a quotation and
+  confirm it shows up on the right day, alongside any manufacturing/
+  PO dates that fall in the same month.
+- Costing Reports (Estimation): convert a quotation with a costed
+  item into a project, then generate each of the 5 report types
+  against that project.
+- Estimation Request Costing → "+ Add Item": a request for multiple
+  pieces of furniture (e.g. Wardrobe + TV Unit + Bed) no longer has to
+  share one pool of materials/labour/expenses — add an item per piece
+  and each gets its own Raw Materials/Labour & Wages/Other Expenses
+  breakdown, with a running grand total across all items. Convert to
+  Quotation and check each generated line is prefixed with the item
+  it came from (e.g. "Wardrobe — Material: Plywood 18mm"). Double-click
+  an item pill (or its ✎) to rename it, including "Item 1".
+- Item Master, not stock: material dropdowns on Estimation Request
+  Costing, Project BOM, and per-Product BOM now list Items (from
+  Estimation → Items) instead of Warehouse stock — costing shouldn't
+  require something to already be sitting in stock.
+- Win a Quotation with at least one Costing-Engine-priced item ("+
+  Costed Item" on the BOQ Builder), Convert to Project, then open that
+  product's BOM — it should already be filled in with the same
+  materials/hardware/labour the estimator priced, fully editable, no
+  retyping. For a product without Costing Engine data, open its BOM
+  and use "⚡ Fetch from Estimation" if it appears (only shows up when
+  that BOQ line was priced with the Costing Engine).
+
+QUESTIONS OR ISSUES
+--------------------
+Note down anything confusing, broken, or slow, with which screen/action
+it happened on, and send it back — that's exactly the kind of feedback
+this test is for.

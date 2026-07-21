@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SiteTwin — AI-Powered Site Measurement, CAD Automation & Digital Twin Platform</title>
+<style>
+:root{
+  --ink:#1C1C1A; --ink-soft:#4A4842;
+  --paper:#F8F7F4; --paper-raised:#FFFFFF;
+  --line:#E4E1D6; --line-soft:#EFEDE4;
+  --muted:#7A776C;
+  --gold:#C3B152; --gold-l:#D4C47A; --gold-pale:#F4F1DC; --gold-dim:#9A8A3A;
+  --olive:#9D9A91;
+  --good:#3E7A5C; --good-soft:#DCEBE2;
+  --warn:#B5872E; --warn-soft:#F3E8CE;
+  --risk:#B14C3C; --risk-soft:#F5E0DB;
+  --shadow: 0 1px 2px rgba(28,28,26,.06), 0 8px 24px -12px rgba(28,28,26,.18);
+  --sans:'Manrope',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono: ui-monospace,"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --ink:#EDEBE2; --ink-soft:#C7C4B8;
+    --paper:#1A1A17; --paper-raised:#232320;
+    --line:#39372E; --line-soft:#2B2A24;
+    --muted:#9C9888;
+    --gold:#D9C868; --gold-l:#E6D98F; --gold-pale:#2E2A17; --gold-dim:#B7A64A;
+    --olive:#A9A69C;
+    --good:#7FBF9C; --good-soft:#1E3128;
+    --warn:#E0B65C; --warn-soft:#332A15;
+    --risk:#E08B7A; --risk-soft:#3A211D;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#EDEBE2; --ink-soft:#C7C4B8;
+  --paper:#1A1A17; --paper-raised:#232320;
+  --line:#39372E; --line-soft:#2B2A24;
+  --muted:#9C9888;
+  --gold:#D9C868; --gold-l:#E6D98F; --gold-pale:#2E2A17; --gold-dim:#B7A64A;
+  --olive:#A9A69C;
+  --good:#7FBF9C; --good-soft:#1E3128;
+  --warn:#E0B65C; --warn-soft:#332A15;
+  --risk:#E08B7A; --risk-soft:#3A211D;
+  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
+}
+:root[data-theme="light"]{
+  --ink:#1C1C1A; --ink-soft:#4A4842;
+  --paper:#F8F7F4; --paper-raised:#FFFFFF;
+  --line:#E4E1D6; --line-soft:#EFEDE4;
+  --muted:#7A776C;
+  --gold:#C3B152; --gold-l:#D4C47A; --gold-pale:#F4F1DC; --gold-dim:#9A8A3A;
+  --olive:#9D9A91;
+  --good:#3E7A5C; --good-soft:#DCEBE2;
+  --warn:#B5872E; --warn-soft:#F3E8CE;
+  --risk:#B14C3C; --risk-soft:#F5E0DB;
+  --shadow: 0 1px 2px rgba(28,28,26,.06), 0 8px 24px -12px rgba(28,28,26,.18);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  font-family:var(--sans);
+  background:var(--paper); color:var(--ink); line-height:1.6;
+  display:flex; min-height:100vh; -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--gold-pale); color:var(--gold-dim);}
+
+/* Sidebar */
+nav.toc{
+  width:270px; flex:0 0 270px; background:var(--paper-raised); border-right:1px solid var(--line);
+  position:sticky; top:0; height:100vh; overflow-y:auto; padding:24px 16px 60px;
+}
+nav.toc .brand{ padding:0 8px 18px; border-bottom:1px solid var(--line); margin-bottom:14px;}
+nav.toc .brand .mark{margin-bottom:10px;}
+nav.toc .brand .logo{font-size:22px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--ink);}
+nav.toc .brand .logo span{color:var(--gold-dim);}
+nav.toc .brand .tag{font-size:11.5px; color:var(--muted); margin-top:4px;}
+nav.toc a{
+  display:block; padding:6px 8px; border-radius:6px; color:var(--muted); text-decoration:none;
+  font-size:13px; margin-bottom:1px;
+}
+nav.toc a:hover{background:var(--line-soft); color:var(--ink);}
+nav.toc a.h{font-weight:700; color:var(--ink); margin-top:10px; font-size:11px; text-transform:uppercase; letter-spacing:.06em; padding-bottom:2px;}
+nav.toc a.h:first-child{margin-top:0;}
+
+/* Main */
+main{flex:1; min-width:0; padding:48px clamp(20px,5vw,72px) 120px;}
+.hero{
+  padding:40px 0 24px; border-bottom:1px solid var(--line); margin-bottom:36px;
+  background:linear-gradient(180deg,var(--gold-pale) 0%, transparent 70%);
+}
+.hero .eyebrow{color:var(--gold-dim); font-weight:700; letter-spacing:.08em; font-size:12.5px; text-transform:uppercase;}
+.hero h1{font-size:clamp(28px,4vw,42px); margin:10px 0 8px; letter-spacing:-.01em; font-weight:800;}
+.hero p.lead{font-size:17px; color:var(--ink-soft); max-width:780px;}
+.hero .badges{display:flex; gap:8px; flex-wrap:wrap; margin-top:18px;}
+.badge{background:var(--gold-pale); border:1px solid var(--gold-l); color:var(--gold-dim); padding:5px 10px; border-radius:20px; font-size:12px; font-weight:600;}
+
+section{margin-bottom:56px; scroll-margin-top:24px;}
+section > .num{color:var(--gold-dim); font-weight:800; font-size:13px; letter-spacing:.1em; font-family:var(--mono);}
+h2{font-size:26px; margin:4px 0 6px; letter-spacing:-.01em; font-weight:800; color:var(--ink);}
+h3{font-size:18px; margin:26px 0 8px; color:var(--ink); font-weight:800;}
+h4{font-size:15px; margin:18px 0 6px; color:var(--gold-dim); font-weight:800;}
+p{color:var(--ink-soft);}
+p.muted, li.muted{color:var(--muted);}
+.section-sub{color:var(--muted); margin-bottom:18px; max-width:820px;}
+
+table{width:100%; border-collapse:collapse; margin:14px 0 22px; font-size:13.5px;}
+th,td{text-align:left; padding:9px 11px; border-bottom:1px solid var(--line); vertical-align:top; color:var(--ink-soft);}
+th{background:var(--line-soft); color:var(--muted); font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em;}
+tr:hover td{background:var(--gold-pale);}
+
+code, .mono{font-family:var(--mono); font-size:12.8px;}
+pre{
+  background:var(--paper-raised); border:1px solid var(--line); border-radius:8px;
+  padding:14px 16px; overflow-x:auto; font-size:12.8px; line-height:1.55;
+}
+pre code{color:var(--ink-soft);}
+.callout{
+  background:var(--gold-pale); border-left:3px solid var(--gold); border-radius:0 8px 8px 0;
+  padding:12px 16px; margin:16px 0; font-size:14px; color:var(--ink-soft);
+}
+.callout.warn{border-color:var(--warn); background:var(--warn-soft);}
+.callout.danger{border-color:var(--risk); background:var(--risk-soft);}
+.callout b{color:var(--ink);}
+
+.grid{display:grid; gap:14px;}
+.grid-2{grid-template-columns:1fr 1fr;}
+.grid-3{grid-template-columns:repeat(3,1fr);}
+.grid-4{grid-template-columns:repeat(4,1fr);}
+@media(max-width:900px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr;}}
+
+.card{background:var(--paper-raised); border:1px solid var(--line); border-radius:10px; padding:16px 18px; box-shadow:var(--shadow);}
+.card h4{margin-top:0;}
+.pill{display:inline-block; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:700; letter-spacing:.03em;}
+.pill.must{background:var(--risk-soft); color:var(--risk);}
+.pill.should{background:var(--warn-soft); color:var(--warn);}
+.pill.could{background:var(--gold-pale); color:var(--gold-dim);}
+.pill.high{background:var(--risk-soft); color:var(--risk);}
+.pill.med{background:var(--warn-soft); color:var(--warn);}
+.pill.low{background:var(--good-soft); color:var(--good);}
+
+/* architecture / pipeline diagram boxes */
+.flow{display:flex; flex-wrap:wrap; align-items:stretch; gap:0; margin:20px 0;}
+.flow .stage{
+  background:var(--paper-raised); border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+  min-width:150px; flex:1; font-size:12.5px; position:relative; color:var(--ink-soft);
+}
+.flow .stage b{display:block; color:var(--gold-dim); font-size:12.5px; margin-bottom:3px;}
+.flow .arrow{display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:20px; padding:0 6px; flex:0 0 auto;}
+@media(max-width:900px){.flow{flex-direction:column;} .flow .arrow{transform:rotate(90deg); padding:2px 0;}}
+
+.layers{display:flex; flex-direction:column; gap:8px; margin:18px 0;}
+.layer{border:1px solid var(--line); border-radius:10px; padding:14px 16px; background:var(--paper-raised);}
+.layer .lname{color:var(--gold-dim); font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:.06em; margin-bottom:6px;}
+.layer .litems{color:var(--muted); font-size:13px;}
+
+.phone{
+  width:190px; border:6px solid var(--line); border-radius:22px; background:var(--line-soft); padding:10px 8px;
+  font-size:10.5px; color:var(--muted);
+}
+.phone .screen-title{color:var(--ink); font-weight:700; font-size:11.5px; margin-bottom:8px; text-align:center;}
+.phone .row{background:var(--paper-raised); border:1px solid var(--line); border-radius:6px; padding:6px 7px; margin-bottom:5px; color:var(--ink-soft);}
+.phone .btn{background:var(--gold); color:#1C1C1A; text-align:center; border-radius:6px; padding:6px; font-weight:700; margin-top:6px;}
+
+.wireframes{display:flex; gap:18px; flex-wrap:wrap; margin:18px 0;}
+
+footer.doc-footer{margin-top:70px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:12.5px;}
+
+.toc-two{columns:1;}
+</style>
+</head>
+<body>
+
+<nav class="toc">
+  <div class="brand">
+    <div class="mark"><img src="logo.png" alt="Appletree Interiors" style="height:22px;width:auto"></div>
+    <div class="logo">Site<span>Twin</span></div>
+    <div class="tag">Measured-first digital twin system — internal engineering blueprint for Appletree Interiors</div>
+  </div>
+  <a class="h">Overview</a>
+  <a href="#exec">Executive Summary</a>
+  <a href="#vision">1. Product Vision</a>
+  <a href="#fr">2. Functional Requirements</a>
+  <a href="#nfr">3. Non-Functional Requirements</a>
+  <a class="h">System Design</a>
+  <a href="#arch">4. Software Architecture</a>
+  <a href="#db">5. Database Design</a>
+  <a href="#api">6. API Specification</a>
+  <a href="#roles">7. User Roles &amp; Permissions</a>
+  <a class="h">Experience</a>
+  <a href="#mobile-wf">8. Mobile Wireframes</a>
+  <a href="#web-wf">9. Web Dashboard Wireframes</a>
+  <a href="#ux">10. UX Flow</a>
+  <a class="h">AI / CV / CAD Core</a>
+  <a href="#ai-pipeline">11. AI Processing Pipeline</a>
+  <a href="#ocr">12. OCR Pipeline</a>
+  <a href="#cv">13. Computer Vision Pipeline</a>
+  <a href="#cad">14. CAD Generation Pipeline</a>
+  <a href="#twin">15. Digital Twin Data Model</a>
+  <a href="#validation">16. Measurement Validation Rules</a>
+  <a class="h">Delivery</a>
+  <a href="#stack">17. Technology Stack</a>
+  <a href="#roadmap">18. Development Roadmap</a>
+  <a href="#mvp">19. MVP Definition</a>
+  <a href="#phases">20. Phase-wise Feature Plan</a>
+  <a href="#timeline">21. Development Timeline</a>
+  <a href="#team">22. Team Structure</a>
+  <a href="#cost">23. Development Cost</a>
+  <a href="#risks">24. Risks &amp; Mitigation</a>
+  <a href="#future">25. Future Enhancements</a>
+</nav>
+
+<main>
+
+  <div class="hero">
+    <div class="eyebrow">Internal System Blueprint · v2.0 (internal) · 16 July 2026</div>
+    <h1>SiteTwin — Appletree's Site Measurement, CAD Automation &amp; Digital Twin System</h1>
+    <p class="lead">An internal productivity tool, built exclusively for Appletree Interiors' own site engineers and designers, that replaces our current paper-sketch-and-redraw process with a <b>measured, dimensionally-accurate digital twin</b> of every room — the single source of truth our team uses for CAD drawings, electrical/plumbing documentation, quotations, and AI-generated design visuals that actually fit the real space. This is not a commercial product and is not sold externally.</p>
+    <div class="badges">
+      <span class="badge">Phase 0: fully offline, manual entry, ₹0 cost</span>
+      <span class="badge">Mobile-first</span>
+      <span class="badge">Internal use only — single organization</span>
+      <span class="badge">Integrates with existing Manufacturing ERP (Phase 1+)</span>
+      <span class="badge">Residential · Commercial · Hospitality · Office</span>
+    </div>
+  </div>
+
+  <section id="exec">
+    <div class="num">EXECUTIVE SUMMARY</div>
+    <h2>The problem, in one sentence</h2>
+    <p>AI interior-design tools generate beautiful rooms from a single photo, but the room they generate is <b>not the room the client actually has</b> — wrong wall lengths, wrong ceiling height, furniture that won't physically fit, sockets in the wrong place. SiteTwin fixes this by making <b>measurement the foundation</b>, not an afterthought: every wall, opening, fixture and service point is captured with real dimensions (manual, laser, or AI-assisted-and-verified) before any drawing or render is produced, so everything downstream — floor plans, elevations, BOQs, IFC/BIM exports, and AI-generated visuals — is constrained to reality.</p>
+    <div class="grid grid-3">
+      <div class="card"><h4>What it captures</h4><p class="muted">Hand sketches, photos, 360° video, laser-meter readings, manual entry, voice notes — fused into one structured digital twin per room.</p></div>
+      <div class="card"><h4>What it produces</h4><p class="muted">Dimensioned floor plans, wall elevations, MEP layouts, schedules, BOQ/QTO, and export-ready DXF/DWG/IFC/PDF files — plus a structured dataset AI render engines can use safely.</p></div>
+      <div class="card"><h4>Who it's for</h4><p class="muted">Appletree Interiors' own site engineers, designers, draftspeople, and project managers — across our residential, commercial, hospitality, and office projects. Built for internal use only; not licensed or sold to other firms.</p></div>
+    </div>
+  </section>
+
+  <section id="vision">
+    <div class="num">01</div>
+    <h2>Product Vision</h2>
+    <p class="section-sub">Positioning, target users, and how SiteTwin is different from the current wave of "AI interior design" apps.</p>
+
+    <h3>Vision statement</h3>
+    <p>Every interior project in the world should be designed, documented, and rendered against a digital twin that is <b>at least as accurate as a laser-measured as-built survey</b> — so that what's designed on screen is exactly what gets built on site, every time, with zero re-measurement trips.</p>
+
+    <h3>Mission</h3>
+    <p>Give every designer, architect, and site engineer a mobile-first tool that turns a 20-minute guided site walk into a validated, CAD-ready, AI-ready digital twin — eliminating the manual CAD drafting, missing-measurement callbacks, and dimensionally-wrong AI renders that plague the industry today.</p>
+
+    <h3>Solution overview — the three-layer stack</h3>
+    <div class="flow">
+      <div class="stage"><b>1. Capture</b>Guided mobile survey — sketches, photos, video, laser/manual measurements, voice notes, all geo/room-tagged</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>2. Digital Twin</b>AI-assisted extraction + mandatory human validation → one structured, versioned, dimensionally-consistent model per room</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>3. Generate</b>CAD drawings, elevations, schedules, BOQ, BIM/IFC export, and a constrained dataset for AI rendering engines</div>
+    </div>
+    <p class="callout"><b>The core bet:</b> accuracy comes from measurement discipline enforced by workflow and validation rules, not from a bigger AI model. AI accelerates capture and drafting; it never replaces ground-truth measurement, and it is never allowed to silently guess a missing value.</p>
+
+    <h3>Users &amp; roles at Appletree</h3>
+    <table>
+      <tr><th>Role</th><th>Where they sit today</th><th>Core need from the system</th></tr>
+      <tr><td>Site Engineer / Surveyor</td><td>Conducts the site visit, currently on paper</td><td>A guided checklist that makes it impossible to miss a measurement or electrical point</td></tr>
+      <tr><td>Designer / Draftsperson</td><td>Redraws the sketch in AutoCAD back at office</td><td>Clean, dimensioned geometry to start from instead of a paper sketch — less redrawing, more designing</td></tr>
+      <tr><td>Project Manager</td><td>Tracks project status across site visit → quotation → execution</td><td>One workspace per project instead of scattered photos, PDFs, and WhatsApp notes</td></tr>
+      <tr><td>CEO / Reviewer</td><td>Approves quotations and reviews project health</td><td>Confidence that measurements feeding quotations and layouts are accurate and complete</td></tr>
+      <tr><td>Client (view-only)</td><td>Currently sees only the final quotation/3D render</td><td>A simple portal to view approved drawings/renders and sign off, without back-and-forth files</td></tr>
+    </table>
+
+    <h3>Differentiation — vs. our current process</h3>
+    <table>
+      <tr><th>Category</th><th>Current process (paper + AutoCAD + photo-only AI renders)</th><th>SiteTwin</th></tr>
+      <tr><td>Input</td><td>Paper sketch, scattered photos, memory</td><td>Guided multi-modal capture: sketch + photo + video + laser/manual + voice, all in one workspace</td></tr>
+      <tr><td>Ground truth</td><td>Depends on the engineer remembering / re-checking the paper sketch</td><td>Explicit measured dimensions, validated by rules before anything downstream runs</td></tr>
+      <tr><td>Output</td><td>Manually redrawn CAD file, separate quotation, separate AI render</td><td>CAD-ready drawings, schedules, BOQ, and a dimensionally-locked render dataset generated from one source</td></tr>
+      <tr><td>Missing data</td><td>Discovered only when execution starts on site (forgotten switchboard, wrong socket height)</td><td>Never guessed — flagged and blocked before the survey can even be marked complete</td></tr>
+      <tr><td>Reusability</td><td>Sketch and photos archived and rarely reused</td><td>Persistent, versioned digital twin reused across design, quotation, execution, and after-sales service</td></tr>
+    </table>
+  </section>
+
+  <section id="fr">
+    <div class="num">02</div>
+    <h2>Functional Requirements</h2>
+    <p class="section-sub">Grouped by module, MoSCoW-prioritized. Field-level detail for each module lives in the <a href="#twin">Digital Twin Data Model</a> and <a href="#db">Database Design</a> sections to avoid duplication.</p>
+
+    <table>
+      <tr><th>ID</th><th>Module</th><th>Requirement</th><th>Priority</th></tr>
+      <tr><td>FR-01</td><td>Project Mgmt</td><td>Create/manage projects with client, address, site engineer, designer, status, and full revision history</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-02</td><td>Project Mgmt</td><td>Support multiple floors per project and multiple rooms per floor</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-03</td><td>Room Survey</td><td>Capture room dimensions, diagonals, floor level, FFL, ceiling &amp; false-ceiling height</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-04</td><td>Wall Survey</td><td>Capture per-wall length, height, thickness, beams, columns, niches, offsets, projections, finish</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-05</td><td>Openings</td><td>Full door and window schedules with position, dimensions, materials, swing/opening direction</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-06</td><td>Electrical Survey</td><td>Switchboards, sockets (6A/16A/USB/UPS/dedicated) with position, height, circuit</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-07</td><td>Lighting Survey</td><td>All light-point types with X/Y/Z coordinates, mounting height, circuit, wattage, fixture type</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-08</td><td>Fan &amp; HVAC</td><td>Ceiling/exhaust/wall fans, indoor/outdoor AC units, pipe routing, thermostat/controller</td><td><span class="pill should">Should</span></td></tr>
+      <tr><td>FR-09</td><td>TV / Data / Smart Home</td><td>TV points, HDMI/LAN conduits, Wi-Fi/CCTV/speaker/home-automation points</td><td><span class="pill should">Should</span></td></tr>
+      <tr><td>FR-10</td><td>Plumbing Survey</td><td>Fixtures (basin/sink/shower/WC etc.), hot/cold lines, appliance points</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-11</td><td>Conduit Mapping</td><td>Concealed route mapping for electrical/plumbing/drain/AC/gas/data with start/end, diameter, material</td><td><span class="pill should">Should</span></td></tr>
+      <tr><td>FR-12</td><td>Ceiling Module</td><td>Ceiling levels, cove lighting, curtain pockets, diffusers, access panels, life-safety devices</td><td><span class="pill should">Should</span></td></tr>
+      <tr><td>FR-13</td><td>Furniture Survey</td><td>Existing furniture inventory with dimensions, material, finish, coordinates, rotation</td><td><span class="pill should">Should</span></td></tr>
+      <tr><td>FR-14</td><td>Elevation Generator</td><td>Auto-generate an editable elevation per wall showing every wall-mounted element to scale</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-15</td><td>Validation Engine</td><td>Detect missing data, geometry conflicts, and impossible layouts; never auto-fill; always flag for review</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-16</td><td>Digital Twin</td><td>Maintain a single structured, versioned object model per room usable by every downstream generator</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-17</td><td>AI Design Prep</td><td>Export a structured, geometry-locked dataset (geometry + materials + camera positions) for AI render engines</td><td><span class="pill should">Should</span></td></tr>
+      <tr><td>FR-18</td><td>Mobile App</td><td>Offline-first capture with auto-sync, guided 23-step survey workflow, hard submission gate on missing required data</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-19</td><td>Sketch Recognition</td><td>Convert an uploaded/photographed hand sketch into editable CAD wall/door/window geometry for user review</td><td><span class="pill should">Should</span></td></tr>
+      <tr><td>FR-20</td><td>Photo/Video Recognition</td><td>Detect walls, ceiling, floor, openings, fixtures and finishes from site photos/video for user review</td><td><span class="pill should">Should</span></td></tr>
+      <tr><td>FR-21</td><td>Outputs</td><td>Generate dimensioned plans, layouts, elevations, schedules, area statements, QTO/BOQ, survey reports</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-22</td><td>Export</td><td>Export to PDF, PNG, JPEG, SVG, DXF, DWG, IFC, JSON, CSV, Excel</td><td><span class="pill must">Must</span></td></tr>
+      <tr><td>FR-23</td><td>Collaboration</td><td>Role-based review/approval, comments, digital sign-off, client view-only portal</td><td><span class="pill should">Should</span></td></tr>
+    </table>
+  </section>
+
+  <section id="nfr">
+    <div class="num">03</div>
+    <h2>Non-Functional Requirements</h2>
+    <table>
+      <tr><th>Category</th><th>Requirement</th></tr>
+      <tr><td>Accuracy</td><td>Manually/laser-entered dimensions treated as ground truth; AI-suggested dimensions must disclose a confidence score and are never treated as final without explicit user confirmation. Target: digital twin geometry within ±1% of an independent laser re-survey.</td></tr>
+      <tr><td>Offline-first</td><td>Full survey capture (measurements, photos, video, voice, sketches) must work with zero connectivity; sync is eventually-consistent and conflict-safe.</td></tr>
+      <tr><td>Performance</td><td>Mobile screen transitions &lt;300ms; cloud CV/OCR jobs return results or a "still processing" state within 60s for a single room; floor-plan generation &lt;5s for a validated room.</td></tr>
+      <tr><td>Scalability</td><td>Single-organization system sized for Appletree's current and near-future headcount (site engineers, designers, PMs across concurrent projects); no multi-tenant complexity needed since it's never resold to another company.</td></tr>
+      <tr><td>Availability</td><td>Hosted alongside the existing Manufacturing ERP backend; mobile app is fully usable during any outage (offline-first) so a site visit is never blocked by connectivity.</td></tr>
+      <tr><td>Data integrity &amp; auditability</td><td>Every field change is versioned with actor, timestamp, and source (manual / laser / CV-suggested / imported); nothing is silently overwritten.</td></tr>
+      <tr><td>Security &amp; privacy</td><td>Encryption at rest and in transit; access restricted by role via the existing PermissionsGuard; client photos/floor plans treated as sensitive commercial data, aligned with India's DPDP Act.</td></tr>
+      <tr><td>Interoperability</td><td>DXF exports (and DWG where needed) must round-trip cleanly through AutoCAD, matching our current drafting tool; CAD layer naming follows an industry standard (ISO 13567-style discipline layering) for consistency across projects.</td></tr>
+      <tr><td>Usability</td><td>A site engineer with no CAD background must be able to complete the guided survey workflow after a single onboarding session.</td></tr>
+      <tr><td>Localization</td><td>Metric units (our standard); English UI, with Malayalam labels/voice-note support considered if the field team finds it faster.</td></tr>
+    </table>
+  </section>
+
+  <section id="arch">
+    <div class="num">04</div>
+    <h2>Software Architecture</h2>
+    <p class="section-sub">A cloud-native, event-driven architecture: synchronous CRUD for structured data, asynchronous job queues for anything AI/CV-related, and an offline-first mobile client that never blocks on the network.</p>
+
+    <div class="callout"><b>Two-stage build, not one architecture:</b> Phase 0 ships as a single self-contained offline HTML tool — no backend, no cloud, all data typed in manually and stored on the device — matching the exact pattern already used for <code>appletree_erp_v2_1.html</code> and <code>appletree_erp_offline.html</code>. The cloud/NestJS architecture below is what Phase 1 onward layers on top, once the offline tool is validated in real use and the team wants multi-device sync, AI-assisted capture, or CAD/BIM export. Nothing below is needed to get a working, useful tool into a site engineer's hands first.</div>
+
+    <h3>Phase 0 — offline client (no backend)</h3>
+    <div class="layers">
+      <div class="layer"><div class="lname">Single HTML/JS Client</div><div class="litems">Guided survey form UI · manual entry for every field (room, wall, opening, electrical, plumbing, HVAC) · client-side validation rules · client-side 2D plan/elevation drawing (SVG/Canvas) · localStorage/IndexedDB persistence · photo capture stored as local file/data-URI references</div></div>
+      <div class="layer"><div class="lname">Output (client-side only)</div><div class="litems">Browser print-to-PDF for the survey report/plan (same pattern as the BOQ/quotation PDFs) · JSON export of the full digital twin per project, for backup or manual handoff between devices</div></div>
+    </div>
+    <p class="muted">This is deliberately the entire Phase 0 architecture — one HTML file, run from a laptop or tablet on site, zero servers to operate or pay for.</p>
+
+    <h3>Phase 1+ — cloud/multi-device architecture</h3>
+    <div class="layers">
+      <div class="layer"><div class="lname">Client Layer</div><div class="litems">Mobile app (React Native/Expo, offline SQLite store) · Web dashboard (Next.js/React) · Future: Revit/AutoCAD plugin</div></div>
+      <div class="layer"><div class="lname">Edge / API Gateway</div><div class="litems">Auth, rate limiting, request routing, WebSocket gateway for real-time job status &amp; collaboration</div></div>
+      <div class="layer"><div class="lname">Core Domain Services</div><div class="litems">Project Service · Survey Service · Digital Twin Service · Validation Service · CAD Generation Service · Export Service · BOQ/Estimation Service · Notification Service · Auth/IAM Service</div></div>
+      <div class="layer"><div class="lname">AI / CV Services (async, GPU-backed)</div><div class="litems">Sketch-to-CAD Service · Photo/Video Scene Understanding Service · OCR Service · Dimension Inference Service · Confidence Scoring &amp; Human-Review Queue</div></div>
+      <div class="layer"><div class="lname">Data Layer</div><div class="litems">PostgreSQL + PostGIS (structured &amp; geometric data) · pgvector (embeddings) · Redis (cache/queues/sessions) · S3-compatible object storage (photos/video/sketches/exports) · Event/audit log store</div></div>
+      <div class="layer"><div class="lname">Infrastructure</div><div class="litems">Kubernetes (containers) · Message queue (Kafka/SQS) for async CV jobs · GPU autoscaling worker pool · CDN · CI/CD (GitHub Actions) · Terraform IaC</div></div>
+    </div>
+
+    <h3>Primary data flow (Phase 1+)</h3>
+    <div class="flow">
+      <div class="stage"><b>Mobile capture</b>Offline SQLite writes during the guided survey</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Sync</b>Background sync to cloud on connectivity, conflict resolution by field-level timestamp</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Async AI jobs</b>Sketch/photo/OCR jobs queued, processed on GPU workers</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Human review</b>Confidence-scored suggestions surfaced for accept/edit/reject</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Digital Twin update</b>Validated data merged into the versioned room model</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Generators</b>CAD, elevations, schedules, BOQ, exports triggered on twin change</div>
+    </div>
+
+    <div class="callout"><b>Built into the existing ERP, not a separate product:</b> when the team is ready for Phase 1, the cloud layer reuses the NestJS + Prisma + PostgreSQL backend with JWT auth, RBAC guards, and an audit-log module already running in the Manufacturing ERP (<code>manufacturing-erp/apps/backend</code>). SiteTwin ships as new modules and Prisma models inside that same backend — new controllers under <code>src/modules/site-survey/</code> alongside the existing <code>auth</code>, <code>users</code>, and (upcoming) production modules — reusing its permissions/audit patterns rather than standing up a second backend. This is the same "one system, one data model" principle already applied to <code>appletree_erp_v2_1.html</code>.</div>
+  </section>
+
+  <section id="db">
+    <div class="num">05</div>
+    <h2>Database Design</h2>
+    <p class="section-sub">PostgreSQL with PostGIS for geometry, as new Prisma models alongside the existing Manufacturing ERP schema. Every survey entity belongs to a Room, every Room to a Floor, every Floor to a Project — the same <code>Project</code> entity already used by the ERP's CRM/quotation modules, so a project's site survey, quotation, and execution data all sit under one record.</p>
+
+    <h3>Core entity map</h3>
+    <p class="muted">User → Project → Floor → Room → {Wall, Door, Window, Beam, Column, Niche, Switchboard, Socket, LightPoint, FanHVACPoint, TVDataPoint, PlumbingPoint, Conduit, CeilingRecord, FurnitureItem} plus cross-cutting: Photo, Video, VoiceNote, Sketch, ValidationFlag, RevisionHistory, ExportJob, Signature.</p>
+
+    <h3>Representative schema (abbreviated DDL)</h3>
+    <pre><code>-- Extends the existing Project table (already used by CRM/quotation modules)
+CREATE TABLE project (
+  id UUID PRIMARY KEY,
+  client_name TEXT, project_name TEXT, address TEXT,
+  site_engineer_id UUID, designer_id UUID,
+  status TEXT CHECK (status IN ('draft','surveying','validated','designed','executed','archived')),
+  created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ
+);
+
+CREATE TABLE floor (id UUID PRIMARY KEY, project_id UUID REFERENCES project(id), name TEXT, level_index INT);
+
+CREATE TABLE room (
+  id UUID PRIMARY KEY, floor_id UUID REFERENCES floor(id),
+  name TEXT, room_type TEXT,
+  length_mm INT, width_mm INT, height_mm INT,
+  diagonal_a_mm INT, diagonal_b_mm INT,
+  ffl_mm INT, ceiling_height_mm INT, false_ceiling_height_mm INT,
+  polygon GEOMETRY(Polygon, 0),          -- PostGIS: derived/validated room outline
+  status TEXT CHECK (status IN ('pending','in_progress','flagged','validated')),
+  updated_at TIMESTAMPTZ
+);
+
+CREATE TABLE wall (
+  id UUID PRIMARY KEY, room_id UUID REFERENCES room(id), wall_code TEXT,
+  length_mm INT, height_mm INT, thickness_mm INT,
+  beam JSONB, "column" JSONB, niche JSONB, offset_mm INT, projection_mm INT,
+  finish TEXT, geometry GEOMETRY(LineString, 0)
+);
+
+CREATE TABLE opening (                    -- doors & windows share a shape, discriminated by type
+  id UUID PRIMARY KEY, wall_id UUID REFERENCES wall(id), type TEXT CHECK (type IN ('door','window')),
+  code TEXT, width_mm INT, height_mm INT, sill_height_mm INT, lintel_height_mm INT,
+  material TEXT, swing_or_opening_direction TEXT, distance_from_corner_mm INT,
+  extra JSONB                             -- door: handle/lock/threshold ; window: grill/curtain box/mesh/glass type
+);
+
+CREATE TABLE electrical_point (
+  id UUID PRIMARY KEY, room_id UUID REFERENCES room(id), wall_id UUID,
+  category TEXT CHECK (category IN ('switchboard','socket_6a','socket_16a','socket_usb','socket_ups','socket_appliance')),
+  distance_from_left_mm INT, distance_from_right_mm INT, height_from_ffl_mm INT,
+  circuit_no TEXT, is_smart BOOLEAN, modules INT, functions JSONB, photo_ref UUID
+);
+
+CREATE TABLE light_point (
+  id UUID PRIMARY KEY, room_id UUID REFERENCES room(id), fixture_type TEXT,
+  coordinates JSONB,                      -- {x,y,z} in mm relative to room origin
+  mounting_height_mm INT, circuit_no TEXT, switchboard_id UUID REFERENCES electrical_point(id), wattage INT
+);
+
+CREATE TABLE digital_twin_object (
+  id UUID PRIMARY KEY, room_id UUID REFERENCES room(id),
+  category TEXT, geometry JSONB, dimensions JSONB, material TEXT, finish TEXT,
+  coordinates JSONB, rotation_deg NUMERIC,
+  source TEXT CHECK (source IN ('manual','laser','cv_suggested','imported')),
+  confidence NUMERIC, photos UUID[], notes TEXT,
+  revision INT, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ
+);
+
+CREATE TABLE validation_flag (
+  id UUID PRIMARY KEY, room_id UUID REFERENCES room(id), rule_id TEXT,
+  severity TEXT CHECK (severity IN ('blocking','warning','info')),
+  message TEXT, related_object_ids UUID[], resolved BOOLEAN DEFAULT FALSE, resolved_by UUID, resolved_at TIMESTAMPTZ
+);
+</code></pre>
+    <p class="muted">Electrical/lighting/HVAC/plumbing/conduit/furniture tables follow the same pattern (room-scoped, JSONB for variable attribute sets, PostGIS geometry where positional). Full field lists per module are enumerated in <a href="#twin">§15 Digital Twin Data Model</a>.</p>
+  </section>
+
+  <section id="api">
+    <div class="num">06</div>
+    <h2>API Specification</h2>
+    <p class="section-sub">REST + OpenAPI 3 for CRUD and generation endpoints; WebSocket for async job status; a narrow GraphQL surface for nested digital-twin reads used by the CAD viewer.</p>
+
+    <table>
+      <tr><th>Method</th><th>Endpoint</th><th>Purpose</th></tr>
+      <tr><td>POST</td><td><code>/v1/projects</code></td><td>Create project</td></tr>
+      <tr><td>POST</td><td><code>/v1/projects/{id}/floors</code></td><td>Add floor</td></tr>
+      <tr><td>POST</td><td><code>/v1/floors/{id}/rooms</code></td><td>Add room</td></tr>
+      <tr><td>PATCH</td><td><code>/v1/rooms/{id}</code></td><td>Update room dimensions/attributes (versioned)</td></tr>
+      <tr><td>POST</td><td><code>/v1/rooms/{id}/walls</code> · <code>/openings</code> · <code>/electrical</code> · <code>/lighting</code> · <code>/plumbing</code> · <code>/furniture</code></td><td>Add survey records per module</td></tr>
+      <tr><td>POST</td><td><code>/v1/rooms/{id}/media</code></td><td>Upload photo/video/voice-note/sketch (returns async job id if AI processing applies)</td></tr>
+      <tr><td>POST</td><td><code>/v1/ai/sketch-to-cad</code></td><td>Submit a sketch image, returns job id → geometry suggestions</td></tr>
+      <tr><td>POST</td><td><code>/v1/ai/photo-analyze</code></td><td>Submit room photos/video, returns job id → detected elements with confidence</td></tr>
+      <tr><td>GET</td><td><code>/v1/jobs/{id}</code></td><td>Poll async job status (also pushed via WebSocket)</td></tr>
+      <tr><td>POST</td><td><code>/v1/rooms/{id}/validate</code></td><td>Run the validation rule engine, returns list of <code>ValidationFlag</code></td></tr>
+      <tr><td>GET</td><td><code>/v1/rooms/{id}/digital-twin</code></td><td>Full structured twin for the room (GraphQL alternative available)</td></tr>
+      <tr><td>POST</td><td><code>/v1/rooms/{id}/generate/{floorplan\|elevation\|boq\|schedule}</code></td><td>Trigger a generator against the validated twin</td></tr>
+      <tr><td>GET</td><td><code>/v1/rooms/{id}/export?format=dxf\|dwg\|ifc\|pdf\|json\|csv\|xlsx</code></td><td>Export in the requested format</td></tr>
+      <tr><td>POST</td><td><code>/v1/rooms/{id}/submit</code></td><td>Submit survey — blocked (422) if required fields/validation flags remain unresolved</td></tr>
+    </table>
+
+    <h4>Example: submit-blocked response</h4>
+    <pre><code>422 Unprocessable Entity
+{
+  "error": "SURVEY_INCOMPLETE",
+  "blocking_flags": [
+    { "rule_id": "VAL-014", "message": "Window W-02 sill height missing", "object_id": "..." },
+    { "rule_id": "VAL-031", "message": "Room diagonal mismatch: measured 4312mm vs computed 4270mm (Δ1.0%>tolerance)", "object_id": "..." }
+  ]
+}</code></pre>
+
+    <h4>Example: digital twin object (GET response fragment)</h4>
+    <pre><code>{
+  "id": "e2b1...", "category": "switchboard", "room_id": "9ac4...",
+  "coordinates": { "x": 1200, "y": 0, "z": 1050 },
+  "dimensions": { "width": 200, "height": 150, "depth": 60 },
+  "source": "laser", "confidence": 1.0,
+  "photos": ["photo_88a1"], "notes": "6-module, 2 circuits", "revision": 3
+}</code></pre>
+
+    <p class="muted">Auth: JWT bearer tokens with refresh rotation, reusing the existing <code>manufacturing-erp/apps/backend/src/modules/auth</code> module directly. Permission checks reuse the existing <code>PermissionsGuard</code> (<code>permissions.guard.ts</code>) — survey/project data is scoped by role and project assignment, not by organization, since there is only one organization.</p>
+  </section>
+
+  <section id="roles">
+    <div class="num">07</div>
+    <h2>User Roles &amp; Permissions</h2>
+    <table>
+      <tr><th>Role</th><th>Scope</th><th>Key permissions</th></tr>
+      <tr><td>Admin (CEO / Director)</td><td>Company-wide</td><td>Users, roles, all projects, system configuration</td></tr>
+      <tr><td>Project Manager</td><td>Project</td><td>Create/assign projects, view all rooms, approve submissions, trigger exports</td></tr>
+      <tr><td>Site Engineer / Surveyor</td><td>Assigned rooms</td><td>Full guided-survey capture, cannot override blocking validation flags</td></tr>
+      <tr><td>Designer</td><td>Project</td><td>View twin, request re-survey, initiate AI design-prep export, comment</td></tr>
+      <tr><td>Draftsperson / CAD Editor</td><td>Project</td><td>Edit generated CAD geometry, manage layers, finalize elevations/schedules</td></tr>
+      <tr><td>QA Reviewer</td><td>Project</td><td>Review AI-suggested data, accept/reject/edit before it enters the twin</td></tr>
+      <tr><td>Contractor</td><td>Project (view/comment)</td><td>View drawings/BOQ, comment, no edit rights</td></tr>
+      <tr><td>Client</td><td>Project (view-only portal)</td><td>View approved drawings/renders, digital sign-off only</td></tr>
+    </table>
+  </section>
+
+  <section id="mobile-wf">
+    <div class="num">08</div>
+    <h2>Mobile App Wireframes</h2>
+    <p class="section-sub">Key screens in the field app — simplified layout blocks, not final visual design.</p>
+    <div class="wireframes">
+      <div class="phone"><div class="screen-title">Room Dashboard</div>
+        <div class="row">Master Bedroom · 62% complete</div>
+        <div class="row">Living Room · ⚠ 2 flags</div>
+        <div class="row">Kitchen · not started</div>
+        <div class="btn">+ Add Room</div>
+      </div>
+      <div class="phone"><div class="screen-title">Guided Survey — Step 8/23</div>
+        <div class="row">Switchboards</div>
+        <div class="row">Wall: North · Height 1050mm</div>
+        <div class="row">Dist. from corner: 1200mm</div>
+        <div class="row">📷 Photo reference</div>
+        <div class="btn">Save &amp; Next</div>
+      </div>
+      <div class="phone"><div class="screen-title">Sketch Canvas</div>
+        <div class="row">📐 Snap-to-grid: ON</div>
+        <div class="row">🖊 Draw wall / door / window</div>
+        <div class="row">🧭 Set North</div>
+        <div class="btn">Run AI Recognition</div>
+      </div>
+      <div class="phone"><div class="screen-title">Validation Review</div>
+        <div class="row">⚠ Diagonal mismatch (1.4%)</div>
+        <div class="row">⚠ Window W-02 sill height missing</div>
+        <div class="row">✅ 41 items validated</div>
+        <div class="btn">Fix &amp; Re-check</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="web-wf">
+    <div class="num">09</div>
+    <h2>Web Dashboard Wireframes</h2>
+    <div class="grid grid-2">
+      <div class="card"><h4>Floor Plan Editor</h4><p class="muted">CAD canvas (SVG/WebGL) with layer toggle panel (walls / electrical / plumbing / furniture), dimension overlay, and an inline validation-flags sidebar linked to twin objects.</p></div>
+      <div class="card"><h4>Digital Twin 3D Viewer</h4><p class="muted">Three.js viewer of the room's twin — walk-through camera, object inspector panel showing source/confidence per element, photo cross-reference on click.</p></div>
+      <div class="card"><h4>Schedules &amp; BOQ</h4><p class="muted">Tabbed table view — Door / Window / Electrical / Lighting / Plumbing schedules, auto-generated BOQ with editable rates, export toolbar.</p></div>
+      <div class="card"><h4>Export Center</h4><p class="muted">Per-format export cards (PDF/DXF/DWG/IFC/CSV/XLSX) with generation status, version history, and a shareable client-portal link.</p></div>
+    </div>
+  </section>
+
+  <section id="ux">
+    <div class="num">10</div>
+    <h2>UX Flow</h2>
+    <div class="flow">
+      <div class="stage"><b>Project created</b>Client, address, team assigned</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Guided site survey</b>23-step workflow per room, offline-capable</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Sync + AI processing</b>Sketch/photo jobs run in background</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Validation review</b>QA reviewer / site engineer resolves flags</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>CAD generation</b>Plans, elevations, schedules auto-built</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Client approval</b>View-only portal, digital sign-off</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Handoff / execution</b>BOQ + exports to design/execution teams; twin updated as-built</div>
+    </div>
+    <div class="callout">Submission at the survey stage is <b>hard-blocked</b> if any required field or blocking validation flag remains — this is the single most important UX rule in the product, because it is what makes every downstream stage trustworthy.</div>
+  </section>
+
+  <section id="ai-pipeline">
+    <div class="num">11</div>
+    <h2>AI Processing Pipeline</h2>
+    <p class="section-sub">One orchestration pattern covers sketch recognition, photo/video analysis, and OCR: ingest → infer → score confidence → human review → merge into twin.</p>
+    <div class="flow">
+      <div class="stage"><b>Ingest</b>Media uploaded/queued from mobile sync</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Preprocess</b>Denoise, deskew, normalize, orient</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Parallel inference</b>Sketch model / photo-video model / OCR model run independently</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Confidence scoring</b>Every detection tagged with a score &amp; source</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Human-in-the-loop review</b>Accept / edit / reject in mobile or web UI</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Merge to twin</b>Only human-approved data becomes authoritative</div>
+    </div>
+    <p class="muted">Approved/corrected results are logged as training pairs, feeding periodic model retraining — the accuracy of the recognition models compounds with usage without ever letting an unverified inference reach the twin.</p>
+  </section>
+
+  <section id="ocr">
+    <div class="num">12</div>
+    <h2>OCR Pipeline</h2>
+    <div class="flow">
+      <div class="stage"><b>Image prep</b>Deskew, denoise, contrast normalize</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Text detection</b>Region proposals (DBNet/CRAFT-class detector)</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Recognition</b>Handwriting-tuned transformer OCR (printed + hand-lettered dimensions/notes)</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Dimension parsing</b>Regex + unit normalization (mm/cm/m/ft-in) into structured values</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Geometry association</b>Nearest-entity linking: is this text a room label, a dimension, or a note?</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Confidence + review</b>Low-confidence reads routed to human correction, feeding active learning</div>
+    </div>
+    <p class="muted">Managed cloud OCR (e.g. Google Vision / AWS Textract) is used as the day-one baseline for reliability; a self-hosted handwriting-tuned model is introduced once enough corrected labels exist to fine-tune it, reducing per-page cost at scale. A fully offline fallback (lightweight on-device OCR) supports zero-connectivity capture.</p>
+  </section>
+
+  <section id="cv">
+    <div class="num">13</div>
+    <h2>Computer Vision Pipeline</h2>
+
+    <h3>13.1 Sketch → CAD geometry</h3>
+    <div class="flow">
+      <div class="stage"><b>Cleanup</b>Noise removal, line straightening</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Line/edge detection</b>Classical (Hough) + learned line-segment detection</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Wall segmentation</b>Semantic segmentation (floor-plan-domain model)</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Corner snapping &amp; loop closure</b>Graph-based room-polygon closure</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Symbol detection</b>Doors/windows/stairs/columns via object detector</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Scale calibration</b>From detected dimension text or a known reference</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Vectorization</b>Editable CAD entities (walls, blocks) for review</div>
+    </div>
+
+    <h3>13.2 Photo &amp; video scene understanding</h3>
+    <div class="flow">
+      <div class="stage"><b>Object detection / segmentation</b>Fixtures, furniture, finishes (fine-tuned detector + zero-shot mask proposals)</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Depth estimation</b>Monocular depth model, or on-device AR depth (ARKit/ARCore) when available</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Camera pose / SfM</b>Multi-view pose recovery for photo sets</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Point-cloud reconstruction</b>Photogrammetry from multi-view captures</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Multi-view fusion</b>De-duplicate detections across frames via 3D projection</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Classification</b>Fixture type, material/finish tagging</div>
+    </div>
+
+    <div class="callout danger"><b>Non-negotiable rule:</b> every CV-derived measurement is a <i>suggestion</i> with a confidence score and an explicit "cv_suggested" source tag — it can accelerate capture, but only a manual or laser reading (or an explicitly confirmed CV suggestion) is treated as ground truth in the digital twin. This directly enforces the "never guess missing values" requirement from the product brief.</div>
+  </section>
+
+  <section id="cad">
+    <div class="num">14</div>
+    <h2>CAD Generation Pipeline</h2>
+    <div class="flow">
+      <div class="stage"><b>Validated twin</b>Rooms/walls/openings/MEP points confirmed, no blocking flags</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Geometry engine</b>Parametric 2D plan built from twin geometry (Shapely/GEOS-class kernel)</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Layer assignment</b>Discipline-based CAD layers (walls / electrical / plumbing / furniture / annotation)</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Dimension &amp; annotation</b>Auto-placed dimension lines, room labels, area callouts</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Elevation projection</b>Wall-mounted elements projected onto each vertical wall plane, to scale</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Schedule extraction</b>Door/window/electrical/lighting/plumbing schedules pulled directly from the twin</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Render/export</b>SVG/PNG preview, DXF/DWG, IFC (BIM), PDF sheet composition</div>
+    </div>
+    <p class="muted">Engine choices: <b>ezdxf</b> for DXF authoring, the <b>ODA File Converter</b> for DWG interoperability, <b>IfcOpenShell</b> for IFC/BIM authoring, <b>Shapely/GEOS</b> for 2D geometric operations, and headless-Chromium sheet composition (mirroring the PDF-generation pattern already used for quotations/BOQs in <code>appletree_erp_v2_1.html</code>) for high-fidelity PDF output.</p>
+  </section>
+
+  <section id="twin">
+    <div class="num">15</div>
+    <h2>Digital Twin Data Model</h2>
+    <p class="section-sub">Every physical or service element in a room is a <code>DigitalTwinObject</code> sharing one schema shape, discriminated by <code>category</code>.</p>
+    <pre><code>{
+  "id": "uuid",
+  "room_id": "uuid",
+  "category": "switchboard | socket | light_point | fan | ac_unit | tv_point |
+               plumbing_fixture | conduit | wall | door | window | beam | column |
+               niche | furniture_item | ceiling_element",
+  "geometry": { "type": "Point|LineString|Polygon", "coordinates": [...] },
+  "dimensions": { "width_mm": 0, "height_mm": 0, "depth_mm": 0 },
+  "material": "string", "finish": "string",
+  "coordinates": { "x": 0, "y": 0, "z": 0 },
+  "rotation_deg": 0,
+  "associated_photos": ["photo_id", "..."],
+  "installation_notes": "string",
+  "source": "manual | laser | cv_suggested | imported",
+  "confidence_score": 0.0,
+  "revision": 1,
+  "created_by": "user_id", "updated_at": "iso8601"
+}</code></pre>
+
+    <h3>Twin hierarchy</h3>
+    <pre><code>Project
+ └─ Floor
+     └─ Room
+         ├─ Walls[]        (with Beam/Column/Niche as sub-objects)
+         ├─ Openings[]     (Doors / Windows)
+         ├─ Ceiling
+         ├─ Electrical[]   (Switchboards / Sockets)
+         ├─ Lighting[]
+         ├─ HVAC[]
+         ├─ TVData[]
+         ├─ Plumbing[]
+         ├─ Conduits[]
+         └─ Furniture[]</code></pre>
+
+    <h3>AI design-prep export (for AI rendering engines)</h3>
+    <p class="muted">A derived, read-only export bundling room/wall/ceiling geometry, door/window/furniture/electrical/lighting/plumbing positions, material tags, and candidate camera positions — the structured "ground truth" a generative rendering engine conditions on, so the rendered image is locked to real dimensions instead of inferring them from a photo.</p>
+  </section>
+
+  <section id="validation">
+    <div class="num">16</div>
+    <h2>Measurement Validation Rules</h2>
+    <table>
+      <tr><th>Rule ID</th><th>Category</th><th>Logic</th><th>Resolution</th></tr>
+      <tr><td>VAL-010</td><td>Geometric consistency</td><td>Measured diagonal vs. Pythagorean diagonal from length/width — flag if Δ &gt; 1%</td><td>Re-measure or confirm override with note</td></tr>
+      <tr><td>VAL-011</td><td>Geometric consistency</td><td>Sum of wall lengths must enclose the room polygon within tolerance</td><td>Re-check individual wall entries</td></tr>
+      <tr><td>VAL-012</td><td>Geometric consistency</td><td>Interior angle sum = (n−2)×180° ± tolerance for an n-sided room</td><td>Flag non-square/irregular room for explicit confirmation</td></tr>
+      <tr><td>VAL-020</td><td>Completeness</td><td>All fields required by room type present before submission is allowed</td><td>Hard-block submit</td></tr>
+      <tr><td>VAL-030</td><td>Conflict detection</td><td>Door/window swing arcs must not overlap another opening or furniture bounding box</td><td>Reposition or confirm as-is with note</td></tr>
+      <tr><td>VAL-031</td><td>Conflict detection</td><td>Switchboard/socket height outside 300–1400mm FFL flagged as unusual</td><td>Confirm intentional (e.g. counter-height) or correct</td></tr>
+      <tr><td>VAL-032</td><td>Conflict detection</td><td>Duplicate socket at identical wall + distance + height</td><td>Merge or correct</td></tr>
+      <tr><td>VAL-040</td><td>Cross-reference</td><td>False ceiling height must be &lt; ceiling height</td><td>Correct entry</td></tr>
+      <tr><td>VAL-041</td><td>Cross-reference</td><td>Door height + threshold ≤ wall height</td><td>Correct entry</td></tr>
+      <tr><td>VAL-050</td><td>Never-guess policy</td><td>Any CV-suggested value lacking explicit human confirmation cannot enter the twin as authoritative</td><td>Requires accept/edit action</td></tr>
+    </table>
+    <div class="callout warn">Validation flags carry a severity: <b>blocking</b> (submission impossible), <b>warning</b> (submission allowed, downstream generation shows a caveat banner), or <b>info</b>. The rule engine never silently corrects a value — resolution is always a logged human action.</div>
+  </section>
+
+  <section id="stack">
+    <div class="num">17</div>
+    <h2>Technology Stack</h2>
+    <p class="section-sub">Phase 0 uses a deliberately tiny stack; everything else in this table only comes into play from Phase 1 onward.</p>
+    <table>
+      <tr><th>Layer</th><th>Choice</th><th>Why</th></tr>
+      <tr><td>Phase 0 client (offline)</td><td>Plain HTML/CSS/JavaScript, localStorage/IndexedDB, browser print-to-PDF</td><td>Zero infrastructure, zero ongoing cost, works on any laptop/tablet with no internet — identical approach to <code>appletree_erp_offline.html</code></td></tr>
+      <tr><td>Web frontend (Phase 1+)</td><td>Next.js + React + TypeScript, Tailwind, Three.js / react-three-fiber</td><td>SSR for dashboards, huge component ecosystem, strong WebGL support for the 3D twin viewer</td></tr>
+      <tr><td>Backend services</td><td>NestJS (Node/TypeScript) + Prisma ORM</td><td>The team already runs this exact stack in <code>manufacturing-erp/apps/backend</code> with working auth, RBAC guards, and an audit-log module — direct reuse, not a new paradigm</td></tr>
+      <tr><td>Mobile app</td><td>React Native (Expo) + offline SQLite (WatermelonDB/op-sqlite)</td><td>Cross-platform from one TypeScript codebase, consistent with the web/backend team's skillset; native modules for camera/AR/Bluetooth laser-meter integration</td></tr>
+      <tr><td>Database</td><td>PostgreSQL + PostGIS + pgvector</td><td>One database for structured data, geometry, and embeddings — avoids operating a separate vector DB; Prisma already the team's ORM of choice</td></tr>
+      <tr><td>Cache / queues</td><td>Redis</td><td>Session cache, job queue backing, real-time presence for collaborative editing</td></tr>
+      <tr><td>Object storage</td><td>AWS S3 / Cloudflare R2</td><td>Durable, cheap storage for photos/video/sketches/exports with CDN in front</td></tr>
+      <tr><td>Auth</td><td>Self-hosted JWT + refresh tokens (extends existing auth module)</td><td>Reuses the ERP's proven auth code directly rather than adding a third-party auth vendor</td></tr>
+      <tr><td>OCR</td><td>Google Cloud Vision / AWS Textract (baseline) → self-hosted TrOCR fine-tune (scale) → on-device fallback</td><td>Managed reliability first, cost-optimized once labeled data exists, offline-capable at the edge</td></tr>
+      <tr><td>Computer vision models</td><td>YOLOv8-class detector, Segment Anything (SAM), MiDaS/ZoeDepth (or ARKit/ARCore depth), COLMAP-class SfM, a CubiCasa5k-fine-tuned segmentation model for sketches</td><td>Best-in-class open, fine-tunable building blocks for each sub-task rather than one monolithic model</td></tr>
+      <tr><td>Multimodal reasoning</td><td>A current Claude model (e.g. Claude Sonnet 5) as a reasoning layer over structured CV/OCR output</td><td>Used for note transcription assistance, room-name inference, and explaining validation flags in plain language — never for geometry itself, which stays rule- and measurement-driven</td></tr>
+      <tr><td>CAD / BIM engine</td><td>ezdxf (DXF), ODA File Converter (DWG), IfcOpenShell (IFC), Shapely/GEOS (2D geometry)</td><td>Mature open-source/industry-standard tooling for construction-grade file interoperability</td></tr>
+      <tr><td>PDF generation</td><td>Headless Chromium (Puppeteer) composing HTML/SVG plan sheets</td><td>Matches the PDF pattern already proven for BOQs/quotations in the existing ERP</td></tr>
+      <tr><td>Cloud infra</td><td>AWS (EKS, S3, SQS/EventBridge, CloudFront) or GCP equivalent</td><td>Managed Kubernetes + object storage + queueing with mature GPU instance support for CV workers</td></tr>
+      <tr><td>APIs</td><td>REST (OpenAPI 3) + narrow GraphQL for nested twin reads + WebSocket for job status/collab</td><td>REST for simplicity/tooling, GraphQL only where deep nested reads would otherwise cause over-fetching</td></tr>
+      <tr><td>Deployment</td><td>Docker, Kubernetes, GitHub Actions CI/CD, Terraform</td><td>Standard, portable, avoids cloud lock-in for a product that may need on-prem/enterprise deployment later</td></tr>
+      <tr><td>Security</td><td>Encryption at rest/in transit, Postgres RLS multi-tenancy, audit logging (reused module), DPDP/GDPR-aligned data handling</td><td>Client floor plans and home photos are sensitive; this is a trust-critical product for a services industry</td></tr>
+    </table>
+  </section>
+
+  <section id="roadmap">
+    <div class="num">18</div>
+    <h2>Development Roadmap</h2>
+    <div class="flow">
+      <div class="stage"><b>Phase 0 — Offline Foundation</b>Standalone offline HTML tool: guided survey, all-manual entry, local validation, local 2D plan/elevation drawing, PDF/JSON export — no backend</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Phase 1 — Team &amp; Cloud Sync</b>Wire into the ERP backend: multi-device sync, roles/permissions, multi-project dashboard, DXF export</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Phase 2 — Sketch AI</b>Hand-sketch → editable CAD draft</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Phase 3 — Vision AI</b>Photo/video fixture &amp; surface recognition</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Phase 4 — Documentation</b>Elevations, schedules, BOQ/QTO, IFC/BIM export</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Phase 5 — AI Render Prep</b>Structured dataset export &amp; render-partner integration</div>
+      <div class="arrow">→</div>
+      <div class="stage"><b>Phase 6 — Advanced Capture</b>LiDAR/depth ingestion, AR-guided capture, plugin ecosystem</div>
+    </div>
+  </section>
+
+  <section id="mvp">
+    <div class="num">19</div>
+    <h2>MVP Definition</h2>
+    <p class="section-sub">The real MVP is Phase 0: a fully offline, manual-entry tool. Everything cloud/AI-related is deliberately deferred past it.</p>
+    <div class="grid grid-2">
+      <div class="card"><h4>In scope (Phase 0)</h4><ul class="muted">
+        <li>Runs entirely offline as a single self-contained browser tool — no server, no login, no internet required, same pattern as <code>appletree_erp_offline.html</code></li>
+        <li>100% manual entry: every measurement, wall, opening, electrical/plumbing/HVAC point typed in by the site engineer (a Bluetooth laser meter can feed numbers in later, but isn't required)</li>
+        <li>Residential project type, guided 23-step survey checklist</li>
+        <li>Core validation rule set (geometric consistency + completeness + conflict detection), all computed client-side</li>
+        <li>2D floor plan + wall elevation generation, drawn client-side</li>
+        <li>Door / window / electrical schedules</li>
+        <li>PDF export (browser print) and digital-twin JSON export/backup</li>
+        <li>Data stored locally on the device used for the survey</li>
+      </ul></div>
+      <div class="card"><h4>Explicitly out of scope (deferred to Phase 1+)</h4><ul class="muted">
+        <li>Multi-device sync / cloud storage — one device holds one project until Phase 1</li>
+        <li>Roles/permissions beyond "whoever has the device" — real RBAC arrives with the cloud phase</li>
+        <li>Hand-sketch CV recognition</li>
+        <li>Photo/video CV recognition</li>
+        <li>DWG/BIM/IFC export (DXF/PDF only for now)</li>
+        <li>AI rendering integration</li>
+        <li>LiDAR / depth-scan ingestion</li>
+        <li>Any external/client-facing self-serve access beyond the view-only portal</li>
+      </ul></div>
+    </div>
+    <div class="callout"><b>MVP success criterion:</b> a site engineer completes the guided survey for a 3BHK apartment (≈10 rooms) in under one working day, entirely offline on a single device, and the tool generates a validated 2D floor plan and wall elevations within ±1% of an independent laser re-survey — with zero silently-guessed values, and zero dependency on connectivity or a backend.</div>
+  </section>
+
+  <section id="phases">
+    <div class="num">20</div>
+    <h2>Phase-wise Feature Plan</h2>
+    <table>
+      <tr><th>Phase</th><th>Duration</th><th>Key features</th><th>Exit criteria</th></tr>
+      <tr><td>0 — Offline Foundation</td><td>2–4 weeks</td><td>Standalone offline HTML tool: guided survey UI, manual entry for every field, client-side validation, client-side 2D plan/elevation drawing, PDF/JSON export, local browser storage — no server at all</td><td>A site engineer surveys one real room fully offline and gets a validated plan/elevation with zero backend involved</td></tr>
+      <tr><td>1 — Team &amp; Cloud Sync</td><td>10–14 weeks</td><td>Wire into <code>manufacturing-erp/apps/backend</code>: project/floor/room persisted centrally, multi-device sync, roles/permissions, DXF export, optional Bluetooth laser integration</td><td>Two site engineers survey the same project from different devices and see each other's data</td></tr>
+      <tr><td>2 — Sketch AI</td><td>8–10 weeks</td><td>Sketch upload → wall/door/window suggestion → human review UI</td><td>≥85% of wall segments correctly proposed on a held-out sketch set</td></tr>
+      <tr><td>3 — Vision AI</td><td>10–12 weeks</td><td>Photo/video fixture &amp; finish detection, multi-view fusion</td><td>≥80% precision on furniture/fixture detection on pilot data</td></tr>
+      <tr><td>4 — Documentation</td><td>8 weeks</td><td>Elevations at full fidelity, BOQ/QTO automation, IFC/BIM export</td><td>DWG/IFC round-trips cleanly through AutoCAD/Revit on a test file</td></tr>
+      <tr><td>5 — AI Render Prep</td><td>6 weeks</td><td>Structured dataset export, first render-partner integration</td><td>A generated render matches twin dimensions within visual tolerance</td></tr>
+      <tr><td>6 — Advanced Capture</td><td>Ongoing</td><td>LiDAR/depth ingestion, AR-guided capture, Revit/AutoCAD plugin</td><td>Roadmap-driven, post product-market fit</td></tr>
+    </table>
+  </section>
+
+  <section id="timeline">
+    <div class="num">21</div>
+    <h2>Estimated Development Timeline</h2>
+    <p class="section-sub">Phase 0 alone (the useful, standalone offline tool) is weeks, not months. Through Phase 4, built by a small in-house/AI-assisted team supplemented by contract specialists for CV and CAD/BIM work (see §22): <b>≈ 12–15 months</b> total — longer than a fully-staffed team would take, but at a fraction of the cost, and with the same phase gates so nothing ships before it's validated.</p>
+    <table>
+      <tr><th>Phase</th><th>Start</th><th>End (cumulative)</th></tr>
+      <tr><td>0 — Offline Foundation</td><td>Month 0</td><td>Month 0.75 (≈3 weeks)</td></tr>
+      <tr><td>1 — Team &amp; Cloud Sync</td><td>Month 0.75</td><td>Month 4</td></tr>
+      <tr><td>2 — Sketch AI</td><td>Month 4</td><td>Month 6.5</td></tr>
+      <tr><td>3 — Vision AI</td><td>Month 6</td><td>Month 9 (overlaps Phase 2 tail)</td></tr>
+      <tr><td>4 — Documentation</td><td>Month 9</td><td>Month 11</td></tr>
+      <tr><td>5 — AI Render Prep</td><td>Month 11</td><td>Month 12.5</td></tr>
+    </table>
+    <div class="callout"><b>You can stop at any phase gate.</b> Phase 0 alone is already a complete, usable replacement for paper sketches. Phases 1–5 are only worth doing if the team wants multi-device access, then AI-assisted capture, then BIM export — each is a separate decision, not a package deal.</div>
+  </section>
+
+  <section id="team">
+    <div class="num">22</div>
+    <h2>Recommended Team Structure</h2>
+    <p class="section-sub">This is an internal tool, not a funded product build — the team is intentionally lean, reusing Appletree's own staff and existing ERP development effort rather than hiring a dedicated product organization.</p>
+    <table>
+      <tr><th>Role</th><th>Count</th><th>Notes</th></tr>
+      <tr><td>Lead Developer / Architect</td><td>1</td><td>Owns backend, mobile, and web work; extends the existing NestJS/Prisma ERP codebase directly; AI-assisted development (as used to build the rest of the ERP) keeps this to one person through Phase 1</td></tr>
+      <tr><td>Contract Computer Vision Specialist</td><td>Project/part-time, Phase 2–3 only</td><td>Sketch &amp; photo/video recognition models — narrow, time-boxed engagement rather than a full-time hire</td></tr>
+      <tr><td>Contract CAD/BIM Specialist</td><td>Project/part-time, Phase 4 only</td><td>DXF/DWG/IFC pipeline — brought in only for the documentation-export phase</td></tr>
+      <tr><td>Site Engineers &amp; Designers (Appletree staff)</td><td>Existing team</td><td>Use the guided survey/workflow each phase and report friction — the real usability test, at no incremental cost since they're already doing this work on paper today</td></tr>
+      <tr><td>CEO / Project Sponsor</td><td>Part-time</td><td>Prioritization and go/no-go on each phase gate</td></tr>
+    </table>
+    <p class="muted">Core team through Phase 4: <b>1 lead developer + short contract engagements</b>, not a standing 10+ person org.</p>
+  </section>
+
+  <section id="cost">
+    <div class="num">23</div>
+    <h2>Estimated Development Cost</h2>
+    <p class="section-sub">Planning-stage estimate only, not a vendor quote — laid out phase by phase, since each phase is an independent spend decision, not a package deal. In ₹ INR.</p>
+
+    <table>
+      <tr><th>Phase</th><th>Cash cost</th><th>Why</th></tr>
+      <tr><td>0 — Offline Foundation</td><td><b>₹0</b></td><td>Single offline HTML tool, built in-house the same way as the rest of the ERP — no server, no cloud bill, no contractor, no hardware required (manual number entry)</td></tr>
+      <tr><td>1 — Team &amp; Cloud Sync</td><td>₹15k – ₹40k/month (hosting only)</td><td>First point any recurring cost appears — hosting alongside the existing ERP backend, once you want multi-device access. Optional: Bluetooth laser meters, ₹3k–₹8k per unit one-time, if you want to skip manual typing</td></tr>
+      <tr><td>2 — Sketch AI</td><td>₹2L – ₹5L total + ₹10k–₹30k/month API usage</td><td>Narrow, time-boxed contract CV/ML specialist, plus managed OCR/CV API usage once the feature is live</td></tr>
+      <tr><td>3 — Vision AI</td><td>Included in the Phase 2 contractor engagement + ongoing API usage above</td><td>Same specialist/engagement typically covers both sketch and photo/video recognition</td></tr>
+      <tr><td>4 — Documentation (BIM/IFC)</td><td>₹1.5L – ₹4L total + ODA DWG SDK license</td><td>Contract CAD/BIM specialist, brought in only if DWG/IFC export beyond plain DXF is actually needed</td></tr>
+    </table>
+
+    <div class="callout"><b>The honest answer to "what does this cost me":</b> <b>₹0</b> to get a working, offline, manually-entered survey tool into a site engineer's hands (Phase 0). Cost only starts once you choose to go further — roughly <b>₹15k–₹40k/month</b> the moment you want it synced across devices/team (Phase 1), and only <b>₹10L–₹25L total</b> across ~12–15 months if you eventually pursue every AI/CV/BIM phase on top. Each phase is a separate go/no-go — nothing commits you to the phases after it.</div>
+  </section>
+
+  <section id="risks">
+    <div class="num">24</div>
+    <h2>Risks and Mitigation</h2>
+    <table>
+      <tr><th>Risk</th><th>Impact</th><th>Mitigation</th></tr>
+      <tr><td>CV/AI accuracy insufficient for construction-grade tolerance</td><td><span class="pill high">High</span></td><td>CV outputs are always "suggested," never authoritative; MVP ships on manual/laser measurement only, CV is additive later</td></tr>
+      <tr><td>Hand-sketch variability breaks sketch-to-CAD recognition</td><td><span class="pill med">Medium</span></td><td>Bootstrap the training set from Appletree's own real sketches; human-in-the-loop corrections feed active learning from day one</td></tr>
+      <tr><td>DWG/IFC interoperability with legacy CAD/BIM tools</td><td><span class="pill med">Medium</span></td><td>License the ODA converter early; build round-trip test suites against AutoCAD/Revit</td></tr>
+      <tr><td>Client data privacy (home photos, floor plans)</td><td><span class="pill high">High</span></td><td>Encryption at rest/in transit, role-based access via the existing PermissionsGuard, DPDP-aligned retention &amp; deletion policy</td></tr>
+      <tr><td>Field-team adoption resistance to a 23-step guided workflow</td><td><span class="pill med">Medium</span></td><td>Offline-first, Bluetooth laser integration to cut manual typing, roll out with Appletree's own site engineers as the design partners from day one — they're the entire user base, so their feedback directly shapes each phase</td></tr>
+      <tr><td>CV/CAD contractor availability for the narrow, time-boxed engagements in Phase 2–4</td><td><span class="pill med">Medium</span></td><td>Scope each contract engagement tightly (sketch recognition; DXF/DWG/IFC pipeline) so it can be picked up by any qualified freelancer/consultancy, not a single irreplaceable specialist</td></tr>
+      <tr><td>Scope creep given the breadth of this specification</td><td><span class="pill med">Medium</span></td><td>Strict MVP discipline (§19) and phase gates (§20) — no module ships before its phase; single lead developer keeps scope naturally bounded</td></tr>
+    </table>
+  </section>
+
+  <section id="future">
+    <div class="num">25</div>
+    <h2>Future Enhancements</h2>
+    <div class="grid grid-2">
+      <div class="card"><h4>BIM</h4><p class="muted">Full two-way Revit plugin, clash detection, 4D (schedule-linked) and 5D (cost-linked) BIM.</p></div>
+      <div class="card"><h4>LiDAR</h4><p class="muted">iPhone/iPad LiDAR and Android ToF ingestion for point-cloud-grade accuracy, reducing reliance on photogrammetry.</p></div>
+      <div class="card"><h4>AR</h4><p class="muted">On-site AR overlay of the digital twin on the real room during survey ("you're missing a wall here"), plus AR furniture-placement preview for clients.</p></div>
+      <div class="card"><h4>VR</h4><p class="muted">Immersive walkthrough of the twin plus AI-rendered design for client presentations and remote sign-off.</p></div>
+      <div class="card"><h4>Generative AI rendering</h4><p class="muted">Geometry/segmentation-conditioned generative rendering pinned to the digital twin — AI interiors for client presentations that are guaranteed to match real dimensions.</p></div>
+      <div class="card"><h4>Furniture &amp; material catalog linking</h4><p class="muted">Link Appletree's own product/item master (already in <code>appletree_erp_v2_1.html</code>) to twin objects with real SKU dimensions, so furniture placement checks fit against actual stocked items.</p></div>
+    </div>
+  </section>
+
+  <footer class="doc-footer">
+    SiteTwin — Internal Engineering Blueprint · Built exclusively for Appletree Interiors, not for external sale or licensing · This is a planning document — cost, timeline, and contractor estimates are order-of-magnitude and should be validated before budget commitment.
+  </footer>
+
+</main>
+</body>
+</html>

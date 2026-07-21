@@ -12,21 +12,30 @@ enum Role {
   ADMIN
   DESIGNER
   PRODUCTION_MANAGER
-  CUTTING_MASTER
-  FACTORY_STAFF
+  FACTORY_USER
+  VIEWER
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
+  id           String       @id @default(uuid())
+  email        String       @unique
+  passwordHash String?
   fullName     String
   role         Role
-  isActive     Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  isActive     Boolean      @default(true)
+  authProvider AuthProvider @default(LOCAL)
+  googleId     String?      @unique
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 
-  refreshTokens RefreshToken[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  auditLogs           AuditLog[]
 
   @@map("users")
 }
@@ -36,11 +45,59 @@ model RefreshToken {
   userId     String
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   tokenHash  String
+  userAgent  String?
+  ipAddress  String?
   expiresAt  DateTime
   revokedAt  DateTime?
   createdAt  DateTime  @default(now())
+  lastUsedAt DateTime  @default(now())
 
   @@index([userId])
   @@index([tokenHash])
   @@map("refresh_tokens")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("password_reset_tokens")
+}
+
+/// Short-lived, single-use ticket exchanged for real tokens after a successful
+/// Google OAuth callback, so the JWT pair is never placed in a redirect URL.
+model OAuthLoginTicket {
+  id        String    @id @default(uuid())
+  code      String    @unique
+  userId    String
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([code])
+  @@map("oauth_login_tickets")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  success   Boolean
+  ipAddress String?
+  userAgent String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
 }
