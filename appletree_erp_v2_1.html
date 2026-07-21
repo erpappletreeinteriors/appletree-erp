@@ -9261,12 +9261,12 @@ function checkDueDateAlerts(){
     if(due<now && !j.overdueNotified){
       const p=DB.products.find(x=>x.id===j.productId);
       pushNotification({forRole:'Factory Supervisor', title:'Manufacturing job overdue',
-        message:`${p?p.name:j.jobNo} was due ${fmtDate(j.dueDate)} and is still ${j.status}.`, link:'mfgjobs'});
+        message:`${p?p.name:j.jobNo} was due ${fmtDate(j.dueDate)} and is still ${j.status}.`, link:{page:'mfgjobs'}});
       j.overdueNotified=true; changed=true;
     } else if(_isDueSoon(j.dueDate,now) && !j.dueSoonNotified){
       const p=DB.products.find(x=>x.id===j.productId);
       pushNotification({forRole:'Factory Supervisor', title:'Manufacturing job due soon',
-        message:`${p?p.name:j.jobNo} is due ${fmtDate(j.dueDate)} — ${j.status}.`, link:'mfgjobs'});
+        message:`${p?p.name:j.jobNo} is due ${fmtDate(j.dueDate)} — ${j.status}.`, link:{page:'mfgjobs'}});
       j.dueSoonNotified=true; changed=true;
     }
   });
@@ -9277,11 +9277,11 @@ function checkDueDateAlerts(){
     const due = new Date(p.expectedDate);
     if(due<now && !p.overdueNotified){
       pushNotification({forRole:'Procurement', title:'Purchase order overdue',
-        message:`PO ${p.poNo||p.id} to ${p.vendor||'vendor'} was expected ${fmtDate(p.expectedDate)} and hasn't been received.`, link:'purchaseorders'});
+        message:`PO ${p.poNo||p.id} to ${p.vendor||'vendor'} was expected ${fmtDate(p.expectedDate)} and hasn't been received.`, link:{page:'purchaseorders'}});
       p.overdueNotified=true; changed=true;
     } else if(_isDueSoon(p.expectedDate,now) && !p.dueSoonNotified){
       pushNotification({forRole:'Procurement', title:'Purchase order due soon',
-        message:`PO ${p.poNo||p.id} to ${p.vendor||'vendor'} is expected ${fmtDate(p.expectedDate)}.`, link:'purchaseorders'});
+        message:`PO ${p.poNo||p.id} to ${p.vendor||'vendor'} is expected ${fmtDate(p.expectedDate)}.`, link:{page:'purchaseorders'}});
       p.dueSoonNotified=true; changed=true;
     }
   });
