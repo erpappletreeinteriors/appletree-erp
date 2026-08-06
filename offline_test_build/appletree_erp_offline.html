@@ -9593,6 +9593,7 @@ function openPayBillModal(billId){
 }
 
 function savePayBill(){
+  if(!requireRole('CEO','Admin','Accounts','Cashier')){ toast('You do not have permission to record payments.','err'); return; }
   if(!_currentModal||!_currentModal.startsWith('paybill_')) return;
   const billId = _currentModal.replace('paybill_','');
   const b = DB.bills.find(x=>x.id===billId); if(!b) return;
@@ -15714,6 +15715,7 @@ function poUpdateTotal(po){
 }
 
 function poSave(navigateBack){
+  if(!roleCan('edit','Inventory')){ toast('You do not have permission to edit purchase orders.','err'); return; }
   const po = (DB.purchaseOrders||[]).find(x=>x.id===_poId); if(!po) return;
   po.poNo        = document.getElementById('po-no')?.value || po.poNo;
   po.date        = document.getElementById('po-date')?.value || po.date;
@@ -15807,6 +15809,7 @@ function poRenderReceiveRows(po){
 }
 
 function poReceiveGoods(){
+  if(!roleCan('edit','Inventory')){ toast('You do not have permission to receive goods against this purchase order.','err'); return; }
   const po = (DB.purchaseOrders||[]).find(x=>x.id===_poId); if(!po) return;
   const today = new Date().toISOString().slice(0,10);
   let anyReceived = false;
@@ -25245,6 +25248,12 @@ function saveMatRequestGeneral(reason){
 let _billRowId=0;
 
 function openBillBuilder(billId){
+  // Full-page/overlay builder, outside openModal() — needs its own gate,
+  // same reasoning as openPOBuilder()/convertEstimationToQuotation().
+  if(!roleCan(billId?'edit':'create', 'Finance')){
+    toast(`You do not have permission to ${billId?'edit':'create'} vendor bills.`,'err');
+    return;
+  }
   seedVendorLists();
   const today = new Date().toISOString().slice(0,10);
   document.getElementById('bb-date').value = today;
@@ -25389,6 +25398,8 @@ function _bbUpdateVarianceNote(){
 }
 
 function saveBillBuilder(){
+  const editIdGate = document.getElementById('bb-edit-id')?.value;
+  if(!roleCan(editIdGate?'edit':'create', 'Finance')){ toast(`You do not have permission to ${editIdGate?'edit':'create'} vendor bills.`,'err'); return; }
   const vendor=document.getElementById('bb-vendor').value.trim();
   if(!vendor){showToast('Enter vendor name','err');return;}
   ensureVendorExists(vendor);
