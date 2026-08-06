@@ -6225,6 +6225,7 @@ function qcProjectStats(projectId){
 }
 
 function openQcChecklist(projectId){
+  if(!roleCan('edit','Operations')){ toast('You do not have permission to open the QC checklist.','err'); return; }
   ensureQcChecklist(projectId);
   const proj = DB.projects.find(p=>p.id===projectId);
   window._qcChecklistProjId = projectId;
@@ -6267,6 +6268,7 @@ function _qcIsOverdue(item){
 }
 
 function setQcItemStatus(itemId, status){
+  if(!roleCan('edit','Operations')){ toast('You do not have permission to update the QC checklist.','err'); return; }
   const item = DB.qcChecklist.find(c=>c.id===itemId);
   if(!item) return;
   item.status = status;
@@ -6280,6 +6282,7 @@ function setQcItemStatus(itemId, status){
 }
 
 function setQcItemField(itemId, field, value){
+  if(!roleCan('edit','Operations')){ toast('You do not have permission to update the QC checklist.','err'); return; }
   const item = DB.qcChecklist.find(c=>c.id===itemId);
   if(!item) return;
   item[field] = value;
