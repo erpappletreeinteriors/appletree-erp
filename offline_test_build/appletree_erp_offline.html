@@ -1452,7 +1452,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <select class="inp inp-sm" id="exp-proj-f" onchange="filterCol('tb-expenses',1,this.value)"><option value="">All Projects</option></select>
       <select class="inp inp-sm" onchange="filterCol('tb-expenses',3,this.value)">
         <option value="">All Categories</option>
-        <option>Transportation</option><option>Work Exp</option><option>Scaffolding</option><option>CNC Work</option><option>Travelling</option><option>Accommodation</option><option>Miscellaneous</option>
+        <option>Transportation</option><option>Installation</option><option>Work Exp</option><option>Scaffolding</option><option>CNC Work</option><option>Travelling</option><option>Accommodation</option><option>Miscellaneous</option>
       </select>
       <span style="margin-left:auto;font-size:11px;color:var(--mid);">Total: <strong id="exp-total">₹0</strong></span>
     </div>
@@ -3863,6 +3863,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <button class="budget-tab" onclick="switchBudgetTab('costs',this)">💰 Other Costs</button>
       <button class="budget-tab" onclick="switchBudgetTab('itemcosts',this)">🏷️ Item Costs</button>
       <button class="budget-tab" onclick="switchBudgetTab('variance',this)">📊 Variance</button>
+      <button class="budget-tab" onclick="switchBudgetTab('stdcost',this)">🎯 Standard Cost</button>
       <button class="budget-tab" onclick="switchBudgetTab('milestones',this)">💳 Milestones</button>
       <button class="budget-tab" onclick="switchBudgetTab('summary',this)">📋 Summary</button>
     </div>
@@ -3952,6 +3953,13 @@ textarea.inp{resize:vertical;min-height:72px;}
     <div id="budget-tab-variance" class="budget-tab-content" style="display:none;padding:14px 20px">
       <div id="variance-content">
         <div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">Save the BOM first, then open this tab to view planned vs actual variance.</div>
+      </div>
+    </div>
+
+    <!-- ── Standard Cost Tab (Standard Costing — Estimate → Freeze → Variance → Profitability) ── -->
+    <div id="budget-tab-stdcost" class="budget-tab-content" style="display:none;padding:14px 20px">
+      <div id="stdcost-content">
+        <div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">Loading…</div>
       </div>
     </div>
 
@@ -4337,6 +4345,7 @@ const DB = {
   accountingExportLog:[],
   journalEntries:[],
   projectBudgets:[],
+  standardCostSnapshots:[],
   pendingUsers:[],
   materialRequests:[],
   bankEntries:[],
@@ -12479,7 +12488,7 @@ function openModal(type){
   // see expCatToggleNew() and saveExpense().
   const expCatSel = document.getElementById('f-exp-cat');
   if(expCatSel){
-    if(!DB.expenseCategories||!DB.expenseCategories.length) DB.expenseCategories=['Transportation','Work Exp','Scaffolding','CNC Work','Travelling','Accommodation','Paint Work','Miscellaneous'];
+    if(!DB.expenseCategories||!DB.expenseCategories.length) DB.expenseCategories=['Transportation','Installation','Work Exp','Scaffolding','CNC Work','Travelling','Accommodation','Paint Work','Miscellaneous'];
     const cur = expCatSel.value;
     expCatSel.innerHTML = DB.expenseCategories.map(c=>`<option>${escHtml(c)}</option>`).join('')+'<option value="__new__">+ Add New Category…</option>';
     if(cur) expCatSel.value = cur;
@@ -13683,7 +13692,7 @@ function renderFixedAssetsFinancing(){
 // silently under-counted.
 // ══════════════════════════════════════════════
 const BUDGET_DEPTS = ['Factory','Site','Office','Management','Design','Accounts'];
-const BUDGET_EXP_CATS = ['Transportation','Work Exp','Scaffolding','CNC Work','Travelling','Accommodation','Paint Work','Miscellaneous'];
+const BUDGET_EXP_CATS = ['Transportation','Installation','Work Exp','Scaffolding','CNC Work','Travelling','Accommodation','Paint Work','Miscellaneous'];
 function onBudgetScopeChange(){
   const scope = document.getElementById('f-bud-scope')?.value;
   const targetSel = document.getElementById('f-bud-target');
@@ -17321,8 +17330,16 @@ function convertQuotToProject(qId){
   q.projectId = code;
   q.status    = q.status === 'Draft' ? 'Approved' : q.status;
   saveDB();
+
+  // Standard Costing: freeze the Estimate → Project handoff as v1 Standard
+  // Cost, silently skipped when there's no linked Estimation Request costing
+  // (a project created from a self-initiated quotation has no internal cost
+  // breakdown to freeze — honest gap, not fabricated).
+  const stdSnap = freezeStandardCost(code, {silent:true, note:'Auto-frozen at project creation (Won → Project)'});
+
   toast(`Project ${code} created with ${prodSeq} products from BOQ`
     +(bomsAutoBuilt?` — ${bomsAutoBuilt} BOM${bomsAutoBuilt!==1?'s':''} auto-filled from estimation data (editable)`:'')
+    +(stdSnap?` — Standard Cost frozen at ${INR(stdSnap.total)}`:'')
     +' ✓', 'ok');
   renderQuotations();
 }
@@ -23278,6 +23295,7 @@ function switchBudgetTab(tab, btn){
   document.getElementById('budget-tab-'+tab).style.display = 'block';
   if(tab==='summary') updateBudgetSummary();
   if(tab==='variance') renderVarianceTab();
+  if(tab==='stdcost') renderStandardCostTab();
   if(tab==='milestones') renderBomMilestoneTab();
   if(tab==='itemcosts'){const pid=document.getElementById('budget-project-id').value;const bud=DB.projectBudgets.find(b=>b.projectId===pid);_renderItemCostRows(pid,bud);}
 }
@@ -23872,6 +23890,183 @@ function _updateItemCostTotal(productId){
 }
 
 // ── VARIANCE TAB ─────────────────────────────────────────────
+// ══════════════════════════════════════════════
+//  STANDARD COSTING (Phase 1 — Estimator → Approval → Freeze →
+//  Project Execution → Automatic Actual Cost Collection → Variance →
+//  Profitability). Standard = internal COST basis frozen from the
+//  originating Estimation Request's costing (er.costing), never the
+//  marked-up quotation selling price. Actual is derived live from
+//  existing DB.issues/purchases/labour/expenses — no new data entry
+//  anywhere, same "derive from source transactions" principle as the
+//  Financial Engine's GL/Trial Balance.
+//
+//  Honest scope note: the templated per-item costing engine
+//  (calcCosting()) bundles Transportation/Installation labour rates
+//  into a single labourCost figure with no separate breakdown exposed
+//  on its result — so costed-item Transportation/Installation cost is
+//  folded into the Labour standard bucket. Only ad-hoc Estimation
+//  Request expenses (expenses.transport/install/finish/other) populate
+//  the Transportation/Installation/Other standard buckets. Stated on
+//  the UI, not silently approximated.
+// ══════════════════════════════════════════════
+function _r2(n){ return Math.round((n||0)*100)/100; }
+function _stdCostFromEstimation(er){
+  if(!er || !er.costing) return null;
+  const c = er.costing;
+  const costedMat = (c.costedItems||[]).reduce((s,ci)=>s+((ci.result?.materialCost||0)+(ci.result?.hardwareCost||0)),0);
+  const costedLab = (c.costedItems||[]).reduce((s,ci)=>s+(ci.result?.labourCost||0),0);
+  const material = (c.matTotal||0) + costedMat;
+  const labour   = (c.labTotal||0) + costedLab;
+  const transport= (c.expenses?.transport||0);
+  const install  = (c.expenses?.install||0);
+  const other    = (c.expenses?.finish||0) + (c.expenses?.other||0);
+  const total    = material+labour+transport+install+other;
+  return {material, labour, transport, install, other, total};
+}
+function _sourceEstimationForProject(projectId){
+  const proj = DB.projects.find(p=>p.id===projectId); if(!proj) return null;
+  const q = DB.quotations.find(x=>x.id===proj.quotationId); if(!q || !q.estimationRequestId) return null;
+  return DB.estimationRequests.find(x=>x.id===q.estimationRequestId) || null;
+}
+function freezeStandardCost(projectId, opts){
+  opts = opts||{};
+  const er = _sourceEstimationForProject(projectId);
+  const std = _stdCostFromEstimation(er);
+  if(!std){
+    if(!opts.silent) toast('No linked Estimation Request costing found — cannot freeze a Standard Cost for this project.','err');
+    return null;
+  }
+  const existing = DB.standardCostSnapshots.filter(s=>s.projectId===projectId);
+  const version = existing.length ? Math.max(...existing.map(s=>s.version))+1 : 1;
+  const snap = {
+    id:'SCS'+uid(), projectId, version,
+    frozenAt:new Date().toISOString(), frozenBy:_currentUser?.name||'System',
+    source:'estimation', sourceId:er.id,
+    material:_r2(std.material), labour:_r2(std.labour), transport:_r2(std.transport),
+    install:_r2(std.install), other:_r2(std.other), total:_r2(std.total),
+    note: opts.note||''
+  };
+  DB.standardCostSnapshots.push(snap);
+  saveDB();
+  logActivity('standardCost', projectId, version===1?'Standard Cost Frozen':'Standard Cost Re-frozen',
+    `Version ${version} — ${INR(snap.total)} (Material ${INR(snap.material)}, Labour ${INR(snap.labour)}, Transport ${INR(snap.transport)}, Install ${INR(snap.install)}, Other ${INR(snap.other)})`);
+  return snap;
+}
+function standardCostHistory(projectId){
+  return DB.standardCostSnapshots.filter(s=>s.projectId===projectId).sort((a,b)=>b.version-a.version);
+}
+function latestStandardCost(projectId){
+  return standardCostHistory(projectId)[0]||null;
+}
+function projectActualCostBreakdown(projectId){
+  const issued  = DB.issues.filter(i=>i.projectId===projectId).reduce((s,i)=>s+i.amount,0);
+  const returned= DB.returns.filter(r=>r.projectId===projectId).reduce((s,r)=>s+r.value,0);
+  const dirPurch= DB.purchases.filter(x=>x.projectId===projectId&&x.destination==='Project Direct').reduce((s,x)=>s+x.amount,0);
+  const material= issued-returned+dirPurch;
+  const labour  = DB.labour.filter(l=>l.projectId===projectId).reduce((s,l)=>s+l.amount,0);
+  const transport=DB.expenses.filter(e=>e.projectId===projectId&&e.category==='Transportation').reduce((s,e)=>s+e.amount,0);
+  const install = DB.expenses.filter(e=>e.projectId===projectId&&e.category==='Installation').reduce((s,e)=>s+e.amount,0);
+  const other   = DB.expenses.filter(e=>e.projectId===projectId&&e.category!=='Transportation'&&e.category!=='Installation').reduce((s,e)=>s+e.amount,0);
+  const total   = material+labour+transport+install+other;
+  return {material,labour,transport,install,other,total};
+}
+// variance = standard - actual (positive = under budget/favorable for a
+// cost, negative = over budget/unfavorable) — same sign convention the
+// existing Product BOM vs Actual variance table already uses.
+function standardVsActualVariance(projectId){
+  const std = latestStandardCost(projectId);
+  const act = projectActualCostBreakdown(projectId);
+  if(!std) return {std:null, act, rows:[]};
+  const cats = [['material','Material'],['labour','Labour'],['transport','Transportation'],['install','Installation'],['other','Other']];
+  const rows = cats.map(([key,label])=>{
+    const s=std[key]||0, a=act[key]||0, v=s-a, pct=s?Math.round(v/s*1000)/10:(a?-100:0);
+    return {key,label,std:s,act:a,variance:v,pct};
+  });
+  const totalVariance = std.total-act.total;
+  const totalPct = std.total?Math.round(totalVariance/std.total*1000)/10:(act.total?-100:0);
+  return {std, act, rows, totalVariance, totalPct};
+}
+function projectProfitability(projectId){
+  const proj = DB.projects.find(p=>p.id===projectId);
+  const invoiced = DB.invoices.filter(i=>i.projectId===projectId).reduce((s,i)=>s+i.amount,0);
+  const revenue = invoiced || proj?.contractValue || 0;
+  const std = latestStandardCost(projectId);
+  const act = projectActualCostBreakdown(projectId);
+  const stdProfit = std ? revenue-std.total : null;
+  const actProfit = revenue-act.total;
+  const stdMargin = std && revenue ? Math.round(stdProfit/revenue*1000)/10 : null;
+  const actMargin = revenue ? Math.round(actProfit/revenue*1000)/10 : 0;
+  return {revenue, invoiced, std, act, stdProfit, actProfit, stdMargin, actMargin};
+}
+function reFreezeStandardCost(projectId){
+  if(!requireRole('CEO','Admin','Estimator')) return;
+  if(!confirm('Freeze a new Standard Cost version from the current Estimation Request costing? Previous versions stay in history for audit.')) return;
+  const snap = freezeStandardCost(projectId, {note:'Manually re-frozen'});
+  if(snap) toast(`Standard Cost v${snap.version} frozen — ${INR(snap.total)} ✓`,'ok');
+  renderStandardCostTab();
+}
+function renderStandardCostTab(){
+  const el = document.getElementById('stdcost-content');
+  if(!requireRole('CEO','Admin')){
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">🔒 Standard Cost & Profitability data is restricted to CEO and Admin.</div>';
+    return;
+  }
+  const projId = document.getElementById('budget-project-id').value;
+  const er = _sourceEstimationForProject(projId);
+  const std = latestStandardCost(projId);
+  const canFreeze = roleCan('edit','Estimation');
+
+  if(!std){
+    el.innerHTML = `<div style="text-align:center;padding:30px;color:var(--muted);font-size:13px">
+      ${er && er.costing ? 'No Standard Cost has been frozen for this project yet.' : 'This project has no linked Estimation Request costing, so a Standard Cost cannot be derived — this is expected for projects created without going through Estimation.'}
+      </div>
+      ${er && er.costing && canFreeze ? `<div style="text-align:center"><button class="btn btn-gold" onclick="reFreezeStandardCost('${projId}')">🔒 Freeze as Standard Cost</button></div>` : ''}`;
+    return;
+  }
+
+  const v = standardVsActualVariance(projId);
+  const p = projectProfitability(projId);
+  const catRow = r => `<tr>
+    <td>${r.label}</td>
+    <td class="mono right">${INR(r.std)}</td>
+    <td class="mono right">${INR(r.act)}</td>
+    <td class="mono right" style="color:${r.variance>=0?'var(--green)':'var(--red)'};font-weight:600">${r.variance>=0?'':'−'}${INR(Math.abs(r.variance))}</td>
+    <td class="right" style="color:${r.variance>=0?'var(--green)':'var(--red)'}">${r.pct}%</td>
+  </tr>`;
+
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div style="font-size:11px;color:var(--muted);max-width:560px">Standard Cost v${std.version} frozen ${fmtDate(std.frozenAt.slice(0,10))} by ${escHtml(std.frozenBy)} from the linked Estimation Request's costing (internal cost basis, not the marked-up quotation price). Actuals below are collected automatically from real Material Issues, Purchases, Labour and Expense entries — no separate data entry.</div>
+      ${canFreeze?`<button class="btn btn-outline btn-sm" onclick="reFreezeStandardCost('${projId}')">🔒 Re-freeze New Version</button>`:''}
+    </div>
+    <div class="tbl-wrap"><table><thead><tr>
+      <th>Cost Head</th><th class="right">Standard ₹</th><th class="right">Actual ₹</th><th class="right">Variance ₹</th><th class="right">Variance %</th>
+    </tr></thead><tbody>
+      ${v.rows.map(catRow).join('')}
+      <tr style="font-weight:700;background:var(--bg)">
+        <td>Total</td>
+        <td class="mono right">${INR(v.std.total)}</td>
+        <td class="mono right">${INR(v.act.total)}</td>
+        <td class="mono right" style="color:${v.totalVariance>=0?'var(--green)':'var(--red)'}">${v.totalVariance>=0?'':'−'}${INR(Math.abs(v.totalVariance))}</td>
+        <td class="right" style="color:${v.totalVariance>=0?'var(--green)':'var(--red)'}">${v.totalPct}%</td>
+      </tr>
+    </tbody></table></div>
+    <div style="margin-top:18px;font-size:13px;font-weight:700;color:var(--dark)">Profitability</div>
+    <div class="kpi-row c4" style="margin-top:8px">
+      <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-val" style="font-size:15px">${INR(p.revenue)}</div><div class="kpi-sub">${p.invoiced?'Invoiced to date':'Contract value (not yet invoiced)'}</div></div>
+      <div class="kpi"><div class="kpi-label">Standard Profit</div><div class="kpi-val" style="font-size:15px;color:${p.stdProfit>=0?'var(--green)':'var(--red)'}">${INR(p.stdProfit)}</div><div class="kpi-sub">${p.stdMargin}% margin</div></div>
+      <div class="kpi"><div class="kpi-label">Actual Profit</div><div class="kpi-val" style="font-size:15px;color:${p.actProfit>=0?'var(--green)':'var(--red)'}">${INR(p.actProfit)}</div><div class="kpi-sub">${p.actMargin}% margin</div></div>
+      <div class="kpi"><div class="kpi-label">Margin Erosion</div><div class="kpi-val" style="font-size:15px;color:${(p.actMargin-p.stdMargin)>=0?'var(--green)':'var(--red)'}">${(p.actMargin-p.stdMargin>=0?'+':'')}${Math.round((p.actMargin-p.stdMargin)*10)/10}%</div><div class="kpi-sub">Actual vs Standard margin</div></div>
+    </div>
+    ${standardCostHistory(projId).length>1?`<div style="margin-top:18px">
+      <div style="font-size:12px;font-weight:700;color:var(--dark);margin-bottom:6px">Version History</div>
+      <div class="tbl-wrap"><table><thead><tr><th>Version</th><th>Date</th><th>By</th><th class="right">Total ₹</th><th>Note</th></tr></thead><tbody>
+        ${standardCostHistory(projId).map(s=>`<tr><td>v${s.version}</td><td>${fmtDate(s.frozenAt.slice(0,10))}</td><td>${escHtml(s.frozenBy)}</td><td class="mono right">${INR(s.total)}</td><td class="muted small">${escHtml(s.note||'')}</td></tr>`).join('')}
+      </tbody></table></div>
+    </div>`:''}
+  `;
+}
+
 function renderVarianceTab(){
   if(!requireRole('CEO','Admin')){
     document.getElementById('variance-content').innerHTML='<div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">🔒 Variance & margin data is restricted to CEO and Admin.</div>';
