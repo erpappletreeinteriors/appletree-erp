@@ -5176,6 +5176,7 @@ const DELETE_FN_MODULE = {
   deletePO:'Inventory', deletePurchase:'Inventory', deleteDamage:'Inventory',
   deleteQuotation:'CRM & Sales',
   deleteServiceTicket:'Service', deleteSnag:'Service',
+  deleteApprovalRule:'Master Data', deleteSavedReport:'Reports',
 };
 function editBtn(fn,id){
   const mod = EDIT_FN_MODULE[fn];
@@ -12371,7 +12372,7 @@ const MODAL_TYPE_MODULE = {
   project:'Projects', product:'Projects',
   labour:'Operations', expense:'Operations', qc:'Operations',
   purchase:'Inventory', issue:'Inventory', return:'Inventory', warehouseitem:'Inventory', stockadj:'Inventory',
-  invoice:'Finance', receipt:'Finance', bill:'Finance', bankentry:'Finance',
+  invoice:'Finance', receipt:'Finance', bill:'Finance', bankentry:'Finance', account:'Finance',
   fixedasset:'Finance', capitalloan:'Finance', budget:'Finance',
   lead:'CRM & Sales', quotation:'CRM & Sales', customer:'CRM & Sales',
   architect:'CRM & Sales', builder:'CRM & Sales', b2bpartner:'CRM & Sales',
@@ -14296,6 +14297,7 @@ MODAL_FORMS['bankentry'] = `
 
 // ── Save account and bankentry ──
 function saveAccount() {
+  if(!roleCan('create','Finance')){toast('You do not have permission to add accounts.','err');return;}
   const name = g('f-acc-name'); if (!name) { toast('Account name required', 'err'); return; }
   DB.accounts.push({
     id: 'AC' + uid(), code: g('f-acc-code'), name,
@@ -19772,6 +19774,7 @@ function filterProductsByProj(){
 }
 
 function saveMfgJob(){
+  if(!roleCan('create','Factory / MES')){toast('You do not have permission to create manufacturing jobs.','err');return;}
   const prodId = g('f-mj-prod'); if(!prodId){toast('Select a product','err');return;}
   const seq = DB.mfgJobs.length ? Math.max(...DB.mfgJobs.map(j=>+(j.jobNo?.split('/')?.[1])||0))+1 : 1;
   DB.mfgJobs.push({
@@ -19845,6 +19848,7 @@ function openAddOperation(){
 }
 
 function saveAddOperation(){
+  if(!roleCan('create','Factory / MES')){toast('You do not have permission to add job operations.','err');return;}
   const opName = g('f-op-name'); if(!opName){toast('Select operation','err');return;}
   DB.mfgOps.push({
     id:'MOP'+uid(), jobId:_currentJobId,
@@ -19982,6 +19986,7 @@ openModal = function(type){
 };
 
 function saveMachine(){
+  if(!roleCan('create','Factory / MES')){toast('You do not have permission to add machines.','err');return;}
   const name = g('f-mch-name'); if(!name){toast('Machine name required','err');return;}
   const newId = 'MCH'+uid();
   DB.machines.push({
@@ -20306,6 +20311,7 @@ function openModal_jobcard(){
 }
 
 function saveJobCard(){
+  if(!roleCan('create','Factory / MES')){toast('You do not have permission to create job cards.','err');return;}
   const jobId = g('f-jc-job');
   if(!jobId){ toast('Select a manufacturing job','err'); return; }
   let wc = g('f-jc-wc');
@@ -20647,6 +20653,7 @@ openModal = function(type){
 };
 
 function saveSiteDelivery(){
+  if(!roleCan('create','Site & Installation')){toast('You do not have permission to add delivery entries.','err');return;}
   if(!DB.siteDeliveries) DB.siteDeliveries=[];
   DB.siteDeliveries.push({
     id:'SD'+uid(), date:g('f-sdel-date'), productId:g('f-sdel-prod'),
@@ -20657,6 +20664,7 @@ function saveSiteDelivery(){
 }
 
 function saveInstallation(){
+  if(!roleCan('create','Site & Installation')){toast('You do not have permission to create installation jobs.','err');return;}
   if(!DB.installations) DB.installations=[];
   DB.installations.push({
     id:'INS'+uid(), productId:g('f-ni-prod'), projectId:g('f-ni-proj'),
@@ -20930,6 +20938,7 @@ function saveEditMilestone(msId){
 const _origSaveModal3 = saveModal;
 saveModal = function(){
   if(_currentModal==='milestone'){
+    if(!roleCan('create','Finance')){toast('You do not have permission to add milestones.','err');return;}
     const name = g('f-ms-name'); if(!name){toast('Milestone name required','err');return;}
     const projId = window._milestoneProjectId || g('f-ms-proj');
     if(!projId){toast('Select a project','err');return;}
@@ -20987,6 +20996,7 @@ function saveEditInstall(id){
 }
 
 function saveEditMachine(machId){
+  if(!roleCan('edit','Factory / MES')){toast('You do not have permission to edit machines.','err');return;}
   const m = DB.machines.find(x=>x.id===machId);
   if(!m) return;
   m.status   = g('f-emch-status');
@@ -21048,6 +21058,7 @@ function renderEmployees(){
 }
 
 function toggleEmpStatus(id){
+  if(!roleCan('edit','HR & Payroll')){toast('You do not have permission to change employee status.','err');return;}
   const e=DB.employees.find(x=>x.id===id);
   if(!e)return;
   e.status=e.status==='Active'?'Inactive':'Active';
@@ -21127,6 +21138,7 @@ function openEditEmployee(id){
 }
 
 function saveAddEmployee(){
+  if(!roleCan('create','HR & Payroll')){toast('You do not have permission to add employees.','err');return;}
   const type=g('f-emp-type');
   const id='EMP'+uid();
   DB.employees.push({
@@ -21144,6 +21156,7 @@ function saveAddEmployee(){
 }
 
 function saveEditEmployee(id){
+  if(!roleCan('edit','HR & Payroll')){toast('You do not have permission to edit employees.','err');return;}
   const e=DB.employees.find(x=>x.id===id);
   if(!e)return;
   e.name=g('f-emp-name'); e.dept=g('f-emp-dept'); e.designation=g('f-emp-desig');
@@ -21263,6 +21276,7 @@ function openEditAtt(id){
 }
 
 function saveMarkAttendance(){
+  if(!roleCan('create','HR & Payroll')){toast('You do not have permission to mark attendance.','err');return;}
   DB.attendance.push({
     id:'A'+Date.now(),empId:g('f-att-emp'),date:g('f-att-date'),
     status:g('f-att-status'),otHours:+(g('f-att-ot')||0),
@@ -21272,6 +21286,7 @@ function saveMarkAttendance(){
 }
 
 function saveEditAtt(id){
+  if(!roleCan('edit','HR & Payroll')){toast('You do not have permission to edit attendance.','err');return;}
   const a=DB.attendance.find(x=>x.id===id);
   if(!a)return;
   a.status=g('f-att-status'); a.otHours=+(g('f-att-ot')||0); a.notes=g('f-att-notes');
@@ -21587,6 +21602,7 @@ function openIssueAdvance(){
 }
 
 function saveIssueAdvance(){
+  if(!roleCan('create','HR & Payroll')){toast('You do not have permission to issue salary advances.','err');return;}
   const raw=g('f-adv-emp');
   const pipeIdx=raw.indexOf('|');
   const empId=raw.slice(0,pipeIdx);
@@ -25015,6 +25031,7 @@ function mrLineShowRemaining(rowId){
 }
 
 function saveMatRequest(){
+  if(!roleCan('create','Operations')){toast('You do not have permission to submit material requests.','err');return;}
   const type = document.getElementById('f-mr-type')?.value||'Project';
   const reason = document.getElementById('f-mr-reason')?.value||'';
   if(type==='General'){ saveMatRequestGeneral(reason); return; }
@@ -25084,6 +25101,7 @@ function saveMatRequest(){
 // MR's existing role as the pre-PO gate rather than adding a parallel
 // Purchase Requisition entity for what would otherwise be a minority of cases.
 function saveMatRequestGeneral(reason){
+  if(!roleCan('create','Operations')){toast('You do not have permission to submit material requests.','err');return;}
   const validLines = _mrGeneralLines.filter(l=>(l.itemName||'').trim() && l.qty>0);
   if(!validLines.length){ toast('Add at least one item with a description and quantity','err'); return; }
   const batchId = validLines.length>1 ? 'MRB'+uid() : '';
