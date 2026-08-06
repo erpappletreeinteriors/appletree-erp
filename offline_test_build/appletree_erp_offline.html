@@ -5102,6 +5102,7 @@ function migPreview(){
 }
 
 function migCommitImport(){
+  if(!requireRole('CEO','Admin')){toast('You do not have permission to run a bulk import.','err');return;}
   const type = _migCurrentType();
   const results = window._migPreviewResults||[];
   const valid = results.filter(r=>r.valid);
@@ -15422,6 +15423,7 @@ function openApprovalRuleModal(id, entityType){
 }
 
 function saveApprovalRule(){
+  if(!requireRole('CEO','Admin')){toast('You do not have permission to create or edit approval rules.','err');return;}
   const id = window._arId;
   const entityType = window._arEntityType;
   const uptoRaw = document.getElementById('f-ar-upto')?.value;
@@ -15903,6 +15905,7 @@ function openNewRFQ(){
   rfqRenderItemRows();
 }
 function saveRFQ(){
+  if(!requireRole('CEO','Admin','Purchase')){toast('You do not have permission to send RFQs.','err');return;}
   const items = _rfqItemsDraft.filter(it=>(it.description||'').trim());
   const notes = document.getElementById('rfq-notes')?.value||'';
   const checked = Array.from(document.querySelectorAll('.rfq-vendor-cb:checked')).map(cb=>cb.value);
@@ -15920,6 +15923,7 @@ function saveRFQ(){
   saveDB(); closeHRModal(); toast(`${rfq.rfqNo} sent to ${checked.length} vendor(s) ✓`,'ok'); renderRFQs();
 }
 function recordRFQResponse(rfqId, vendorEntryId){
+  if(!requireRole('CEO','Admin','Purchase')){toast('You do not have permission to record RFQ responses.','err');return;}
   const rfq=(DB.rfqs||[]).find(x=>x.id===rfqId); if(!rfq) return;
   const v = rfq.vendors.find(x=>x.id===vendorEntryId); if(!v) return;
   if(v.status==='Responded'){toast('Response already recorded for this vendor.','err');return;}
@@ -15941,6 +15945,7 @@ function markRFQNoResponse(rfqId, vendorEntryId){
   saveDB(); toast('Marked no response','warn'); renderRFQDetail(rfqId);
 }
 function closeRFQ(rfqId, vendorEntryId){
+  if(!requireRole('CEO','Admin','Purchase')){toast('You do not have permission to close RFQs.','err');return;}
   const rfq=(DB.rfqs||[]).find(x=>x.id===rfqId); if(!rfq) return;
   const v = rfq.vendors.find(x=>x.id===vendorEntryId); if(!v||v.status!=='Responded'){toast('Select a vendor who has responded.','err');return;}
   if(!confirm(`Close ${rfq.rfqNo} and select ${v.vendorName} at ₹${v.quotedRate}?`)) return;
@@ -17370,6 +17375,7 @@ function soNextNo(){
   return 'SO/' + String(seq).padStart(4,'0');
 }
 function convertQuotToSalesOrder(qId){
+  if(!requireRole('CEO','Admin','Sales')){toast('You do not have permission to create Sales Orders.','err');return;}
   const q = DB.quotations.find(x=>x.id===qId);
   if(!q) return;
   if(!DB.salesOrders) DB.salesOrders=[];
@@ -17438,6 +17444,7 @@ function cancelSalesOrder(soId){
   saveDB(); toast('Sales Order cancelled','warn'); renderSalesOrders();
 }
 function reserveStockForSalesOrder(soId){
+  if(!requireRole('CEO','Admin','Sales')){toast('You do not have permission to reserve stock for Sales Orders.','err');return;}
   const so=(DB.salesOrders||[]).find(x=>x.id===soId); if(!so) return;
   if(so.status==='Cancelled'){toast('Cannot reserve stock on a cancelled order.','err');return;}
   const itemId = document.getElementById('so-res-item')?.value;
@@ -17452,6 +17459,7 @@ function reserveStockForSalesOrder(soId){
   saveDB(); toast('Stock reserved ✓','ok'); renderSalesOrderDetail(soId);
 }
 function releaseReservation(soId, resId){
+  if(!requireRole('CEO','Admin','Sales')){toast('You do not have permission to release stock reservations.','err');return;}
   const so=(DB.salesOrders||[]).find(x=>x.id===soId); if(!so) return;
   const r = (so.reservations||[]).find(x=>x.id===resId); if(!r||!r.active) return;
   const w = DB.warehouse.find(x=>x.id===r.warehouseItemId);
@@ -17461,6 +17469,7 @@ function releaseReservation(soId, resId){
   saveDB(); toast('Reservation released ✓','ok'); renderSalesOrderDetail(soId);
 }
 function recordSalesOrderDelivery(soId, itemId){
+  if(!requireRole('CEO','Admin','Sales')){toast('You do not have permission to record Sales Order deliveries.','err');return;}
   const so=(DB.salesOrders||[]).find(x=>x.id===soId); if(!so) return;
   if(so.status!=='Approved'&&so.status!=='Partially Delivered'){toast('Order must be Approved before recording delivery.','err');return;}
   const item = so.items.find(i=>i.id===itemId); if(!item) return;
@@ -17491,6 +17500,7 @@ function amendSalesOrder(soId){
   'saveSalesOrderAmendment()');
 }
 function saveSalesOrderAmendment(){
+  if(!requireRole('CEO','Admin','Sales')){toast('You do not have permission to amend Sales Orders.','err');return;}
   const so=(DB.salesOrders||[]).find(x=>x.id===_soAmendId); if(!so) return;
   const reason = document.getElementById('soa-reason')?.value||'';
   if(!reason){toast('A reason is required for an amendment.','err');return;}
@@ -17509,6 +17519,7 @@ function saveSalesOrderAmendment(){
   saveDB(); closeHRModal(); toast('Amendment saved ✓','ok'); renderSalesOrderDetail(so.id);
 }
 function convertSalesOrderToProject(soId){
+  if(!requireRole('CEO','Admin','Sales')){toast('You do not have permission to convert Sales Orders to Projects.','err');return;}
   const so=(DB.salesOrders||[]).find(x=>x.id===soId); if(!so) return;
   if(so.status==='Cancelled'){toast('Cannot convert a cancelled Sales Order.','err');return;}
   if(so.status==='Pending Approval'){toast('Sales Order must be Approved before converting to a Project.','err');return;}
