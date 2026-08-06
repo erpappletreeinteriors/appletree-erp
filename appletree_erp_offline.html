@@ -4563,6 +4563,8 @@ function _downloadBlob(content, filename, mime){
 }
 
 function exportTableToCSV(tableId, filenameBase){
+  const _curMod = PAGE_MODULE[_currentPage];
+  if(_curMod && !roleCan('export', _curMod)){ toast('You do not have permission to export this page.','err'); return; }
   const rows = _exportTableRows(tableId);
   if(!rows || rows.length<2){ toast('Nothing to export','err'); return; }
   const csv = rows.map(r=>r.map(c=>{
@@ -4574,6 +4576,8 @@ function exportTableToCSV(tableId, filenameBase){
 }
 
 function exportTableToExcel(tableId, filenameBase){
+  const _curMod = PAGE_MODULE[_currentPage];
+  if(_curMod && !roleCan('export', _curMod)){ toast('You do not have permission to export this page.','err'); return; }
   const rows = _exportTableRows(tableId);
   if(!rows || rows.length<2){ toast('Nothing to export','err'); return; }
   const esc = s => escHtml(s);
@@ -4609,8 +4613,16 @@ function exportButtonsHtml(tableId, filenameBase){
 //  getRows() behind it would silently return nothing, which is worse
 //  than not offering it.
 // ═══════════════════════════════════════════
+// Each source carries the module that gates its dedicated page elsewhere
+// in the app (PAGE_MODULE's own convention) — Report Builder is a
+// cross-cutting query tool, but "can query this data" must never be
+// looser than "can view this data's normal page", or a role scoped to
+// just 'Reports' (e.g. Read-Only, Project Manager) could see Finance/
+// Inventory/CRM data through the back door. Enforced in
+// renderReportBuilder() (dropdown filtering) and runReportBuilder()
+// (defense in depth against a direct console call).
 const REPORT_SOURCES = [
-  { key:'invoices', label:'Invoices', dateField:'date',
+  { key:'invoices', label:'Invoices', dateField:'date', module:'Finance',
     fields:[
       {key:'date',label:'Date',type:'date'}, {key:'invNo',label:'Invoice No',type:'text'},
       {key:'customer',label:'Customer',type:'text'}, {key:'project',label:'Project',type:'text'},
@@ -4620,7 +4632,7 @@ const REPORT_SOURCES = [
     ],
     getRows(){ return DB.invoices.map(i=>({date:i.date||'', invNo:i.invNo||i.id, customer:i.customer||'', project:projName(i.projectId), amount:+i.amount||0, paid:+i.paid||0, balance:(+i.amount||0)-(+i.paid||0), dueDate:i.dueDate||'', status:i.status||''})); } },
 
-  { key:'purchases', label:'Purchases', dateField:'date',
+  { key:'purchases', label:'Purchases', dateField:'date', module:'Inventory',
     fields:[
       {key:'date',label:'Date',type:'date'}, {key:'vendor',label:'Vendor',type:'text'},
       {key:'project',label:'Project',type:'text'}, {key:'destination',label:'Destination',type:'text'},
@@ -4628,7 +4640,7 @@ const REPORT_SOURCES = [
     ],
     getRows(){ return DB.purchases.map(p=>({date:p.date||'', vendor:p.vendor||'', project:projName(p.projectId), destination:p.destination||'', amount:+p.amount||0})); } },
 
-  { key:'leads', label:'Leads', dateField:'date',
+  { key:'leads', label:'Leads', dateField:'date', module:'CRM & Sales',
     fields:[
       {key:'date',label:'Date',type:'date'}, {key:'name',label:'Name',type:'text'},
       {key:'source',label:'Source',type:'text'}, {key:'status',label:'Status',type:'text'},
@@ -4636,7 +4648,7 @@ const REPORT_SOURCES = [
     ],
     getRows(){ return DB.leads.map(l=>({date:l.date||'', name:l.name||'', source:l.source||'Unspecified', status:l.status||'', value:+l.value||0})); } },
 
-  { key:'quotations', label:'Quotations', dateField:'date',
+  { key:'quotations', label:'Quotations', dateField:'date', module:'CRM & Sales',
     fields:[
       {key:'date',label:'Date',type:'date'}, {key:'refNo',label:'Ref No',type:'text'},
       {key:'customer',label:'Customer',type:'text'}, {key:'project',label:'Project',type:'text'},
@@ -4645,7 +4657,7 @@ const REPORT_SOURCES = [
     ],
     getRows(){ return DB.quotations.map(q=>({date:q.date||'', refNo:q.refNo||q.id, customer:q.customer||'', project:projName(q.projectId), amount:quotTotalAmount(q), status:q.status||'', wonDate:q.wonDate||''})); } },
 
-  { key:'projects', label:'Projects', dateField:'startDate',
+  { key:'projects', label:'Projects', dateField:'startDate', module:'Projects',
     fields:[
       {key:'code',label:'Code',type:'text'}, {key:'client',label:'Client',type:'text'},
       {key:'status',label:'Status',type:'text'}, {key:'contractValue',label:'Contract Value ₹',type:'currency'},
@@ -4653,7 +4665,7 @@ const REPORT_SOURCES = [
     ],
     getRows(){ return DB.projects.map(p=>({code:p.code||'', client:p.client||'', status:p.status||'', contractValue:+p.contractValue||0, startDate:p.startDate||'', location:p.location||''})); } },
 
-  { key:'labour', label:'Labour Vouchers', dateField:'date',
+  { key:'labour', label:'Labour Vouchers', dateField:'date', module:'Operations',
     fields:[
       {key:'date',label:'Date',type:'date'}, {key:'project',label:'Project',type:'text'},
       {key:'worker',label:'Worker',type:'text'}, {key:'trade',label:'Trade',type:'text'},
@@ -4661,7 +4673,7 @@ const REPORT_SOURCES = [
     ],
     getRows(){ return DB.labour.map(l=>({date:l.date||'', project:projName(l.projectId), worker:l.worker||'', trade:l.trade||'', amount:+l.amount||0, status:l.status||''})); } },
 
-  { key:'expenses', label:'Project Expenses', dateField:'date',
+  { key:'expenses', label:'Project Expenses', dateField:'date', module:'Operations',
     fields:[
       {key:'date',label:'Date',type:'date'}, {key:'project',label:'Project',type:'text'},
       {key:'category',label:'Category',type:'text'}, {key:'particulars',label:'Particulars',type:'text'},
@@ -4669,7 +4681,7 @@ const REPORT_SOURCES = [
     ],
     getRows(){ return DB.expenses.map(e=>({date:e.date||'', project:projName(e.projectId), category:e.category||'', particulars:e.particulars||'', amount:+e.amount||0})); } },
 
-  { key:'deliverables', label:'Deliverables', dateField:'targetDate',
+  { key:'deliverables', label:'Deliverables', dateField:'targetDate', module:'Projects',
     fields:[
       {key:'title',label:'Title',type:'text'}, {key:'project',label:'Project',type:'text'},
       {key:'category',label:'Category',type:'text'}, {key:'owner',label:'Owner',type:'text'},
@@ -4678,7 +4690,7 @@ const REPORT_SOURCES = [
     ],
     getRows(){ return (DB.deliverables||[]).map(d=>({title:d.title||'', project:projName(d.projectId), category:d.category||'', owner:d.owner||'', targetDate:d.targetDate||'', priority:d.priority||'', status:d.status||''})); } },
 
-  { key:'purchaseOrders', label:'Purchase Orders', dateField:'date',
+  { key:'purchaseOrders', label:'Purchase Orders', dateField:'date', module:'Inventory',
     fields:[
       {key:'date',label:'Date',type:'date'}, {key:'poNo',label:'PO No',type:'text'},
       {key:'vendor',label:'Vendor',type:'text'}, {key:'project',label:'Project',type:'text'},
@@ -4686,7 +4698,7 @@ const REPORT_SOURCES = [
     ],
     getRows(){ return (DB.purchaseOrders||[]).map(p=>({date:p.date||'', poNo:p.poNo||p.id, vendor:p.vendor||'', project:projName(p.projectId), amount:poTotal(p), status:p.status||''})); } },
 
-  { key:'snags', label:'Snags', dateField:'date',
+  { key:'snags', label:'Snags', dateField:'date', module:'Service',
     fields:[
       {key:'date',label:'Date',type:'date'}, {key:'project',label:'Project',type:'text'},
       {key:'description',label:'Description',type:'text'}, {key:'severity',label:'Severity',type:'text'},
@@ -4738,7 +4750,17 @@ function runReport(sourceKey, opts){
   return {columns:cols, rows:grouped};
 }
 
-function _rbCurrentSource(){ return REPORT_SOURCES.find(s=>s.key===document.getElementById('rb-source')?.value) || REPORT_SOURCES[0]; }
+// View-level module check (not an action flag like roleCan) — matches
+// the same module-inclusion test _pageAllowed() uses for a page's own
+// dedicated view, so "can query this via Report Builder" can never be
+// looser than "can view this data's normal page".
+function _userCanViewModule(mod){
+  if(!_currentUser) return false;
+  if(_currentUser.role==='CEO'||_currentUser.role==='Admin') return true;
+  return (getRolePermissions()[_currentUser.role]||[]).includes(mod);
+}
+function _rbAllowedSources(){ return REPORT_SOURCES.filter(s=>_userCanViewModule(s.module)); }
+function _rbCurrentSource(){ return _rbAllowedSources().find(s=>s.key===document.getElementById('rb-source')?.value) || _rbAllowedSources()[0]; }
 
 function rbSourceChanged(){
   const src = _rbCurrentSource();
@@ -4760,6 +4782,7 @@ function rbSourceChanged(){
 
 function runReportBuilder(){
   const src = _rbCurrentSource();
+  if(!src || !_userCanViewModule(src.module)){ toast('You do not have permission to view this data source.','err'); return; }
   const fields = Array.from(document.querySelectorAll('.rb-field-cb:checked')).map(cb=>cb.value);
   const opts = {
     fields,
@@ -4808,9 +4831,10 @@ function renderSavedReportsList(){
 }
 
 function saveReportConfig(){
+  const src = _rbCurrentSource();
+  if(!src || !_userCanViewModule(src.module)){ toast('You do not have permission to save a report on this data source.','err'); return; }
   const name = prompt('Name this report:');
   if(!name) return;
-  const src = _rbCurrentSource();
   const fields = Array.from(document.querySelectorAll('.rb-field-cb:checked')).map(cb=>cb.value);
   if(!DB.savedReports) DB.savedReports=[];
   DB.savedReports.push({
@@ -4850,9 +4874,18 @@ function deleteSavedReport(id){
 
 function renderReportBuilder(){
   const sel = document.getElementById('rb-source');
-  if(sel && !sel.dataset.populated){
-    sel.innerHTML = REPORT_SOURCES.map(s=>`<option value="${s.key}">${escHtml(s.label)}</option>`).join('');
+  const allowed = _rbAllowedSources();
+  // Re-populated on every render (not just once) — a role's permitted
+  // sources are only known once _currentUser exists, and a stale "once
+  // populated" cache from before login would leak every source.
+  if(sel){
+    sel.innerHTML = allowed.map(s=>`<option value="${s.key}">${escHtml(s.label)}</option>`).join('');
     sel.dataset.populated = '1';
+  }
+  if(!allowed.length){
+    const resultsEl = document.getElementById('rb-results');
+    if(resultsEl) resultsEl.innerHTML = '<div class="empty"><div class="ei">🔒</div><p>Your role does not have view access to any Report Builder data source.</p></div>';
+    return;
   }
   rbSourceChanged();
   renderSavedReportsList();
@@ -10398,6 +10431,7 @@ function renderAccountingExportPreview(){
 }
 
 function runAccountingExport(){
+  if(!requireRole('CEO','Admin','Accounts')){toast('You do not have permission to run an accounting export.','err');return;}
   const type = document.getElementById('ae-type')?.value;
   const format = document.getElementById('ae-format')?.value;
   const includeExported = document.getElementById('ae-include-exported')?.checked;
