@@ -2429,10 +2429,14 @@ textarea.inp{resize:vertical;min-height:72px;}
 ══════════════════════════════════════════════ -->
 <div id="pg-jobcostsheet" class="page">
   <div class="sec-hd">
-    <div class="sec-title">Job Cost Sheet</div>
+    <div class="sec-title">Manufacturing Cost Analytics</div>
+  </div>
+  <div class="alert alert-info">🧾 Material and Labour reuse the real figures Product Costing already computes from Material Issues/Returns/Labour vouchers. Machine Cost and Overhead are new — Machine Cost from logged operation hours × each machine's hourly rate, Overhead at the same % used at quotation time. This is a pure analytical report — it does not post to the Financial Engine or the General Ledger; Material/Labour already post via their own real transaction flows elsewhere, and posting Machine Cost/Overhead here would misrepresent an internal allocation as a real transaction.</div>
+  <div id="jcs-summary"></div>
+  <div class="sec-hd" style="margin-top:22px">
+    <div class="sec-title">Job Cost Sheet — Detail</div>
     <select class="inp inp-sm" id="jcs-job-sel" onchange="renderJobCostSheet()"><option value="">— Select a job —</option></select>
   </div>
-  <div class="alert alert-info">🧾 Material and Labour reuse the real figures Product Costing already computes from Material Issues/Returns/Labour vouchers. Machine Cost and Overhead are new — Machine Cost from logged operation hours × each machine's hourly rate, Overhead at the same % used at quotation time. This report does not post to the Financial Engine; Material/Labour already post via their own transaction flows.</div>
   <div id="jcs-body"></div>
 </div>
 
@@ -19297,8 +19301,71 @@ function jobCostSheet(jobId){
     overheadPct, overheadCost, directCost, totalActualCost, estimatedCost, variance,
     salePrice, profit, marginPct};
 }
+// Fleet-wide view across every manufacturing job, since jobCostSheet()
+// on its own only ever answers "how is this one job doing" — a CEO
+// needs "which jobs are bleeding money" without clicking through each
+// one individually. Same underlying jobCostSheet() computation, just
+// mapped over every job and sorted so the worst overruns surface first.
+function renderJobCostSummary(){
+  const el = document.getElementById('jcs-summary');
+  if(!el) return;
+  const rows = DB.mfgJobs.map(j=>jobCostSheet(j.id)).filter(Boolean);
+  if(!rows.length){ el.innerHTML = '<div class="empty"><div class="ei">🏭</div><p>No manufacturing jobs yet.</p></div>'; return; }
+
+  const withEstimate = rows.filter(r=>r.estimatedCost>0);
+  const overCount = withEstimate.filter(r=>r.variance!==null && r.variance<0).length;
+  const totalVariance = withEstimate.reduce((s,r)=>s+(r.variance||0),0);
+  const totalActual = rows.reduce((s,r)=>s+r.totalActualCost,0);
+  const marginRows = rows.filter(r=>r.marginPct!==null);
+  const avgMargin = marginRows.length ? Math.round(marginRows.reduce((s,r)=>s+r.marginPct,0)/marginRows.length*10)/10 : null;
+
+  // Worst overruns first (most negative variance), jobs with no estimate
+  // pushed to the end rather than sorted as if variance were zero.
+  const sorted = rows.slice().sort((a,b)=>{
+    if(a.variance===null && b.variance===null) return 0;
+    if(a.variance===null) return 1;
+    if(b.variance===null) return -1;
+    return a.variance-b.variance;
+  });
+
+  const rowHtml = r => {
+    const proj = DB.projects.find(p=>p.id===r.job.projectId);
+    const varTag = r.variance===null ? '<span class="tag tag-grey">No estimate</span>'
+      : r.variance>=0 ? `<span class="tag tag-green">✓ Under ${INR(r.variance)}</span>`
+      : `<span class="tag tag-red">▲ Over ${INR(Math.abs(r.variance))}</span>`;
+    return `<tr style="cursor:pointer" onclick="_jcsJumpToJob('${r.job.id}')">
+      <td><strong>${escHtml(r.job.jobNo)}</strong></td>
+      <td>${escHtml(r.product?.name||'—')}</td>
+      <td class="muted small">${escHtml(proj?proj.client:'—')}</td>
+      <td><span class="tag tag-grey">${escHtml(r.job.status||'')}</span></td>
+      <td class="mono right">${r.estimatedCost?INR(r.estimatedCost):'<span class="muted">—</span>'}</td>
+      <td class="mono right">${INR(r.totalActualCost)}</td>
+      <td>${varTag}</td>
+      <td class="mono right">${r.marginPct!==null?r.marginPct+'%':'<span class="muted">—</span>'}</td>
+    </tr>`;
+  };
+
+  el.innerHTML = `
+    <div class="kpi-row c4" style="margin-bottom:14px">
+      <div class="kpi"><div class="kpi-label">Manufacturing Jobs</div><div class="kpi-val">${rows.length}</div></div>
+      <div class="kpi ${overCount>0?'r':'g'}"><div class="kpi-label">Jobs Over Estimate</div><div class="kpi-val">${overCount}</div><div class="kpi-sub">of ${withEstimate.length} with an estimate</div></div>
+      <div class="kpi ${totalVariance>=0?'g':'r'}"><div class="kpi-label">Total Variance</div><div class="kpi-val" style="font-size:16px">${totalVariance>=0?'':'−'}${INR(Math.abs(totalVariance))}</div></div>
+      <div class="kpi"><div class="kpi-label">Avg Margin</div><div class="kpi-val">${avgMargin!==null?avgMargin+'%':'—'}</div><div class="kpi-sub">Total Actual Cost: ${INR(totalActual)}</div></div>
+    </div>
+    <div class="tbl-wrap"><table><thead><tr>
+      <th>Job No</th><th>Product</th><th>Project</th><th>Status</th>
+      <th class="right">Estimated ₹</th><th class="right">Actual ₹</th><th>Variance</th><th class="right">Margin</th>
+    </tr></thead><tbody>${sorted.map(rowHtml).join('')}</tbody></table></div>`;
+}
+function _jcsJumpToJob(jobId){
+  const sel = document.getElementById('jcs-job-sel');
+  if(sel){ sel.value = jobId; renderJobCostSheet(); }
+  document.getElementById('jcs-body')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
 function renderJobCostSheet(){
   if(!requireRole('CEO','Admin','Accounts','Project Manager')){_accessDenied();return;}
+  renderJobCostSummary();
   // Rebuilt every render, not just once — a static "only fill when empty"
   // guard would leave this dropdown showing jobs from whenever it was
   // first opened, missing anything added since (the exact staleness bug
