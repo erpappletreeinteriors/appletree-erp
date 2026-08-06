@@ -19324,7 +19324,13 @@ function jobCostSheet(jobId){
 
   const budget = DB.projectBudgets.find(b=>b.projectId===job.projectId);
   const productBOM = budget?.productBOMs?.find(pb=>pb.productId===job.productId);
-  const estimatedCost = productBOM?.grandTotal || product?.estimatedCost || 0;
+  // Fall back to the project's frozen Standard Cost (see Standard Costing,
+  // Project Budget's own "Standard Cost" tab) when there's no auto-built
+  // BOM — that only exists for templated/costed BOQ items, so an ad-hoc
+  // Estimation Request costing (materials/labour/expenses typed directly,
+  // no per-item template) previously showed "No BOM" here even though a
+  // real estimate exists and was already frozen elsewhere in the app.
+  const estimatedCost = productBOM?.grandTotal || product?.estimatedCost || latestStandardCost(job.projectId)?.total || 0;
   const variance = estimatedCost ? Math.round((estimatedCost-totalActualCost)*100)/100 : null;
 
   const salePrice = product?.quotedPrice||0;
