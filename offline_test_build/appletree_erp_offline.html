@@ -11801,6 +11801,7 @@ function saveCostedItem(){
 }
 
 function saveEstCosting(){
+  if(!requireRole('CEO','Admin','Estimator')){ toast('You do not have permission to save a costing.','err'); return; }
   const erId=document.getElementById('ec-er-id').value;
   const er=DB.estimationRequests.find(x=>x.id===erId);
   if(!er) return;
@@ -20452,6 +20453,7 @@ function saveJobCard(){
 }
 
 function markDispatched(dspId){
+  if(!roleCan('edit','Factory / MES')){ toast('You do not have permission to dispatch items.','err'); return; }
   if(!DB.dispatch) return;
   const d = DB.dispatch.find(x=>x.id===dspId);
   if(!d) return;
@@ -20537,6 +20539,7 @@ function renderSiteDash(){
 }
 
 function confirmDelivery(delId){
+  if(!roleCan('edit','Site & Installation')){ toast('You do not have permission to confirm deliveries.','err'); return; }
   const d = DB.siteDeliveries.find(x=>x.id===delId);
   if(!d) return;
   d.status       = 'Received';
