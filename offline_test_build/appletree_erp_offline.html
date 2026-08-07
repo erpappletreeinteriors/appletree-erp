@@ -19171,7 +19171,7 @@ function renderFactoryDash(){
       <td><strong>${prod?prod.name:'—'}</strong></td>
       <td class="small">${proj?proj.client+' ('+proj.code+')':'—'}</td>
       <td>${statusTag(d.status)}</td>
-      <td><button class="btn btn-outline btn-xs" onclick="markDispatched('${d.id}')">🚚 Mark Dispatched</button></td>
+      <td>${d.status==='Dispatched' ? '<span class="muted small">✓ Dispatched</span>' : `<button class="btn btn-outline btn-xs" onclick="markDispatched('${d.id}')">🚚 Mark Dispatched</button>`}</td>
     </tr>`;
   }).join('') : '<tr><td colspan="5" class="muted" style="text-align:center;padding:16px">No items ready for dispatch yet</td></tr>';
 
@@ -20457,6 +20457,11 @@ function markDispatched(dspId){
   if(!DB.dispatch) return;
   const d = DB.dispatch.find(x=>x.id===dspId);
   if(!d) return;
+  // No status transition ever moves a dispatch-queue item backward to
+  // 'Ready' — a second call on an already-dispatched item (double-click,
+  // stale page, or a second "Mark Dispatched" click) would otherwise
+  // create a second Site Delivery record for the same physical shipment.
+  if(d.status==='Dispatched'){ toast('Already dispatched.','err'); return; }
   d.status = 'Dispatched';
   d.dispatchDate = new Date().toISOString().slice(0,10);
   const prod = DB.products.find(p=>p.id===d.productId);
