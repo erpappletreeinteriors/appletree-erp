@@ -1452,7 +1452,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <select class="inp inp-sm" id="exp-proj-f" onchange="filterCol('tb-expenses',1,this.value)"><option value="">All Projects</option></select>
       <select class="inp inp-sm" onchange="filterCol('tb-expenses',3,this.value)">
         <option value="">All Categories</option>
-        <option>Transportation</option><option>Installation</option><option>Work Exp</option><option>Scaffolding</option><option>CNC Work</option><option>Travelling</option><option>Accommodation</option><option>Miscellaneous</option>
+        <option>Transportation</option><option>Installation</option><option>Marketing</option><option>Work Exp</option><option>Scaffolding</option><option>CNC Work</option><option>Travelling</option><option>Accommodation</option><option>Miscellaneous</option>
       </select>
       <span style="margin-left:auto;font-size:11px;color:var(--mid);">Total: <strong id="exp-total">₹0</strong></span>
     </div>
@@ -1954,6 +1954,7 @@ textarea.inp{resize:vertical;min-height:72px;}
   <div class="sec-hd"><div class="sec-title">Warehouse Stock</div>
     <div style="display:flex;gap:8px">
       <button class="btn btn-outline btn-sm" onclick="openModal('stockadj')">± Adjust Stock</button>
+      <button class="btn btn-outline btn-sm" onclick="openStockCountModal()">🔢 Stock Count</button>
       <button class="btn btn-gold" onclick="openModal('warehouseitem')">+ Add Item</button>
     </div>
   </div>
@@ -3868,6 +3869,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <button class="budget-tab" onclick="switchBudgetTab('itemcosts',this)">🏷️ Item Costs</button>
       <button class="budget-tab" onclick="switchBudgetTab('variance',this)">📊 Variance</button>
       <button class="budget-tab" onclick="switchBudgetTab('stdcost',this)">🎯 Standard Cost</button>
+      <button class="budget-tab" onclick="switchBudgetTab('design',this)">🎨 Design</button>
       <button class="budget-tab" onclick="switchBudgetTab('milestones',this)">💳 Milestones</button>
       <button class="budget-tab" onclick="switchBudgetTab('summary',this)">📋 Summary</button>
     </div>
@@ -3963,6 +3965,13 @@ textarea.inp{resize:vertical;min-height:72px;}
     <!-- ── Standard Cost Tab (Standard Costing — Estimate → Freeze → Variance → Profitability) ── -->
     <div id="budget-tab-stdcost" class="budget-tab-content" style="display:none;padding:14px 20px">
       <div id="stdcost-content">
+        <div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">Loading…</div>
+      </div>
+    </div>
+
+    <!-- ── Design Tab (post-Won design finalization, before Manufacturing) ── -->
+    <div id="budget-tab-design" class="budget-tab-content" style="display:none;padding:14px 20px">
+      <div id="design-content">
         <div style="text-align:center;padding:40px;color:var(--muted);font-size:13px">Loading…</div>
       </div>
     </div>
@@ -4350,6 +4359,7 @@ const DB = {
   journalEntries:[],
   projectBudgets:[],
   standardCostSnapshots:[],
+  stockCounts:[],
   pendingUsers:[],
   materialRequests:[],
   bankEntries:[],
@@ -8588,13 +8598,20 @@ const KPI_REGISTRY = [
       return {value:Math.round((cur-prev)/prev*1000)/10, extra:INR(cur)+' this period vs. '+INR(prev)+' the prior period'}; },
     target:0 },
   { id:'quotation-turnaround', dept:'Sales & Business Development', name:'Quotation Turnaround', unit:'days', direction:'lower', freq:'Weekly',
-    compute(){ return {value:null}; }, target:2,
-    note:'Needs a Cost-Sheet-approved timestamp on quotations, which isn\'t tracked yet — only a single date field exists today.' },
+    compute(ctx){ const qs=DB.quotations.filter(q=>q.costSheetApprovedDate&&_kpiDateOk(q.costSheetApprovedDate,ctx)&&_kpiProjOk(q.projectId,ctx));
+      if(!qs.length) return {value:null};
+      const days=qs.map(q=>Math.max(0,(new Date(q.costSheetApprovedDate)-new Date(q.date))/86400000));
+      return {value:Math.round(days.reduce((s,d)=>s+d,0)/days.length*10)/10, extra:qs.length+' quotation(s) approved'}; },
+    target:2 },
 
   // ── Marketing ───────────────────────────────────────────────────
   { id:'cost-per-lead', dept:'Marketing', name:'Cost per Qualified Lead', unit:'₹', direction:'lower', freq:'Monthly',
-    compute(){ return {value:null}; }, target:0,
-    note:'No campaign/marketing-spend tracking exists in the ERP yet.' },
+    compute(ctx){ const {from,to}=_kpiMonthRange(ctx);
+      const spend=DB.expenses.filter(e=>e.category==='Marketing'&&e.date>=from&&e.date<=to).reduce((s,e)=>s+(+e.amount||0),0);
+      const leads=DB.leads.filter(l=>l.date>=from&&l.date<=to).length;
+      if(!leads) return {value:null, extra:INR(spend)+' marketing spend, no leads in range'};
+      return {value:Math.round(spend/leads), extra:INR(spend)+' spent on '+leads+' lead(s)'}; },
+    target:0 },
   { id:'lead-volume', dept:'Marketing', name:'Lead Volume vs. Target', unit:'%', direction:'higher', freq:'Monthly',
     compute(ctx){ const {from,to}=_kpiMonthRange(ctx);
       const cnt=DB.leads.filter(l=>l.date>=from&&l.date<=to).length;
@@ -8611,18 +8628,27 @@ const KPI_REGISTRY = [
 
   // ── Design ──────────────────────────────────────────────────────
   { id:'design-turnaround', dept:'Design', name:'Design Approval Turnaround', unit:'days', direction:'lower', freq:'Monthly',
-    compute(){ return {value:null}; }, target:10,
-    note:'No design-approval timestamp is tracked yet — there is no dedicated Design module with stage dates.' },
+    compute(ctx){ const projs=DB.projects.filter(p=>p.designApprovedDate&&_kpiDateOk(p.designApprovedDate,ctx)&&_kpiProjOk(p.id,ctx));
+      if(!projs.length) return {value:null};
+      const days=projs.map(p=>Math.max(0,(new Date(p.designApprovedDate)-new Date(p.startDate||p.designApprovedDate))/86400000));
+      return {value:Math.round(days.reduce((s,d)=>s+d,0)/days.length*10)/10, extra:projs.length+' project(s) with design approved'}; },
+    target:10 },
   { id:'design-change-rate', dept:'Design', name:'Post-Approval Change Rate', unit:'%', direction:'lower', freq:'Quarterly',
-    compute(){ return {value:null}; }, target:10,
-    note:'No design-change tracking exists yet.' },
+    compute(ctx){ const projs=DB.projects.filter(p=>p.designApprovedDate&&_kpiDateOk(p.designApprovedDate,ctx)&&_kpiProjOk(p.id,ctx));
+      if(!projs.length) return {value:null};
+      const changed=projs.filter(p=>(p.designChangeCount||0)>0).length;
+      return {value:Math.round(changed/projs.length*100), extra:changed+' of '+projs.length+' approved design(s) changed afterward'}; },
+    target:10 },
 
   // ── Estimation ──────────────────────────────────────────────────
   { id:'estimate-variance', dept:'Estimation', name:'Estimate-to-Actual Cost Variance', unit:'%', direction:'tolerance', freq:'Per project close',
     compute(ctx){ return _projectCostVariance(ctx); }, target:5 },
   { id:'costing-turnaround', dept:'Estimation', name:'Costing Turnaround', unit:'days', direction:'lower', freq:'Monthly',
-    compute(){ return {value:null}; }, target:3,
-    note:'No BOQ-drawing-received vs. Cost-Sheet-approved timestamps are tracked yet.' },
+    compute(ctx){ const ers=(DB.estimationRequests||[]).filter(e=>e.costing&&e.costing.updatedAt&&_kpiDateOk(e.costing.updatedAt.slice(0,10),ctx));
+      if(!ers.length) return {value:null};
+      const days=ers.map(e=>Math.max(0,(new Date(e.costing.updatedAt.slice(0,10))-new Date(e.requestedDate))/86400000));
+      return {value:Math.round(days.reduce((s,d)=>s+d,0)/days.length*10)/10, extra:ers.length+' costing(s) completed'}; },
+    target:3 },
 
   // ── Project Management ──────────────────────────────────────────
   { id:'ontime-delivery', dept:'Project Management', name:'On-Time Delivery %', unit:'%', direction:'higher', freq:'Monthly',
@@ -8654,13 +8680,23 @@ const KPI_REGISTRY = [
       return {value:Math.round(variances.reduce((s,v)=>s+v,0)/variances.length*10)/10, extra:'Contract value used as budget proxy'}; },
     target:5 },
   { id:'client-satisfaction', dept:'Project Management', name:'Client Satisfaction Score', unit:'/10', direction:'higher', freq:'Per handover',
-    compute(){ return {value:null}; }, target:8,
-    note:'No client satisfaction/rating capture exists yet.' },
+    compute(ctx){ const ins=DB.installations.filter(i=>i.clientRating&&i.handoverDate&&_kpiDateOk(i.handoverDate,ctx)&&_kpiProjOk(i.projectId,ctx));
+      if(!ins.length) return {value:null};
+      const avg=ins.reduce((s,i)=>s+i.clientRating,0)/ins.length;
+      return {value:Math.round(avg*10)/10, extra:ins.length+' rated handover(s)'}; },
+    target:8 },
 
   // ── Procurement ──────────────────────────────────────────────────
   { id:'po-cycle-time', dept:'Procurement', name:'PO Cycle Time', unit:'days', direction:'lower', freq:'Weekly',
-    compute(){ return {value:null}; }, target:2,
-    note:'Purchase Requests aren\'t a separate tracked entity yet — only the PO itself has a single date field.' },
+    compute(ctx){ const pos=DB.purchaseOrders.filter(po=>po.items?.some(it=>it.materialRequestId)&&_kpiDateOk(po.date,ctx)&&_kpiProjOk(po.projectId,ctx));
+      if(!pos.length) return {value:null};
+      const days=[];
+      pos.forEach(po=>{ const mrId=po.items.find(it=>it.materialRequestId)?.materialRequestId;
+        const req=(DB.materialRequests||[]).find(r=>r.id===mrId);
+        if(req&&req.date) days.push(Math.max(0,(new Date(po.date)-new Date(req.date))/86400000)); });
+      if(!days.length) return {value:null};
+      return {value:Math.round(days.reduce((s,d)=>s+d,0)/days.length*10)/10, extra:days.length+' PO(s) traced to a Material Request'}; },
+    target:2 },
   { id:'vendor-ontime', dept:'Procurement', name:'Vendor On-Time Delivery %', unit:'%', direction:'higher', freq:'Monthly',
     compute(ctx){ const received=DB.purchaseOrders.filter(p=>p.status==='Received'&&p.receivedDate&&p.expectedDate&&_kpiDateOk(p.receivedDate,ctx)&&_kpiProjOk(p.projectId,ctx));
       if(!received.length) return {value:null};
@@ -8676,8 +8712,17 @@ const KPI_REGISTRY = [
       return {value:Math.round((cur-prev)/prev*1000)/10, extra:INR(cur)+' this period vs. '+INR(prev)+' the prior period'}; },
     target:0 },
   { id:'price-variance', dept:'Procurement', name:'Price Variance vs. Estimate', unit:'%', direction:'tolerance', freq:'Monthly',
-    compute(){ return {value:null}; }, target:5,
-    note:'PO line items aren\'t linked back to their original BOQ/Cost-Sheet rate yet.' },
+    compute(ctx){ const pos=DB.purchaseOrders.filter(po=>_kpiDateOk(po.date,ctx)&&_kpiProjOk(po.projectId,ctx));
+      const diffs=[];
+      pos.forEach(po=>(po.items||[]).forEach(it=>{
+        if(!it.materialRequestId) return;
+        const req=(DB.materialRequests||[]).find(r=>r.id===it.materialRequestId);
+        if(!req||!req.rate) return;
+        diffs.push((it.rate-req.rate)/req.rate*100);
+      }));
+      if(!diffs.length) return {value:null};
+      return {value:Math.round(diffs.reduce((s,d)=>s+d,0)/diffs.length*10)/10, extra:diffs.length+' PO line(s) traced to an estimated rate'}; },
+    target:5 },
 
   // ── Inventory ─────────────────────────────────────────────────────
   { id:'inventory-turnover', dept:'Inventory', name:'Inventory Turnover', unit:'x', direction:'higher', freq:'Monthly',
@@ -8688,16 +8733,26 @@ const KPI_REGISTRY = [
       return {value:Math.round(cogs/invValue*100)/100, extra:INR(cogs)+' purchased in range against '+INR(invValue)+' current stock value'}; },
     target:1, note:'Uses current stock value as a proxy for average inventory — no periodic stock-valuation snapshots exist yet to compute a true period average.' },
   { id:'stock-accuracy', dept:'Inventory', name:'Stock Accuracy %', unit:'%', direction:'higher', freq:'Monthly',
-    compute(){ return {value:null}; }, target:98,
-    note:'No physical cycle-count workflow exists yet to compare against system stock.' },
+    compute(ctx){ const counts=(DB.stockCounts||[]).filter(c=>_kpiDateOk(c.date,ctx));
+      if(!counts.length) return {value:null};
+      const accuracies=counts.map(c=>c.systemQty ? Math.max(0,100-Math.abs(c.variance)/c.systemQty*100) : (c.variance===0?100:0));
+      return {value:Math.round(accuracies.reduce((s,a)=>s+a,0)/accuracies.length*10)/10, extra:counts.length+' physical count(s) logged'}; },
+    target:98 },
   { id:'wastage-rate', dept:'Inventory', name:'Wastage/Damage Rate', unit:'%', direction:'lower', freq:'Monthly',
-    compute(){ return {value:null}; }, target:2,
-    note:'Damaged/wastage stock isn\'t tagged separately from normal returns yet.' },
+    compute(ctx){ const {from,to}=_kpiMonthRange(ctx);
+      const dmgVal=(DB.damages||[]).filter(d=>d.date>=from&&d.date<=to).reduce((s,d)=>s+(+d.value||0),0);
+      const purchVal=DB.purchases.filter(p=>p.date>=from&&p.date<=to).reduce((s,p)=>s+(+p.amount||0),0);
+      if(!purchVal) return {value:null, extra:INR(dmgVal)+' damaged, no purchases in range to compare against'};
+      return {value:Math.round(dmgVal/purchVal*1000)/10, extra:INR(dmgVal)+' damaged vs '+INR(purchVal)+' purchased'}; },
+    target:2 },
 
   // ── Factory Production ────────────────────────────────────────────
   { id:'production-adherence', dept:'Factory Production', name:'Production Plan Adherence %', unit:'%', direction:'higher', freq:'Weekly',
-    compute(){ return {value:null}; }, target:90,
-    note:'Manufacturing jobs have no completed-date field — only a due date and a status, so on-schedule completion can\'t be measured yet.' },
+    compute(ctx){ const done=DB.mfgJobs.filter(j=>j.status==='Completed'&&j.completedDate&&_kpiDateOk(j.completedDate,ctx)&&_kpiProjOk(j.projectId,ctx));
+      if(!done.length) return {value:null};
+      const onTime=done.filter(j=>!j.dueDate||new Date(j.completedDate)<=new Date(j.dueDate)).length;
+      return {value:Math.round(onTime/done.length*100), extra:onTime+' of '+done.length+' jobs on schedule'}; },
+    target:90 },
   { id:'production-efficiency', dept:'Factory Production', name:'Production Cost Efficiency %', unit:'%', direction:'higher', freq:'Weekly',
     compute(ctx){ const jobs=DB.mfgJobs.filter(j=>_kpiProjOk(j.projectId,ctx));
       const sheets=jobs.map(j=>jobCostSheet(j.id)).filter(c=>c&&c.estimatedCost&&c.totalActualCost);
@@ -8706,8 +8761,20 @@ const KPI_REGISTRY = [
       return {value:Math.round(ratios.reduce((s,v)=>s+v,0)/ratios.length), extra:sheets.length+' job(s) with both an estimate and an actual cost — 100% means actual matched estimate, above 100% is favorable'}; },
     target:100 },
   { id:'material-wastage', dept:'Factory Production', name:'Material Wastage %', unit:'%', direction:'lower', freq:'Weekly',
-    compute(){ return {value:null}; }, target:5,
-    note:'No BOQ-budgeted-vs-actual-consumed material tracking exists yet.' },
+    compute(ctx){ let budgeted=0, actual=0, any=false;
+      (DB.projectBudgets||[]).forEach(b=>{ if(!_kpiProjOk(b.projectId,ctx)) return;
+        (b.productBOMs||[]).forEach(pb=>{
+          const prod=DB.products.find(p=>p.id===pb.productId); if(!prod) return;
+          const issued=DB.issues.filter(i=>i.productId===pb.productId&&_kpiDateOk(i.date,ctx)).reduce((s,i)=>s+(+i.amount||0),0)
+                     - DB.returns.filter(r=>r.productId===pb.productId&&_kpiDateOk(r.date,ctx)).reduce((s,r)=>s+(+r.value||0),0);
+          if(!pb.matTotal && !issued) return;
+          any=true; budgeted+=pb.matTotal||0; actual+=issued;
+        });
+      });
+      if(!any||!budgeted) return {value:null};
+      const wastage=Math.max(0,actual-budgeted);
+      return {value:Math.round(wastage/budgeted*1000)/10, extra:INR(actual)+' consumed vs '+INR(budgeted)+' budgeted'}; },
+    target:5 },
   { id:'rework-rate', dept:'Factory Production', name:'Rework Rate', unit:'%', direction:'lower', freq:'Weekly',
     compute(ctx){ const qc=(DB.qc||[]).filter(q=>_kpiDateOk(q.date,ctx)&&_kpiProjOk(q.projectId,ctx));
       if(!qc.length) return {value:null};
@@ -8724,8 +8791,13 @@ const KPI_REGISTRY = [
       return {value:Math.round(pass/total*100), extra:pass+' of '+total+' checklist items'}; },
     target:95 },
   { id:'defect-escape', dept:'Quality Control', name:'Defect Escape Rate', unit:'%', direction:'lower', freq:'Monthly',
-    compute(){ return {value:null}; }, target:2,
-    note:'No post-handover defect log distinct from CAPA exists yet.' },
+    compute(ctx){ const done=DB.installations.filter(i=>i.status==='Completed'&&i.handoverDate&&_kpiDateOk(i.handoverDate,ctx)&&_kpiProjOk(i.projectId,ctx));
+      if(!done.length) return {value:null};
+      const DAYS=90;
+      const escaped=done.filter(i=>(DB.serviceTickets||[]).some(t=>t.projectId===i.projectId&&(t.type==='Warranty Claim'||t.type==='Complaint')
+        &&t.date>=i.handoverDate&&(new Date(t.date)-new Date(i.handoverDate))/86400000<=DAYS)).length;
+      return {value:Math.round(escaped/done.length*100), extra:escaped+' of '+done.length+' handover(s) had a Warranty Claim/Complaint within '+DAYS+' days'}; },
+    target:2 },
 
   // ── Site Installation ────────────────────────────────────────────────
   { id:'install-schedule', dept:'Site Installation', name:'Installation Schedule Adherence %', unit:'%', direction:'higher', freq:'Monthly',
@@ -8770,8 +8842,20 @@ const KPI_REGISTRY = [
   { id:'job-costing-variance', dept:'Finance & Accounts', name:'Job Costing Variance', unit:'%', direction:'tolerance', freq:'Per project close',
     compute(ctx){ return _projectCostVariance(ctx); }, target:5 },
   { id:'cash-conversion', dept:'Finance & Accounts', name:'Cash Conversion Cycle', unit:'days', direction:'lower', freq:'Monthly',
-    compute(){ return {value:null}; }, target:45,
-    note:'Needs historical inventory-turnover tracking, which doesn\'t exist yet.' },
+    compute(ctx){ const {from,to}=_kpiMonthRange(ctx);
+      const spanDays=Math.max(1,Math.round((new Date(to)-new Date(from))/86400000)+1);
+      const sales=DB.invoices.filter(i=>i.date>=from&&i.date<=to).reduce((s,i)=>s+(+i.amount||0),0);
+      const purch=DB.purchases.filter(p=>p.date>=from&&p.date<=to).reduce((s,p)=>s+(+p.amount||0),0);
+      ensureDefaultAccounts();
+      const arAcc=glFindAccount('Accounts Receivable'), apAcc=glFindAccount('Accounts Payable');
+      const ar=arAcc?glClosingAsOf(arAcc,to):0, ap=apAcc?glClosingAsOf(apAcc,to):0;
+      const invVal=DB.warehouse.reduce((s,w)=>s+(w.qty*(w.rate||0)),0);
+      if(!sales&&!purch) return {value:null};
+      const dso=sales?(ar/sales*spanDays):0;
+      const dpo=purch?(ap/purch*spanDays):0;
+      const dio=purch?(invVal/purch*spanDays):0;
+      return {value:Math.round(dio+dso-dpo), extra:'DIO '+Math.round(dio)+'d + DSO '+Math.round(dso)+'d − DPO '+Math.round(dpo)+'d'}; },
+    target:45 },
 
   // ── HR & Administration ────────────────────────────────────────────
   { id:'time-to-hire', dept:'HR & Administration', name:'Time-to-Hire', unit:'days', direction:'lower', freq:'Monthly',
@@ -8826,8 +8910,12 @@ const KPI_REGISTRY = [
       return {value:Math.round(avg*10)/10, extra:closed.length+' warranty claim(s) closed'}; },
     target:7 },
   { id:'nps', dept:'Customer Service', name:'Net Promoter Score', unit:'score', direction:'higher', freq:'Quarterly',
-    compute(){ return {value:null}; }, target:50,
-    note:'No client feedback/survey capture exists yet.' },
+    compute(ctx){ const ins=DB.installations.filter(i=>i.clientNpsScore!=null&&i.handoverDate&&_kpiDateOk(i.handoverDate,ctx)&&_kpiProjOk(i.projectId,ctx));
+      if(!ins.length) return {value:null};
+      const promoters=ins.filter(i=>i.clientNpsScore>=9).length;
+      const detractors=ins.filter(i=>i.clientNpsScore<=6).length;
+      return {value:Math.round((promoters-detractors)/ins.length*100), extra:promoters+' promoters, '+detractors+' detractors of '+ins.length}; },
+    target:50 },
 ];
 
 // Shared by Estimation's "Estimate-to-Actual Cost Variance" and Finance's
@@ -12533,7 +12621,7 @@ function openModal(type){
   // see expCatToggleNew() and saveExpense().
   const expCatSel = document.getElementById('f-exp-cat');
   if(expCatSel){
-    if(!DB.expenseCategories||!DB.expenseCategories.length) DB.expenseCategories=['Transportation','Installation','Work Exp','Scaffolding','CNC Work','Travelling','Accommodation','Paint Work','Miscellaneous'];
+    if(!DB.expenseCategories||!DB.expenseCategories.length) DB.expenseCategories=['Transportation','Installation','Marketing','Work Exp','Scaffolding','CNC Work','Travelling','Accommodation','Paint Work','Miscellaneous'];
     const cur = expCatSel.value;
     expCatSel.innerHTML = DB.expenseCategories.map(c=>`<option>${escHtml(c)}</option>`).join('')+'<option value="__new__">+ Add New Category…</option>';
     if(cur) expCatSel.value = cur;
@@ -13737,7 +13825,7 @@ function renderFixedAssetsFinancing(){
 // silently under-counted.
 // ══════════════════════════════════════════════
 const BUDGET_DEPTS = ['Factory','Site','Office','Management','Design','Accounts'];
-const BUDGET_EXP_CATS = ['Transportation','Installation','Work Exp','Scaffolding','CNC Work','Travelling','Accommodation','Paint Work','Miscellaneous'];
+const BUDGET_EXP_CATS = ['Transportation','Installation','Marketing','Work Exp','Scaffolding','CNC Work','Travelling','Accommodation','Paint Work','Miscellaneous'];
 function onBudgetScopeChange(){
   const scope = document.getElementById('f-bud-scope')?.value;
   const targetSel = document.getElementById('f-bud-target');
@@ -17990,6 +18078,7 @@ function quotApprove(qId, level){
     q.approvalStatus = 'Accounts Approved';
     q.accountsApprovedBy = _currentUser.name;
     q.accountsApprovedDate = new Date().toISOString().slice(0,10);
+    if(!q.costSheetApprovedDate) q.costSheetApprovedDate = q.accountsApprovedDate;
     q.approvalRejectReason = '';
     logActivity('quotation', q.id, 'Accounts Approval granted', `${_currentUser.name} (${_currentUser.role}) approved "${q.refNo}" for sending`);
     toast('Quotation approved by Accounts ✓','ok');
@@ -20691,6 +20780,10 @@ function editInstall(id){
       <div class="fg"><label class="fl">Handover Date</label><input class="inp" type="date" id="f-ins-hdate" value="${i.handoverDate||''}"></div>
       <div class="fg"></div>
     </div>
+    <div class="f2">
+      <div class="fg"><label class="fl">Client Satisfaction (1-10, optional)</label><input class="inp" type="number" min="1" max="10" id="f-ins-rating" value="${i.clientRating||''}" placeholder="Captured at handover"></div>
+      <div class="fg"><label class="fl">Would Recommend — NPS (0-10, optional)</label><input class="inp" type="number" min="0" max="10" id="f-ins-nps" value="${i.clientNpsScore||''}" placeholder="How likely to recommend us?"></div>
+    </div>
     <div class="fg"><label class="fl">Notes</label><input class="inp" id="f-ins-notes" value="${i.notes||''}"></div>`;
   openOverlay();
 }
@@ -21112,6 +21205,9 @@ function saveEditInstall(id){
   i.dueDate     = g('f-ins-due');
   i.handoverDate= g('f-ins-hdate');
   i.notes       = g('f-ins-notes');
+  const ratingRaw = g('f-ins-rating'), npsRaw = g('f-ins-nps');
+  i.clientRating   = ratingRaw!=='' ? Math.min(10,Math.max(1,+ratingRaw||0)) : (i.clientRating||null);
+  i.clientNpsScore = npsRaw!=='' ? Math.min(10,Math.max(0,+npsRaw||0)) : (i.clientNpsScore||null);
   if(i.status==='Completed' && !i.handoverDate) i.handoverDate = new Date().toISOString().slice(0,10);
   closeModal(); toast('Installation updated ✓','ok'); renderInstallation(); renderSiteDash();
 }
@@ -23444,6 +23540,7 @@ function switchBudgetTab(tab, btn){
   if(tab==='summary') updateBudgetSummary();
   if(tab==='variance') renderVarianceTab();
   if(tab==='stdcost') renderStandardCostTab();
+  if(tab==='design') renderDesignTab();
   if(tab==='milestones') renderBomMilestoneTab();
   if(tab==='itemcosts'){const pid=document.getElementById('budget-project-id').value;const bud=DB.projectBudgets.find(b=>b.projectId===pid);_renderItemCostRows(pid,bud);}
 }
@@ -24153,6 +24250,123 @@ function reFreezeStandardCost(projectId){
   if(snap) toast(`Standard Cost v${snap.version} frozen — ${INR(snap.total)} ✓`,'ok');
   renderStandardCostTab();
 }
+// ══════════════════════════════════════════════
+//  STOCK COUNT (KPI completion pass) — a pure audit/comparison record,
+//  not a mutation: logs what a physical count found against the system
+//  quantity at that moment, feeding Stock Accuracy %. Deliberately does
+//  NOT auto-adjust DB.warehouse.qty — reconciling a discrepancy is a
+//  separate, deliberate "± Adjust Stock" action (which already posts to
+//  the Financial Engine); silently correcting stock from a count entry
+//  would conflate an audit observation with a real inventory transaction.
+// ══════════════════════════════════════════════
+function openStockCountModal(){
+  if(!roleCan('create','Inventory')){ toast('You do not have permission to log a stock count.','err'); return; }
+  _currentModal = 'stockcount';
+  document.getElementById('modal-title').textContent = '🔢 Physical Stock Count';
+  document.getElementById('modal-save-btn').style.display='none';
+  const itemOpts = DB.warehouse.map(w=>`<option value="${w.id}">${escHtml(w.name)} (system: ${w.qty} ${w.unit})</option>`).join('');
+  document.getElementById('modal-body').innerHTML = `
+    <div class="fg"><label class="fl">Item</label><select class="inp" id="f-sc-item" onchange="_scItemChange()"><option value="">— Select —</option>${itemOpts}</select></div>
+    <div class="f2">
+      <div class="fg"><label class="fl">System Qty</label><input class="inp" id="f-sc-sysqty" readonly></div>
+      <div class="fg"><label class="fl">Counted Qty *</label><input class="inp" type="number" id="f-sc-countqty" oninput="_scItemChange()"></div>
+    </div>
+    <div id="f-sc-variance" class="small muted" style="margin-bottom:10px"></div>
+    <button class="btn btn-gold" onclick="saveStockCountEntry()">💾 Log Count</button>
+  `;
+  openOverlay();
+}
+function _scItemChange(){
+  const w = DB.warehouse.find(x=>x.id===document.getElementById('f-sc-item')?.value);
+  const sysQtyEl = document.getElementById('f-sc-sysqty');
+  const varEl = document.getElementById('f-sc-variance');
+  if(!w){ sysQtyEl.value=''; varEl.textContent=''; return; }
+  sysQtyEl.value = w.qty+' '+w.unit;
+  const counted = +document.getElementById('f-sc-countqty')?.value;
+  if(!isNaN(counted) && document.getElementById('f-sc-countqty').value!==''){
+    const diff = counted-w.qty;
+    varEl.innerHTML = Math.abs(diff)<0.001 ? '<span style="color:var(--green)">✓ Matches system quantity exactly</span>'
+      : `<span style="color:var(--red)">${diff>0?'+':''}${diff} ${w.unit} vs system (${w.qty} ${w.unit})</span>`;
+  } else varEl.textContent='';
+}
+function saveStockCountEntry(){
+  if(!roleCan('create','Inventory')){ toast('You do not have permission to log a stock count.','err'); return; }
+  const itemId = document.getElementById('f-sc-item')?.value;
+  const w = DB.warehouse.find(x=>x.id===itemId);
+  if(!w){ toast('Select an item','err'); return; }
+  const countedQty = +document.getElementById('f-sc-countqty')?.value;
+  if(document.getElementById('f-sc-countqty')?.value===''||isNaN(countedQty)||countedQty<0){ toast('Enter a valid counted quantity','err'); return; }
+  if(!DB.stockCounts) DB.stockCounts=[];
+  DB.stockCounts.push({
+    id:'SC'+uid(), date:new Date().toISOString().slice(0,10), itemId, itemName:w.name,
+    systemQty:w.qty, countedQty, variance:Math.round((countedQty-w.qty)*100)/100,
+    countedBy:_currentUser?.name||''
+  });
+  logActivity('stockCount', itemId, 'Physical stock count logged', `${w.name}: counted ${countedQty} ${w.unit} vs system ${w.qty} ${w.unit} (${_currentUser?.name||''})`);
+  saveDB();
+  closeModal();
+  toast('Stock count logged ✓','ok');
+}
+
+// ══════════════════════════════════════════════
+//  DESIGN APPROVAL (KPI completion pass) — per the CEO's own description
+//  of the real process: design finalization happens after a Quotation is
+//  Won, during Project setup, before Manufacturing starts. Deliberately a
+//  lightweight stage marker on the Project itself (designApprovedDate/By,
+//  designChangeCount) — not a full Design module with its own records,
+//  since no such module exists anywhere else in this app and inventing
+//  one would be scope far beyond what two KPIs need.
+// ══════════════════════════════════════════════
+function approveProjectDesign(projectId){
+  if(!roleCan('edit','Projects')){ toast('You do not have permission to approve project design.','err'); return; }
+  const proj = DB.projects.find(p=>p.id===projectId); if(!proj) return;
+  if(proj.designApprovedDate){ toast('Design already approved for this project on '+fmtDate(proj.designApprovedDate)+'.','err'); return; }
+  if(!confirm('Mark design finalized and approved for this project? This starts the Design Turnaround clock and enables logging any post-approval changes.')) return;
+  proj.designApprovedDate = new Date().toISOString().slice(0,10);
+  proj.designApprovedBy = _currentUser?.name||'';
+  logActivity('project', proj.id, 'Design approved', `${proj.designApprovedBy} approved the design for ${proj.client} (${proj.code})`);
+  saveDB();
+  toast('Design approved ✓','ok');
+  renderDesignTab();
+}
+function logDesignChange(projectId){
+  if(!roleCan('edit','Projects')){ toast('You do not have permission to log a design change.','err'); return; }
+  const proj = DB.projects.find(p=>p.id===projectId); if(!proj) return;
+  if(!proj.designApprovedDate){ toast('Approve the design first — a change can only be logged against an already-approved design.','err'); return; }
+  const reason = prompt('What changed after design approval?','');
+  if(!reason || !reason.trim()){ toast('A description is required to log a design change.','err'); return; }
+  proj.designChangeCount = (proj.designChangeCount||0)+1;
+  logActivity('project', proj.id, 'Post-approval design change', `${_currentUser?.name||''}: ${reason.trim()} (change #${proj.designChangeCount})`);
+  saveDB();
+  toast('Design change logged ✓','ok');
+  renderDesignTab();
+}
+function renderDesignTab(){
+  const el = document.getElementById('design-content');
+  const projId = document.getElementById('budget-project-id').value;
+  const proj = DB.projects.find(p=>p.id===projId);
+  if(!proj){ el.innerHTML = '<div class="muted small">Project not found.</div>'; return; }
+  const canAct = roleCan('edit','Projects');
+  const turnaroundDays = proj.designApprovedDate && proj.startDate
+    ? Math.round((new Date(proj.designApprovedDate)-new Date(proj.startDate))/86400000) : null;
+
+  el.innerHTML = `
+    <div style="font-size:11px;color:var(--muted);margin-bottom:14px;max-width:600px">Design finalization happens after the project is won, before Manufacturing starts. Approving here starts the Design Turnaround KPI clock; any change logged after approval counts toward the Post-Approval Change Rate KPI.</div>
+    ${!proj.designApprovedDate ? `
+      <div style="text-align:center;padding:20px">
+        <div class="muted small" style="margin-bottom:10px">Design not yet approved for this project.</div>
+        ${canAct?`<button class="btn btn-gold" onclick="approveProjectDesign('${proj.id}')">✅ Approve Design</button>`:''}
+      </div>` : `
+      <div class="kpi-row c3" style="margin-bottom:14px">
+        <div class="kpi"><div class="kpi-label">Design Approved</div><div class="kpi-val" style="font-size:15px">${fmtDate(proj.designApprovedDate)}</div><div class="kpi-sub">by ${escHtml(proj.designApprovedBy||'')}</div></div>
+        <div class="kpi"><div class="kpi-label">Turnaround</div><div class="kpi-val" style="font-size:15px">${turnaroundDays!==null?turnaroundDays+' day'+(turnaroundDays!==1?'s':''):'—'}</div><div class="kpi-sub">from project start</div></div>
+        <div class="kpi ${proj.designChangeCount?'r':'g'}"><div class="kpi-label">Post-Approval Changes</div><div class="kpi-val" style="font-size:15px">${proj.designChangeCount||0}</div></div>
+      </div>
+      ${canAct?`<button class="btn btn-outline btn-sm" onclick="logDesignChange('${proj.id}')">⚠ Log a Design Change</button>`:''}
+    `}
+  `;
+}
+
 function renderStandardCostTab(){
   const el = document.getElementById('stdcost-content');
   if(!requireRole('CEO','Admin')){
