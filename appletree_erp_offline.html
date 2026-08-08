@@ -1452,7 +1452,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <select class="inp inp-sm" id="exp-proj-f" onchange="filterCol('tb-expenses',1,this.value)"><option value="">All Projects</option></select>
       <select class="inp inp-sm" onchange="filterCol('tb-expenses',3,this.value)">
         <option value="">All Categories</option>
-        <option>Transportation</option><option>Installation</option><option>Marketing</option><option>Work Exp</option><option>Scaffolding</option><option>CNC Work</option><option>Travelling</option><option>Accommodation</option><option>Miscellaneous</option>
+        <option>Transportation</option><option>Installation</option><option>Marketing</option><option>Work Exp</option><option>Scaffolding</option><option>CNC Work</option><option>Travelling</option><option>Accommodation</option><option>Paint Work</option><option>Curtain / Soft Furnishing Work</option><option>Fabrication Work</option><option>Glass Work / Mirror</option><option>Cushion Work</option><option>Gypsom Work Labour</option><option>Miscellaneous</option>
       </select>
       <span style="margin-left:auto;font-size:11px;color:var(--mid);">Total: <strong id="exp-total">₹0</strong></span>
     </div>
@@ -12066,7 +12066,7 @@ const MODAL_FORMS={
       <div class="fg"><label class="fl">Product / Item</label><select class="inp" id="f-lab-prod"><option value="">General (No Product)</option>${DB.products.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}</select></div>
     </div>
     <div class="f2">
-      <div class="fg"><label class="fl">Trade</label><select class="inp" id="f-lab-trade"><option>Carpenter</option><option>Polish</option><option>Fabrication</option><option>Gypsum</option><option>Paint</option><option>Glass</option><option>Curtain</option><option>Electrical</option><option>Plumbing</option></select></div>
+      <div class="fg"><label class="fl">Trade</label><select class="inp" id="f-lab-trade"><option>Carpenter</option><option>Installation</option><option>Polish</option><option>Fabrication</option><option>Gypsum</option><option>Paint</option><option>Glass</option><option>Curtain</option><option>Electrical</option><option>Plumbing</option></select></div>
       <div class="fg"><label class="fl">Worker</label><select class="inp" id="f-lab-worker"><option value="">— Select Worker —</option></select>
         <div class="small muted" style="margin-top:3px">Not listed? Add them under <strong>Master Data → Workers</strong> first.</div>
       </div>
@@ -12621,7 +12621,7 @@ function openModal(type){
   // see expCatToggleNew() and saveExpense().
   const expCatSel = document.getElementById('f-exp-cat');
   if(expCatSel){
-    if(!DB.expenseCategories||!DB.expenseCategories.length) DB.expenseCategories=['Transportation','Installation','Marketing','Work Exp','Scaffolding','CNC Work','Travelling','Accommodation','Paint Work','Miscellaneous'];
+    if(!DB.expenseCategories||!DB.expenseCategories.length) DB.expenseCategories=['Transportation','Installation','Marketing','Work Exp','Scaffolding','CNC Work','Travelling','Accommodation','Paint Work','Curtain / Soft Furnishing Work','Fabrication Work','Glass Work / Mirror','Cushion Work','Gypsom Work Labour','Miscellaneous'];
     const cur = expCatSel.value;
     expCatSel.innerHTML = DB.expenseCategories.map(c=>`<option>${escHtml(c)}</option>`).join('')+'<option value="__new__">+ Add New Category…</option>';
     if(cur) expCatSel.value = cur;
@@ -13825,7 +13825,7 @@ function renderFixedAssetsFinancing(){
 // silently under-counted.
 // ══════════════════════════════════════════════
 const BUDGET_DEPTS = ['Factory','Site','Office','Management','Design','Accounts'];
-const BUDGET_EXP_CATS = ['Transportation','Installation','Marketing','Work Exp','Scaffolding','CNC Work','Travelling','Accommodation','Paint Work','Miscellaneous'];
+const BUDGET_EXP_CATS = ['Transportation','Installation','Marketing','Work Exp','Scaffolding','CNC Work','Travelling','Accommodation','Paint Work','Curtain / Soft Furnishing Work','Fabrication Work','Glass Work / Mirror','Cushion Work','Gypsom Work Labour','Miscellaneous'];
 function onBudgetScopeChange(){
   const scope = document.getElementById('f-bud-scope')?.value;
   const targetSel = document.getElementById('f-bud-target');
