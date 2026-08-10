@@ -24,10 +24,32 @@ message from scratch (the ViewModel/Application layer returns a ready message).
 | Background | Pure White | `#FFFFFF` | — |
 | Dark accent | Charcoal | `#1C1C1A` | 28, 28, 26 |
 
-These are the same tokens already in use in the web ERP
-(`--gold`, `--muted`, `--dark`, `--bg` — see the sibling project's brand
-guidelines). Reuse the exact hex values so AEMS and the ERP look like one
-family, even before they're technically merged.
+These are the same tokens already in use in the sibling web ERP project
+(`--gold`, `--muted`, `--dark`, `--bg`) — reuse the exact hex values because
+they come from the same official brand PDF, not because AEMS integrates with
+that ERP (it doesn't — see [ARCHITECTURE.md](ARCHITECTURE.md) §4).
+
+## 2b. Logo
+
+Official mark, copied into `assets/branding/appletree_logo.png`: a gold
+(`#C3B152`) stylized apple-tree icon above the uppercase wordmark "APPLE TREE"
+in the same gold, with a smaller grey ("POWERED BY ⊙ STORIES") tagline lockup
+underneath in a muted grey close to Olive Sprig.
+
+- Use the full lockup (icon + wordmark + tagline) on entry/splash screens
+  (e.g. a workbook cover sheet or the main ribbon "About" panel).
+- Use the icon or wordmark alone in constrained spaces (title bar, small
+  UserForm headers) — never stretch or recolor it outside the palette above.
+- Always render on a plain white or very light background; the mark has no
+  defined reversed/white version confirmed yet — **TBD**: get a
+  reversed-for-dark-backgrounds version from the CEO if a dark-mode UserForm
+  theme is ever built, don't fabricate one.
+- Exact clear-space and minimum-size rules from `Apple Tree_Brand
+  Guideline.pdf` could not be auto-extracted in this environment (no PDF
+  renderer available) — **TBD**: pull precise numbers from the PDF manually
+  before finalizing a workbook cover sheet or print/export template; until
+  then, default to generous padding (at least the height of the tree icon on
+  all sides) rather than guessing a tight number.
 
 Typography: brand font is **Manrope**. Excel VBA UserForms cannot embed a
 web font — they use fonts installed on the user's Windows machine. Two options,

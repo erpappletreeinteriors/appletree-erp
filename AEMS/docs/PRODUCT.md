@@ -12,13 +12,11 @@ can be added without redesigning the business layer.
 
 ## 2. Relationship to the existing web ERP
 
-Appletree already runs a Supabase/Postgres web ERP (`appletree_erp_v2_1.html` at
-the repo root) covering Sales, Procurement, Accounts, HR, Manufacturing,
-Site/Install, and more. Per the CEO's decision (2026-08-07), ABP is expected to
-*eventually merge* with that system rather than remain a permanently separate
-platform. See [ARCHITECTURE.md](ARCHITECTURE.md) §4 for the practical design
-implications of that decision. **TBD**: timeline and trigger condition for
-starting the merge work.
+Appletree already runs a separate Supabase/Postgres web ERP
+(`appletree_erp_v2_1.html` at the repo root). Decision (revised 2026-08-07): ABP
+is a **standalone platform** — it is not designed to merge with that ERP, and no
+integration is planned. Any overlap in capability (e.g. the ERP's existing
+Bill Builder/Pay Bill/Accounts flows) is not a constraint on AEMS's design.
 
 ## 3. Module roadmap
 
@@ -27,15 +25,13 @@ starting the merge work.
 | Expense Management (AEMS) | In progress — scaffold only |
 | Purchase Management | Not started |
 | Inventory | Not started |
-| Manufacturing | Not started (may already be partly covered by the existing ERP) |
-| CRM | Not started (may already be partly covered by the existing ERP) |
+| Manufacturing | Not started |
+| CRM | Not started |
 | Payroll | Not started |
-| HR | Not started (may already be partly covered by the existing ERP) |
+| HR | Not started |
 | Projects | Not started |
-| Accounting | Not started (may already be partly covered by the existing ERP) |
+| Accounting | Not started |
 
-**TBD**: for each "may already be covered" module, decide whether ABP builds a
-new version or the merge plan simply absorbs the existing ERP's implementation.
 Don't start any of these until there's an actual task and this table is updated.
 
 ## 4. Core platform services (shared by all future modules)

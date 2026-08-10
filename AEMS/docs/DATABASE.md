@@ -59,15 +59,86 @@ decision.
 
 ## 5. Future persistence targets
 
+AEMS is standalone (see [ARCHITECTURE.md](ARCHITECTURE.md) §4) — no target below
+assumes integration with the existing web ERP.
+
 | Target | When | Notes |
 |---|---|---|
 | SQLite | If AEMS needs true multi-user without a server | Repository swap only |
 | SQL Server | If deployed on-prem with existing infra | Repository swap only |
-| PostgreSQL | If merged into the existing ERP (see ARCHITECTURE.md §4) | Reuse ERP's existing Supabase/Postgres instance; requires schema mapping exercise, not started |
+| PostgreSQL | If AEMS outgrows a single shared workbook | Own instance, own schema — not the existing ERP's database |
 | Dataverse | If a Power Apps client is built | Repository swap only |
 
-## 6. Schema
+## 6. Schema (v1 — structural, not business content)
 
-No tables are defined yet — they follow from the real expense workflow (BRD/FRD),
-which is pending CEO input. Do not invent categories, approval tiers, or field
-lists here; add them once BRD.md/FRD.md have real content.
+The tables below store the shape defined in [SDD.md](SDD.md) §1 — they do not
+encode any invented business rule (no category list, no ₹ tiers). All on a
+hidden "AEMS_System" worksheet, one `ListObject` per table.
+
+**tblExpenses** (`ExpenseRequest`)
+| Column | Type | Notes |
+|---|---|---|
+| Id | text (GUID) | PK |
+| RequesterId | text | |
+| Category | text | free text until BRD confirms a real list |
+| Description | text | |
+| Currency | text | fixed `"INR"` |
+| Status | number | `ExpenseStatus` enum value |
+| ChainCurrentStepIndex | number | 1-based; part of the owned ApprovalChain, stored here since it's 1:1 |
+| ChainReturnToStepIndex | number | 0 = none awaiting resubmission |
+| ChainIsComplete | boolean | |
+| CreatedAt / CreatedBy / ModifiedAt / ModifiedBy | date/text | audit columns |
+
+**tblExpenseLineItems** (`ExpenseLineItem`, child of an expense)
+| Column | Type | Notes |
+|---|---|---|
+| Id | text (GUID) | PK |
+| ExpenseId | text (GUID) | FK → tblExpenses.Id |
+| Description | text | |
+| Amount | currency | |
+
+**tblExpenseAttachments** (file references, child of an expense)
+| Column | Type | Notes |
+|---|---|---|
+| Id | text (GUID) | PK |
+| ExpenseId | text (GUID) | FK → tblExpenses.Id |
+| FileReference | text | path/link — attachment storage mechanism itself is TBD |
+
+**tblApprovalSteps** (`ApprovalStep`, child of an expense's chain)
+| Column | Type | Notes |
+|---|---|---|
+| Id | text (GUID) | PK |
+| ExpenseId | text (GUID) | FK → tblExpenses.Id |
+| StepOrder | number | 1–5, fixed chain order |
+| Role | number | `ApprovalRole` enum value |
+| AssignedUserId | text | |
+| Status | number | `ApprovalStepStatus` enum value |
+| ActedBy | text | |
+| ActedAt | date | |
+| Comment | text | |
+
+**tblApprovalHistory** (`ApprovalHistoryEntry`, append-only)
+| Column | Type | Notes |
+|---|---|---|
+| Id | text (GUID) | PK |
+| ExpenseId | text (GUID) | FK → tblExpenses.Id |
+| StepRole | number | `ApprovalRole` enum value |
+| Action | number | `ApprovalAction` enum value |
+| ActorId | text | |
+| Timestamp | date | |
+| Comment | text | |
+
+**tblPayments** (`PaymentRecord`)
+| Column | Type | Notes |
+|---|---|---|
+| Id | text (GUID) | PK |
+| ExpenseId | text (GUID) | FK → tblExpenses.Id, 1:1 |
+| Status | number | `PaymentStatus` enum value |
+| Method | text | free text until BRD confirms real values |
+| PaidAt | date | |
+| PaidBy | text | |
+| PaymentReference | text | |
+
+Implemented by `ExcelExpenseRepository` (modules/expense/persistence) and
+`ExcelPaymentRepository` (modules/payment/persistence) — the only code
+permitted to reference these tables directly.

@@ -7,11 +7,9 @@ the sibling ERP files at the repo root (`appletree_erp_v2_1.html`,
 a task explicitly asks for the merge/integration work described in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-**Relationship to the existing ERP:** the CEO has decided this platform should
-*eventually merge* with the existing Supabase/Postgres web ERP, not stay permanently
-separate. Design AEMS's persistence and domain layers so that a future port to that
-Postgres schema is plausible — don't paint into an Excel-only corner. Don't attempt
-the merge itself until asked.
+**Relationship to the existing ERP:** standalone. AEMS does not integrate with or
+design toward the existing Supabase/Postgres web ERP — build it as its own
+complete system.
 
 ## What this is
 
@@ -47,9 +45,13 @@ AEMS/
                           DATABASE, UI_GUIDELINES, TESTING, PRODUCT
   modules/
     core/                platform services shared by all future ABP modules
-                          (auth, audit, notification, master data, settings)
-    expense/              the AEMS bounded context(s): Expense, Approval, Payment
-    shared/               kernel types/utilities shared across modules (no business rules)
+                          (domain/ interfaces like IClock/IIdGenerator; infrastructure/
+                          concrete impls; persistence/ generic Excel Table helpers)
+    expense/             Expense bounded context: domain/ application/ persistence/
+    approval/             Approval bounded context: domain/ (owned by Expense
+                          aggregate at runtime, see docs/SDD.md #1)
+    payment/               Payment bounded context: domain/ application/ persistence/
+    shared/               kernel types shared across contexts (Enums.bas) — no business rules
   ui/
     excel-client/         VBA project, UserForms, ribbon XML, workbook
   tests/

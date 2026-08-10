@@ -17,6 +17,55 @@ don't assume these VBA-specific rules translate literally.
 - Persistence implementations are the only place `ListObject`/`Range` may appear
   outside the UI layer.
 
+## 1a. A class's own identifiers must not collide with its Property names
+
+VBA is case-insensitive, and in this codebase, *any* identifier inside a
+class module that case-insensitively matches one of that class's own
+`Property` names — a `Dim`, a type keyword used elsewhere, or (the common
+case) a `Sub`/`Function` **parameter** name — silently breaks that class's
+members from being resolvable when called *from another module*. The
+symptom is a VBE "Compile error: Method or data member not found" pointing
+at the *first* cross-module call into the class, which may be nowhere near
+the actual colliding identifier. The declaration itself shows no error and
+looks completely normal.
+
+Two confirmed variants, both hit for real in this codebase:
+
+1. **Type collision**: `ExpenseRequest` had a `Currency` property *and*
+   used the VBA `Currency` type for `TotalAmount`'s return type. Renamed
+   the property to `CurrencyCode`; separately, the `Currency` VBA type
+   itself was dropped project-wide in favor of `Double` (see
+   `ExpenseLineItem.Amount`) once it became clear that merely *using* the
+   `Currency` type anywhere in a class was enough to trigger this, not
+   just naming a member `Currency`.
+2. **Parameter collision**: every `Init`/`Hydrate` method in this codebase
+   originally named its parameters after the properties they populate
+   (`Sub Hydrate(id As String, ...)` inside a class with an `Id` property).
+   That reads naturally but is exactly this same collision. Fixed by
+   prefixing every such parameter with `in` (`inId`, `inCreatedAt`, ...) —
+   see `ExpenseRequest.Hydrate`, `ApprovalStep.Hydrate`,
+   `ApprovalHistoryEntry.Init`, `PaymentRecord.Hydrate`/`Init`/`MarkPaid`,
+   `ApprovalChain.Init` for the applied fix.
+
+Rule going forward: when a `Sub`/`Function` parameter's natural name would
+match one of its own class's Property names, prefix it (`in` for
+constructor/hydration-style inputs) rather than let it collide. This is not
+a style preference — the collision breaks real functionality.
+
+## 1b. Repository hydration pattern
+
+A repository reconstructing an aggregate from storage is not performing a
+business transition (e.g. loading a `Paid` expense doesn't mean someone just
+paid it) — so it must bypass the aggregate's normal rule-enforcing methods.
+Each aggregate exposes `Public Sub Hydrate...` methods for exactly this,
+documented inline as "repository-only". These are `Public`, not `Friend`:
+`Friend` procedures did not resolve as callable members across modules in
+this VBA project in practice (a real, reproduced compile error, "Method or
+data member not found" on an otherwise-correctly-declared Friend member) —
+so `Public` is the only access level confirmed to work reliably here.
+Treat "only call `Hydrate*` from `modules/*/persistence`" as an
+enforced-by-review convention, same as the layer rules in §1.
+
 ## 2. Naming
 
 - Classes: `PascalCase` nouns (`ExpenseRequest`, `ApprovalStep`).

@@ -49,24 +49,16 @@ schema conventions.
 
 ## 4. Relationship to the existing web ERP
 
-The CEO's direction (2026-08-07): AEMS should be built so it *can eventually merge*
-with the existing Supabase/Postgres ERP (`appletree_erp_v2_1.html`,
-`schema.sql`, `supabase_migration_*.sql` at the repo root), but the two are not
-integrated today and no merge work should begin without an explicit task for it.
+Revised decision (2026-08-07, supersedes the original "eventually merge"
+direction): AEMS is a **standalone platform**. It is not designed against the
+existing Supabase/Postgres ERP (`appletree_erp_v2_1.html`,
+`schema.sql`, `supabase_migration_*.sql` at the repo root), and no future merge
+should be assumed while making design decisions. Build AEMS as its own complete
+system with its own persistence, auth, and workflow — don't hold back on
+AEMS-native naming or data shapes to keep a hypothetical merge path open.
 
-Practical implication for design decisions made now:
-- Domain models should be expressible as normalized relational tables (the ERP
-  already uses Postgres) — avoid Excel-specific data shapes leaking into the
-  domain layer (e.g. no "row number as identity").
-- Entity IDs should be stable, globally-unique values (GUID/UUID), not
-  worksheet-row-dependent, so records could later be migrated into the ERP's
-  Postgres tables without a remapping step.
-- Where the ERP already has an equivalent concept (it has Bill Builder / Pay Bill
-  / Accounts flows per its commit history), name AEMS's domain concepts so a
-  future mapping is obvious rather than colliding (e.g. don't reuse "Bill" for a
-  different meaning than the ERP uses it).
-- Do not attempt schema alignment, shared auth, or data sync now — that is future
-  work, tracked as a TBD module in [PRODUCT.md](PRODUCT.md).
+If a merge is ever wanted later, that would be a deliberate, separately-scoped
+migration project — not something today's design needs to anticipate.
 
 ## 5. Client independence
 
