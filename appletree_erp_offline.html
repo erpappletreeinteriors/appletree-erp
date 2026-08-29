@@ -1006,6 +1006,7 @@ textarea.inp{resize:vertical;min-height:72px;}
       <div class="nav-item" data-pg="items" onclick="nav('items',this)"><span class="ni">📦</span> Item Master</div>
       <div class="nav-item" data-pg="vendormaster" onclick="nav('vendormaster',this)"><span class="ni">🏬</span> Vendor Master</div>
       <div class="nav-item" data-pg="costcentres" onclick="nav('costcentres',this)"><span class="ni">🏷️</span> Cost Centres</div>
+      <div class="nav-item" data-pg="taxcodes" onclick="nav('taxcodes',this)"><span class="ni">🧾</span> Tax Codes</div>
       <div class="nav-item" data-pg="approvalworkflow" onclick="nav('approvalworkflow',this)"><span class="ni">✅</span> Approval Workflows</div>
       <div class="nav-item" data-pg="datamigration" onclick="nav('datamigration',this)"><span class="ni">📥</span> Data Migration</div>
     </div>
@@ -3404,6 +3405,18 @@ textarea.inp{resize:vertical;min-height:72px;}
 </div>
 
 <!-- ══════════════════════════════════════════════
+     PAGE: TAX CODES — GST rate + split-type master, tag it on Journal
+     Entry lines to auto-post real CGST/SGST/IGST amounts.
+══════════════════════════════════════════════ -->
+<div id="pg-taxcodes" class="page">
+  <div class="sec-hd"><div class="sec-title">Tax Codes</div><button class="btn btn-gold" onclick="openAddTaxCode()">+ Add Tax Code</button></div>
+  <div class="small muted" style="margin-bottom:14px">Tag a Journal Entry line with a Tax Code to auto-split its amount into the base value plus real CGST/SGST/IGST postings — the line's own Debit/Credit is treated as the tax-inclusive Gross Value. Intra-State vs Inter-State is picked here, per code — not auto-detected from a party's GSTIN.</div>
+  <div class="card">
+    <div class="tbl-wrap"><table><thead><tr><th>Code</th><th>Label</th><th class="right">Rate</th><th>Split</th><th>Status</th><th>Actions</th></tr></thead><tbody id="tb-taxcodes"></tbody></table></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════
      PAGE: APPROVAL WORKFLOWS (Phase 2-14)
 ══════════════════════════════════════════════ -->
 <div id="pg-approvalworkflow" class="page">
@@ -4753,15 +4766,16 @@ textarea.inp{resize:vertical;min-height:72px;}
 
 <!-- ══ JOURNAL ENTRY BUILDER OVERLAY (Stage 2, 2026-08-12) ══ -->
 <div id="je-builder-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:3500;align-items:flex-start;justify-content:center;padding:24px;overflow-y:auto">
-  <div style="background:var(--white);border-radius:var(--r-lg);width:820px;max-width:98vw;box-shadow:var(--shadow-lg)">
+  <div style="background:var(--white);border-radius:var(--r-lg);width:1180px;max-width:98vw;box-shadow:var(--shadow-lg)">
     <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <div style="font-size:16px;font-weight:700">📔 New Journal Entry</div>
       <button onclick="closeJEBuilder()" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted)">✕</button>
     </div>
     <div style="padding:20px 24px">
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px">
         <div><label class="fl">Voucher No.</label><input class="inp" id="je-voucherno" style="width:100%"></div>
         <div><label class="fl">Date</label><input class="inp" type="date" id="je-date" style="width:100%"></div>
+        <div><label class="fl">Due Date (optional)</label><input class="inp" type="date" id="je-duedate" style="width:100%"></div>
         <div><label class="fl">Party / Reference (optional)</label><input class="inp" id="je-party" list="dl-customers" placeholder="Optional" style="width:100%"></div>
       </div>
       <div class="fg"><label class="fl">Narration / Remarks</label><textarea class="inp" id="je-narration" rows="2" style="width:100%" placeholder="e.g. Office Expense booked against Vendor Payable"></textarea></div>
@@ -4771,8 +4785,10 @@ textarea.inp{resize:vertical;min-height:72px;}
       </div>
       <div class="tbl-wrap" style="margin-bottom:12px"><table>
         <thead><tr>
-          <th>Account / Ledger</th><th style="width:110px">Debit ₹</th>
-          <th style="width:110px">Credit ₹</th><th style="width:130px">Cost Centre</th><th style="width:140px">Line Reference</th><th style="width:32px"></th>
+          <th style="width:170px">Account / Ledger</th><th style="width:95px">Debit ₹</th>
+          <th style="width:95px">Credit ₹</th><th style="width:150px">Business Partner</th><th style="width:110px">Project</th>
+          <th style="width:120px">Tax Code</th><th style="width:80px">Tax Amt ₹</th>
+          <th style="width:110px">Cost Centre</th><th style="width:120px">Line Reference</th><th style="width:32px"></th>
         </tr></thead>
         <tbody id="je-rows"></tbody>
       </table></div>
@@ -5420,7 +5436,7 @@ const DB = {
   // feature adds a new top-level DB array, so it doesn't silently join
   // this list.
   savedReports:[], bankAccounts:[], bankReconciliations:[], fiscalYears:[], periods:[],
-  costCentres:[], costCategories:[], bomTemplates:[], customerAdvances:[],
+  costCentres:[], costCategories:[], taxCodes:[], bomTemplates:[], customerAdvances:[],
   locations:[], stockByLocation:[], stockTransfers:[],
   expenseCategories:[], fixedAssets:[], capitalLoans:[], budgets:[],
   approvalRules:[], rfqs:[], salesOrders:[], dispatch:[], payments:[],
@@ -6249,7 +6265,7 @@ const EDIT_FN_MODULE = {
   editLead:'CRM & Sales', editQuotation:'CRM & Sales',
   editMachine:'Factory / MES', editMfgJob:'Factory / MES',
   editProject:'Projects', editWarehouse:'Inventory',
-  editCostCentre:'Master Data', openBomTemplateBuilder:'Factory / MES',
+  editCostCentre:'Master Data', editTaxCode:'Master Data', openBomTemplateBuilder:'Factory / MES',
 };
 const DELETE_FN_MODULE = {
   deleteCapa:'Operations', deleteRisk:'Operations', deleteScorecardEntry:'Operations', deleteExpense:'Operations', deleteLabour:'Operations',
@@ -6261,7 +6277,7 @@ const DELETE_FN_MODULE = {
   deleteMfgJob:'Factory / MES', deleteMfgOp:'Factory / MES',
   deleteMilestone:'Finance',
   deletePO:'Inventory', deletePurchase:'Inventory', deleteDamage:'Inventory',
-  deleteQuotation:'CRM & Sales', deleteCostCentre:'Master Data', deleteBomTemplate:'Factory / MES',
+  deleteQuotation:'CRM & Sales', deleteCostCentre:'Master Data', deleteTaxCode:'Master Data', deleteBomTemplate:'Factory / MES',
   deleteServiceTicket:'Service', deleteSnag:'Service',
   deleteApprovalRule:'Master Data', deleteSavedReport:'Reports',
 };
@@ -6383,6 +6399,7 @@ const PAGE_TITLES={
   customeradvances:'Customer Advances',
   locations:'Locations', stockbylocation:'Stock by Location', stocktransfers:'Stock Transfer',
   stockcounts:'Stock Counts',
+  costcentres:'Cost Centres', taxcodes:'Tax Codes',
 };
 
 // Page → nav module label, mirrors the sidebar's nav-grp grouping exactly
@@ -6412,7 +6429,7 @@ const PAGE_MODULE={
   employees:'HR & Payroll',attendance:'HR & Payroll',payroll:'HR & Payroll',advances:'HR & Payroll',
   recruitment:'HR & Payroll',induction:'HR & Payroll',training:'HR & Payroll',appraisals:'HR & Payroll',
   leaverequests:'HR & Payroll',recognition:'HR & Payroll',disciplinary:'HR & Payroll',
-  usermgmt:'Master Data',workers:'Master Data',items:'Master Data',vendormaster:'Master Data',costcentres:'Master Data',approvalworkflow:'Master Data',datamigration:'Master Data',
+  usermgmt:'Master Data',workers:'Master Data',items:'Master Data',vendormaster:'Master Data',costcentres:'Master Data',taxcodes:'Master Data',approvalworkflow:'Master Data',datamigration:'Master Data',
 };
 
 // Single enforcement point for page-level access — used by both renderPage()
@@ -6550,7 +6567,7 @@ function renderPage(pg){
     databi:renderDataBI,
     purchasereport:renderPurchaseReport,
     usermgmt:renderUserMgmt,approvalworkflow:renderApprovalWorkflow,datamigration:renderDataMigration,
-    costcentres:renderCostCentres,costcentresummary:renderCostCentreSummary,bomtemplates:renderBomTemplates,
+    costcentres:renderCostCentres,taxcodes:renderTaxCodes,costcentresummary:renderCostCentreSummary,bomtemplates:renderBomTemplates,
     matrequest:renderMatRequests,
     timesheet:renderTimesheet,
     tasks:renderTasks,
@@ -11592,6 +11609,20 @@ const SYSTEM_ACCOUNTS = [
   // goods or a refund), not revenue and not a receivable. See
   // saveCustomerAdvanceReceipt()/saveAllocateAdvance().
   {code:'2600', name:'Customer Advances', type:'Liability', group:'Creditors'},
+  // GST posting (CEO-approved reversal of the earlier "no GST accounting"
+  // decision, scoped to Journal Entry only — see saveJournalEntry()'s
+  // Tax Code handling and _expandTaxLine()). Output = tax collected on a
+  // sale (owed to the government, a liability); Input = tax paid on a
+  // purchase (recoverable, an asset) — standard Tally/SAP chart-of-
+  // accounts convention. This computes and posts real amounts; it does
+  // not generate GSTR-1/3B returns or HSN summaries — that stays out of
+  // scope, matching the original decision's boundary.
+  {code:'2700', name:'CGST Output', type:'Liability', group:'Duties & Taxes'},
+  {code:'2710', name:'SGST Output', type:'Liability', group:'Duties & Taxes'},
+  {code:'2720', name:'IGST Output', type:'Liability', group:'Duties & Taxes'},
+  {code:'1320', name:'CGST Input', type:'Asset', group:'Duties & Taxes'},
+  {code:'1330', name:'SGST Input', type:'Asset', group:'Duties & Taxes'},
+  {code:'1340', name:'IGST Input', type:'Asset', group:'Duties & Taxes'},
 ];
 function ensureDefaultAccounts(){
   if(!DB.accounts) DB.accounts=[];
@@ -11732,6 +11763,87 @@ function renderCostCentres(){
     </tr>`;
   }).join('') : '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:16px">No cost centres yet.</td></tr>';
 }
+
+// ═══════════════════════════════════════════
+//  TAX CODE MASTER — CEO-approved reversal of the earlier "no GST
+//  accounting" decision, scoped to Journal Entry only. A flat rate + a
+//  split type (Intra-State → CGST+SGST half each, Inter-State → IGST
+//  whole, Exempt → 0%) is enough for a single-state (Kerala) operation —
+//  no automatic GSTIN-prefix state detection in this pass, the user
+//  picks the right code directly (same way Tally/SAP leave that choice
+//  to the user too). Built on the exact same generic-modal pattern as
+//  Cost Centre just above (MODAL_FORMS/openModal()/openEditModal()),
+//  just flatter — no category/parent hierarchy needed here.
+// ═══════════════════════════════════════════
+function ensureDefaultTaxCodes(){
+  if(!DB.taxCodes) DB.taxCodes=[];
+  if(DB.taxCodes.length) return;
+  const defaults=[
+    {code:'GST5-Intra',  label:'GST 5% (Intra-State — CGST 2.5% + SGST 2.5%)',  ratePct:5,  splitType:'Intra'},
+    {code:'GST12-Intra', label:'GST 12% (Intra-State — CGST 6% + SGST 6%)',     ratePct:12, splitType:'Intra'},
+    {code:'GST18-Intra', label:'GST 18% (Intra-State — CGST 9% + SGST 9%)',     ratePct:18, splitType:'Intra'},
+    {code:'GST28-Intra', label:'GST 28% (Intra-State — CGST 14% + SGST 14%)',   ratePct:28, splitType:'Intra'},
+    {code:'GST18-Inter', label:'GST 18% (Inter-State — IGST 18%)',              ratePct:18, splitType:'Inter'},
+    {code:'Exempt',      label:'Exempt / Nil-Rated (0%)',                      ratePct:0,  splitType:'Exempt'},
+  ];
+  defaults.forEach(d=>DB.taxCodes.push({id:'TX'+uid(), active:true, ...d}));
+  saveDB();
+}
+function activeTaxCodes(){ ensureDefaultTaxCodes(); return (DB.taxCodes||[]).filter(t=>t.active!==false); }
+function taxCodeOptionsHtml(selectedId){
+  return '<option value="">— No Tax —</option>' + activeTaxCodes().map(t=>`<option value="${t.id}"${t.id===selectedId?' selected':''}>${escHtml(t.code)} — ${t.ratePct}%</option>`).join('');
+}
+function taxCodeById(id){ return (DB.taxCodes||[]).find(t=>t.id===id); }
+function openAddTaxCode(){
+  if(!roleCan('create','Master Data')){ toast('You do not have permission to add tax codes.','err'); return; }
+  ensureDefaultTaxCodes();
+  _editingId=null;
+  openModal('taxcode');
+}
+function editTaxCode(id){
+  const r = DB.taxCodes.find(x=>x.id===id);
+  if(!r) return;
+  openEditModal('taxcode', r, 'Edit Tax Code');
+}
+function saveTaxCode(){
+  if(!roleCan(_editingId?'edit':'create','Master Data')){ toast(`You do not have permission to ${_editingId?'edit':'add'} tax codes.`,'err'); return; }
+  const code = document.getElementById('tx-code').value.trim();
+  if(!code){ toast('Code is required','err'); return; }
+  const label = document.getElementById('tx-label').value.trim() || code;
+  const ratePct = +document.getElementById('tx-rate').value || 0;
+  const splitType = document.getElementById('tx-split').value;
+  const active = document.getElementById('tx-active').checked;
+  if(_editingId){
+    const t = DB.taxCodes.find(x=>x.id===_editingId);
+    if(t){ t.code=code; t.label=label; t.ratePct=ratePct; t.splitType=splitType; t.active=active; }
+  } else {
+    DB.taxCodes.push({id:'TX'+uid(), code, label, ratePct, splitType, active});
+  }
+  saveDB(); closeModal(); toast('Tax Code saved ✓','ok'); renderTaxCodes();
+}
+function deleteTaxCode(id){
+  if(!roleCan('delete','Master Data')){ toast('You do not have permission to delete tax codes.','err'); return; }
+  const inUse = (DB.journalEntries||[]).some(je=>(je.lines||[]).some(l=>l.taxCodeId===id));
+  if(inUse){ toast('Cannot delete — this Tax Code is already used on a posted Journal Entry.','err'); return; }
+  if(!confirm('Delete this tax code?')) return;
+  DB.taxCodes = DB.taxCodes.filter(t=>t.id!==id);
+  saveDB(); toast('Tax Code deleted ✓','ok'); renderTaxCodes();
+}
+function renderTaxCodes(){
+  if(!requireRole('CEO','Admin','Accounts')){_accessDenied();return;}
+  ensureDefaultTaxCodes();
+  const tb = document.getElementById('tb-taxcodes');
+  if(!tb) return;
+  tb.innerHTML = DB.taxCodes.length ? DB.taxCodes.map(t=>`<tr${t.active===false?' style="opacity:.5"':''}>
+      <td class="mono small">${escHtml(t.code)}</td>
+      <td class="small">${escHtml(t.label)}</td>
+      <td class="right mono">${t.ratePct}%</td>
+      <td class="small">${t.splitType==='Intra'?'Intra-State (CGST+SGST)':t.splitType==='Inter'?'Inter-State (IGST)':'Exempt'}</td>
+      <td>${t.active===false?'<span class="tag tag-grey">Inactive</span>':'<span class="tag tag-green">Active</span>'}</td>
+      <td>${editBtn('editTaxCode',t.id)}${delBtn('deleteTaxCode',t.id)}</td>
+    </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:16px">No tax codes yet.</td></tr>';
+}
+
 // Cost Centre Summary report — income/expense by centre, derived live
 // from tagged Journal Entry lines (all sources — every real transaction
 // already flows through postJournalEntry()) plus tagged Expenses, the
@@ -12213,7 +12325,7 @@ function _authorizeFinancialPosting(){
   const acts = getRoleActions()[trueRole];
   return !!(acts && (acts.create || acts.edit || acts.approve));
 }
-function postJournalEntry({date, narration, lines, sourceType, sourceId, voucherNo, party, reversalOfId}){
+function postJournalEntry({date, narration, lines, sourceType, sourceId, voucherNo, party, reversalOfId, dueDate}){
   if(!_authorizeFinancialPosting()){
     console.warn('[Financial Engine] Journal entry rejected — current session has no create/edit/approve permission anywhere', {narration, sourceType, user:_currentUser?.name, role:_currentUser?.role});
     logActivity('Security', sourceId||'', 'Blocked unauthorized journal posting attempt',
@@ -12231,9 +12343,17 @@ function postJournalEntry({date, narration, lines, sourceType, sourceId, voucher
     return null;
   }
   const entry = {
-    id:'JE'+uid(), voucherNo: voucherNo||'', date: date||new Date().toISOString().slice(0,10), narration: narration||'', party: party||'',
+    id:'JE'+uid(), voucherNo: voucherNo||'', date: date||new Date().toISOString().slice(0,10), dueDate: dueDate||'', narration: narration||'', party: party||'',
     lines: lines.map(l=>({accountId:l.accountId, accountName: DB.accounts.find(a=>a.id===l.accountId)?.name||'', debit:+l.debit||0, credit:+l.credit||0, ref:l.ref||'',
-      costCentreId: l.costCentreId||'', costCentreName: l.costCentreId ? (DB.costCentres.find(c=>c.id===l.costCentreId)?.name||'') : ''})),
+      costCentreId: l.costCentreId||'', costCentreName: l.costCentreId ? (DB.costCentres.find(c=>c.id===l.costCentreId)?.name||'') : '',
+      // Journal Entry — Tally/SAP-standard columns (accounts-team request):
+      // optional per-line Business Partner / Project / Tax Code tagging,
+      // additive — every existing caller (Bills, Invoices, Receipts…)
+      // simply never sets these, so they carry through as blank/absent,
+      // unchanged from before this field set existed.
+      partyType: l.partyType||'', partyId: l.partyId||'', partyName: l.partyName||'',
+      projectId: l.projectId||'', projectCode: l.projectId ? (DB.projects.find(p=>p.id===l.projectId)?.code||'') : '',
+      taxCodeId: l.taxCodeId||'', taxCodeLabel: l.taxCodeId ? (taxCodeById(l.taxCodeId)?.code||'') : ''})),
     sourceType: sourceType||'', sourceId: sourceId||'',
     postedBy: _currentUser?.name||'System', postedAt: new Date().toISOString(),
     reversed:false, reversalOfId: reversalOfId||''
@@ -12849,7 +12969,20 @@ function renderCustomerLedger(){
   const invLines = (DB.invoices||[]).filter(i=>i.customerId===custId).map(i=>({date:i.date, type:'Invoice', ref:i.invNo, dr:i.amount, cr:0, narration:`Sales Invoice ${i.invNo}`}));
   const rcpLines = (DB.receipts||[]).filter(r=>r.customerId===custId && !r.cancelled).map(r=>({date:r.date, type:'Receipt', ref:r.refNo, dr:0, cr:r.amount, narration:`Receipt ${r.refNo}`}));
   const cnLines = (DB.creditNotes||[]).filter(c=>c.customerId===custId && !c.cancelled).map(c=>({date:c.date, type:'Credit Note', ref:c.cnNo, dr:0, cr:c.amount, narration:`Credit Note ${c.cnNo}${c.reason?' — '+c.reason:''}`}));
-  const rows = [...invLines,...rcpLines,...cnLines].sort((a,b)=>a.date===b.date?0:(a.date>b.date?1:-1));
+  // Journal Entry — Tally/SAP-standard columns: a manual JE line tagged to
+  // this customer as its Business Partner now shows here too — before this,
+  // a manual AR adjustment was invisible on the customer's own ledger even
+  // though the free-text "Party" field existed.
+  const jeLines = [];
+  (DB.journalEntries||[]).forEach(je=>{
+    if(je.reversed) return;
+    (je.lines||[]).forEach(l=>{
+      if(l.partyType==='Customer' && l.partyId===custId){
+        jeLines.push({date:je.date, type:'Journal', ref:je.voucherNo, dr:l.debit||0, cr:l.credit||0, narration:`${je.narration}${l.ref?' — '+l.ref:''}`});
+      }
+    });
+  });
+  const rows = [...invLines,...rcpLines,...cnLines,...jeLines].sort((a,b)=>a.date===b.date?0:(a.date>b.date?1:-1));
 
   let running=0;
   const rowsHtml = rows.map(r=>{ running += r.dr-r.cr; return `<tr>
@@ -12879,6 +13012,7 @@ function renderCustomerLedger(){
     return s + (inv.amount-allocated);
   },0);
   const unallocated = Math.round((running-invoiceLevelOutstanding)*100)/100;
+  const totalJe = jeLines.reduce((s,r)=>s+r.dr-r.cr,0);
 
   body.innerHTML = `
     <div class="kpi-row c4" style="margin-bottom:14px">
@@ -12887,7 +13021,7 @@ function renderCustomerLedger(){
       ${kpiBox('Credit Notes', INR(totalCn), cnLines.length+' notes', '')}
       ${kpiBox('Closing Balance', INR(running), 'Outstanding', running>0?'var(--red)':'var(--green)')}
     </div>
-    ${Math.abs(unallocated)>0.01 ? `<div class="alert alert-info" style="margin-bottom:14px">⚖️ Reconciliation to AR Ageing: this customer's invoice-level outstanding (what AR Ageing shows) is <strong>${INR(invoiceLevelOutstanding)}</strong>. The ledger's total closing balance above is <strong>${INR(running)}</strong> — the ${INR(Math.abs(unallocated))} difference is ${unallocated>0?'on-account credit not yet allocated to a specific invoice':'allocated beyond what invoices currently show'} (receipts/credit notes recorded without linking to one invoice). Both figures are correct; they answer different questions — "what does this customer still owe per invoice" vs "what is this customer's total account position."</div>` : ''}
+    ${Math.abs(unallocated)>0.01 ? `<div class="alert alert-info" style="margin-bottom:14px">⚖️ Reconciliation to AR Ageing: this customer's invoice-level outstanding (what AR Ageing shows) is <strong>${INR(invoiceLevelOutstanding)}</strong>. The ledger's total closing balance above is <strong>${INR(running)}</strong> — the ${INR(Math.abs(unallocated))} difference is ${unallocated>0?'on-account credit not yet allocated to a specific invoice':'allocated beyond what invoices currently show'} (receipts/credit notes recorded without linking to one invoice${jeLines.length?', or a manual Journal Entry adjustment (net '+INR(totalJe)+' — '+jeLines.length+' line'+(jeLines.length!==1?'s':'')+') posted directly against this customer':''}). Both figures are correct; they answer different questions — "what does this customer still owe per invoice" vs "what is this customer's total account position."</div>` : ''}
     <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Ref</th><th>Narration</th><th class="right">Debit ₹</th><th class="right">Credit ₹</th><th class="right">Running Balance ₹</th></tr></thead>
     <tbody id="cl-tbody">${rowsHtml||'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">No transactions yet for '+escHtml(cust?.name||'')+'.</td></tr>'}</tbody></table></div>`;
 }
@@ -12912,7 +13046,19 @@ function renderVendorLedger(){
   const billLines = (DB.bills||[]).filter(b=>b.vendor===vendor?.name).map(b=>({date:b.date, type:'Bill', ref:b.billNo, dr:0, cr:b.amount, narration:`Vendor Bill ${b.billNo}`}));
   const payLines = (DB.payments||[]).filter(p=>p.vendorId===vendorId && !p.cancelled).map(p=>({date:p.date, type:'Payment', ref:p.voucherNo, dr:p.amount, cr:0, narration:`Payment ${p.voucherNo}`}));
   const dnLines = (DB.debitNotes||[]).filter(d=>d.vendorId===vendorId && !d.cancelled).map(d=>({date:d.date, type:'Debit Note', ref:d.dnNo, dr:d.amount, cr:0, narration:`Debit Note ${d.dnNo}${d.reason?' — '+d.reason:''}`}));
-  const rows = [...billLines,...payLines,...dnLines].sort((a,b)=>a.date===b.date?0:(a.date>b.date?1:-1));
+  // Journal Entry — Tally/SAP-standard columns: a manual JE line tagged to
+  // this vendor as its Business Partner now shows here too, same closed
+  // gap as Customer Ledger above.
+  const jeLines = [];
+  (DB.journalEntries||[]).forEach(je=>{
+    if(je.reversed) return;
+    (je.lines||[]).forEach(l=>{
+      if(l.partyType==='Vendor' && l.partyId===vendorId){
+        jeLines.push({date:je.date, type:'Journal', ref:je.voucherNo, dr:l.debit||0, cr:l.credit||0, narration:`${je.narration}${l.ref?' — '+l.ref:''}`});
+      }
+    });
+  });
+  const rows = [...billLines,...payLines,...dnLines,...jeLines].sort((a,b)=>a.date===b.date?0:(a.date>b.date?1:-1));
 
   let running=0;
   const rowsHtml = rows.map(r=>{ running += r.cr-r.dr; return `<tr>
@@ -12936,6 +13082,7 @@ function renderVendorLedger(){
     return bill ? s+(bill.amount-bill.paid) : s;
   },0);
   const unallocated = Math.round((running-billLevelOutstanding)*100)/100;
+  const totalJe = jeLines.reduce((s,r)=>s+r.cr-r.dr,0);
 
   body.innerHTML = `
     <div class="kpi-row c4" style="margin-bottom:14px">
@@ -12944,7 +13091,7 @@ function renderVendorLedger(){
       ${kpiBox('Debit Notes', INR(totalDn), dnLines.length+' notes', '')}
       ${kpiBox('Closing Balance', INR(running), 'Outstanding payable', running>0?'var(--red)':'var(--green)')}
     </div>
-    ${Math.abs(unallocated)>0.01 ? `<div class="alert alert-info" style="margin-bottom:14px">⚖️ Reconciliation to Payables Ageing: this vendor's bill-level outstanding (what Payables Ageing shows) is <strong>${INR(billLevelOutstanding)}</strong>. This ledger's total closing balance is <strong>${INR(running)}</strong> — the ${INR(Math.abs(unallocated))} difference is an on-account payment/debit note not linked to one specific bill. Both figures are correct; they answer different questions.</div>` : ''}
+    ${Math.abs(unallocated)>0.01 ? `<div class="alert alert-info" style="margin-bottom:14px">⚖️ Reconciliation to Payables Ageing: this vendor's bill-level outstanding (what Payables Ageing shows) is <strong>${INR(billLevelOutstanding)}</strong>. This ledger's total closing balance is <strong>${INR(running)}</strong> — the ${INR(Math.abs(unallocated))} difference is an on-account payment/debit note not linked to one specific bill${jeLines.length?', or a manual Journal Entry adjustment (net '+INR(totalJe)+' — '+jeLines.length+' line'+(jeLines.length!==1?'s':'')+') posted directly against this vendor':''}. Both figures are correct; they answer different questions.</div>` : ''}
     <div class="tbl-wrap"><table><thead><tr><th>Date</th><th>Type</th><th>Ref</th><th>Narration</th><th class="right">Debit ₹</th><th class="right">Credit ₹</th><th class="right">Running Balance ₹</th></tr></thead>
     <tbody id="vl-tbody">${rowsHtml||'<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">No transactions yet for '+escHtml(vendor?.name||'')+'.</td></tr>'}</tbody></table></div>`;
 }
@@ -15300,6 +15447,19 @@ const MODAL_FORMS={
     </div>
     <div class="fg"><label class="small" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="cc-active" checked> Active</label></div>`,
 
+  taxcode:`
+    <div class="f2">
+      <div class="fg"><label class="fl">Code</label><input class="inp" id="tx-code" placeholder="e.g. GST18-Intra"></div>
+      <div class="fg"><label class="fl">Rate %</label><input class="inp" type="number" id="tx-rate" placeholder="e.g. 18"></div>
+    </div>
+    <div class="fg"><label class="fl">Label</label><input class="inp" id="tx-label" placeholder="e.g. GST 18% (Intra-State — CGST 9% + SGST 9%)"></div>
+    <div class="fg"><label class="fl">Split Type</label><select class="inp" id="tx-split">
+      <option value="Intra">Intra-State (splits into CGST + SGST, half each)</option>
+      <option value="Inter">Inter-State (posts to IGST in full)</option>
+      <option value="Exempt">Exempt / Nil-Rated (no tax posted)</option>
+    </select></div>
+    <div class="fg"><label class="small" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="tx-active" checked> Active</label></div>`,
+
   location:`
     <div class="fg"><label class="fl">Location Name</label><input class="inp" id="f-loc-name" placeholder="e.g. Factory Yard, Site Store — Kochi"></div>
     <div class="fg"><label class="fl">Type</label><select class="inp" id="f-loc-type">
@@ -15610,7 +15770,7 @@ const MODAL_TYPE_MODULE = {
   fixedasset:'Finance', capitalloan:'Finance', budget:'Finance', bankaccount:'Finance', vendorpayment:'Finance',
   lead:'CRM & Sales', quotation:'CRM & Sales', customer:'CRM & Sales',
   architect:'CRM & Sales', builder:'CRM & Sales', b2bpartner:'CRM & Sales',
-  worker:'Master Data', item:'Master Data', vendormaster:'Master Data', costcentre:'Master Data', location:'Inventory',
+  worker:'Master Data', item:'Master Data', vendormaster:'Master Data', costcentre:'Master Data', taxcode:'Master Data', location:'Inventory',
   costingtemplate:'Estimation', costingmaterial:'Estimation',
   costinghardware:'Estimation', costinglabourrate:'Estimation', newestreq:'Estimation',
 };
@@ -15645,6 +15805,7 @@ function openModal(type){
     architect:'Add Architect',builder:'Add Builder',b2bpartner:'Add B2B Partner',
     newestreq:'New Estimation Request',
     costcentre:'Add Cost Centre',
+    taxcode:'Add Tax Code',
   };
   document.getElementById('modal-title').textContent=TITLES[type]||type;
   document.getElementById('modal-body').innerHTML=MODAL_FORMS[type]||'<p class="muted">Form coming soon.</p>';
@@ -15822,6 +15983,7 @@ function saveModal(){
     b2bpartner:()=>savePartner('b2bPartners'),
     newestreq:saveNewEstimationRequest,
     costcentre:saveCostCentre,
+    taxcode:saveTaxCode,
     location:saveLocation,
   };
   if(saves[_currentModal])saves[_currentModal]();
@@ -18213,6 +18375,14 @@ function prefillForm(type, r) {
       setField('cc-category', r.category);
       setField('cc-parent', r.parentId||'');
       const activeEl = document.getElementById('cc-active');
+      if(activeEl) activeEl.checked = r.active!==false;
+    },
+    taxcode: () => {
+      setField('tx-code', r.code);
+      setField('tx-label', r.label);
+      setField('tx-rate', r.ratePct);
+      setField('tx-split', r.splitType);
+      const activeEl = document.getElementById('tx-active');
       if(activeEl) activeEl.checked = r.active!==false;
     },
     location: () => {
@@ -31283,9 +31453,11 @@ function openJournalEntryBuilder(){
   ensureDefaultAccounts();
   document.getElementById('je-idem-token').value=_newIdemToken();
   document.getElementById('je-date').value=new Date().toISOString().slice(0,10);
+  document.getElementById('je-duedate').value='';
   document.getElementById('je-voucherno').value=nextVoucherNo('JV', DB.journalEntries.filter(e=>e.sourceType==='manualJournal'), 'voucherNo');
   document.getElementById('je-narration').value='';
   document.getElementById('je-party').value='';
+  ensureDefaultTaxCodes();
   document.getElementById('je-rows').innerHTML='';
   _jeRowId=0;
   addJERow(); addJERow();
@@ -31332,14 +31504,55 @@ function _jeUpdateSensitiveWarning(){
     noteEl.style.display='none';
   }
 }
+// Business Partner picker — one combined <select> with optgroups rather
+// than a separate "Party Type" selector + a second scoped dropdown; the
+// selected option's value is prefixed ('C:'+id or 'V:'+id) so a single
+// field carries both the type and the id. Read/parsed back in
+// saveJournalEntry() via _jeParsePartyValue().
+function _jePartyOptionsHtml(selectedVal){
+  const custOpts = (DB.customers||[]).map(c=>`<option value="C:${c.id}"${('C:'+c.id)===selectedVal?' selected':''}>${escHtml(c.name)}</option>`).join('');
+  const vndOpts  = (DB.vendorMaster||[]).map(v=>`<option value="V:${v.id}"${('V:'+v.id)===selectedVal?' selected':''}>${escHtml(v.name)}</option>`).join('');
+  return '<option value="">— None —</option>'
+    + (custOpts?`<optgroup label="Customers">${custOpts}</optgroup>`:'')
+    + (vndOpts?`<optgroup label="Vendors">${vndOpts}</optgroup>`:'');
+}
+function _jeParsePartyValue(val){
+  if(!val) return {partyType:'', partyId:'', partyName:''};
+  const [type,id] = [val.slice(0,1), val.slice(2)];
+  if(type==='C'){ const c=DB.customers.find(x=>x.id===id); return {partyType:'Customer', partyId:id, partyName:c?c.name:''}; }
+  if(type==='V'){ const v=DB.vendorMaster.find(x=>x.id===id); return {partyType:'Vendor', partyId:id, partyName:v?v.name:''}; }
+  return {partyType:'', partyId:'', partyName:''};
+}
+function _jeProjectOptionsHtml(selectedId){
+  return '<option value="">— None —</option>' + DB.projects.map(p=>`<option value="${p.id}"${p.id===selectedId?' selected':''}>${escHtml(p.client)} (${escHtml(p.code)})</option>`).join('');
+}
+// Live preview only — the real, balance-guaranteed split happens in
+// _expandTaxLine() at save time. This just shows the accounts team what
+// the tax amount will be before they post, same UX role as the existing
+// gstFieldsHtml() auto-calc used elsewhere (Bill Builder etc.).
+function _jeRowTaxPreview(id){
+  const taxSel=document.getElementById('je-tax-'+id);
+  const amtEl=document.getElementById('je-taxamt-'+id);
+  if(!taxSel||!amtEl) return;
+  const tc=taxCodeById(taxSel.value);
+  if(!tc || tc.splitType==='Exempt' || !tc.ratePct){ amtEl.value=''; return; }
+  const gross=(parseFloat(document.getElementById('je-dr-'+id)?.value)||0) || (parseFloat(document.getElementById('je-cr-'+id)?.value)||0);
+  if(!gross){ amtEl.value=''; return; }
+  const base=Math.round((gross/(1+tc.ratePct/100))*100)/100;
+  amtEl.value=INR(Math.round((gross-base)*100)/100);
+}
 function addJERow(){
   const id=++_jeRowId;
   const tr=document.createElement('tr');
   tr.id='je-row-'+id;
   tr.innerHTML=`
     <td><select class="bom-inp" id="je-acc-${id}" style="width:100%" onchange="calcJETotals();_jeUpdateSensitiveWarning()">${_jeAccountOptionsHtml()}</select></td>
-    <td><input class="bom-inp" type="number" id="je-dr-${id}" placeholder="0" oninput="calcJETotals()" style="width:100%"></td>
-    <td><input class="bom-inp" type="number" id="je-cr-${id}" placeholder="0" oninput="calcJETotals()" style="width:100%"></td>
+    <td><input class="bom-inp" type="number" id="je-dr-${id}" placeholder="0" oninput="calcJETotals();_jeRowTaxPreview(${id})" style="width:100%"></td>
+    <td><input class="bom-inp" type="number" id="je-cr-${id}" placeholder="0" oninput="calcJETotals();_jeRowTaxPreview(${id})" style="width:100%"></td>
+    <td><select class="bom-inp" id="je-bp-${id}" style="width:100%">${_jePartyOptionsHtml()}</select></td>
+    <td><select class="bom-inp" id="je-proj-${id}" style="width:100%">${_jeProjectOptionsHtml()}</select></td>
+    <td><select class="bom-inp" id="je-tax-${id}" style="width:100%" onchange="_jeRowTaxPreview(${id})">${taxCodeOptionsHtml()}</select></td>
+    <td><input class="bom-inp" id="je-taxamt-${id}" readonly style="width:100%;background:var(--bg)"></td>
     <td><select class="bom-inp" id="je-cc-${id}" style="width:100%">${costCentreOptionsHtml()}</select></td>
     <td><input class="bom-inp" id="je-ref-${id}" placeholder="Optional" style="width:100%"></td>
     <td><button onclick="document.getElementById('je-row-${id}').remove();calcJETotals();_jeUpdateSensitiveWarning()" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px">×</button></td>`;
@@ -31357,10 +31570,42 @@ function calcJETotals(){
   if(diffEl){ diffEl.textContent=INR(Math.abs(diff)); diffEl.style.color = Math.abs(diff)<0.01 ? 'var(--green)' : 'var(--red)'; }
   return {td,tc,diff};
 }
+// Splits one Debit/Credit line into base + real tax lines when it carries
+// a Tax Code. The amount the user typed is treated as Gross Value
+// (tax-inclusive) — base and tax are derived FROM it (tax = gross-base,
+// never independently rounded), so the split always sums back to exactly
+// the original amount and can never unbalance the entry. No Tax Code (the
+// overwhelmingly common case) returns the line completely unchanged — a
+// plain JE today looks identical to a plain JE after this feature shipped.
+function _expandTaxLine(line){
+  if(!line.taxCodeId) return [line];
+  const tc = taxCodeById(line.taxCodeId);
+  const gross = line.debit || line.credit;
+  if(!tc || tc.splitType==='Exempt' || !tc.ratePct || !gross) return [{...line, taxCodeId: tc?line.taxCodeId:''}];
+  const isDebit = line.debit>0;
+  const base = Math.round((gross/(1+tc.ratePct/100))*100)/100;
+  const taxAmt = Math.round((gross-base)*100)/100;
+  const out = [{...line, debit:isDebit?base:0, credit:isDebit?0:base}];
+  const acc = name => DB.accounts.find(a=>a.name===name);
+  const taxLine = (accName, amt) => {
+    const a = acc(accName);
+    if(a && amt>0) out.push({accountId:a.id, debit:isDebit?amt:0, credit:isDebit?0:amt, ref:line.ref, costCentreId:line.costCentreId, taxCodeId:line.taxCodeId});
+  };
+  if(tc.splitType==='Intra'){
+    const half = Math.round((taxAmt/2)*100)/100;
+    taxLine(isDebit?'CGST Input':'CGST Output', half);
+    taxLine(isDebit?'SGST Input':'SGST Output', Math.round((taxAmt-half)*100)/100);
+  } else if(tc.splitType==='Inter'){
+    taxLine(isDebit?'IGST Input':'IGST Output', taxAmt);
+  }
+  return out;
+}
 function saveJournalEntry(){
   if(!requireRole('CEO','Admin','Accounts')){ toast('You do not have permission to post journal entries.','err'); return; }
+  ensureDefaultAccounts(); ensureDefaultTaxCodes();
   const date=document.getElementById('je-date').value;
   if(!checkPeriodOpen(date)) return;
+  const dueDate=document.getElementById('je-duedate').value||'';
   const narration=document.getElementById('je-narration').value.trim();
   if(!narration){ toast('Enter a narration for this journal entry','err'); return; }
   const voucherNo=document.getElementById('je-voucherno').value.trim() || nextVoucherNo('JV', DB.journalEntries.filter(e=>e.sourceType==='manualJournal'), 'voucherNo');
@@ -31377,6 +31622,9 @@ function saveJournalEntry(){
     const cr=parseFloat(document.getElementById('je-cr-'+id)?.value)||0;
     const ref=document.getElementById('je-ref-'+id)?.value||'';
     const costCentreId=document.getElementById('je-cc-'+id)?.value||'';
+    const {partyType, partyId, partyName} = _jeParsePartyValue(document.getElementById('je-bp-'+id)?.value||'');
+    const projectId=document.getElementById('je-proj-'+id)?.value||'';
+    const taxCodeId=document.getElementById('je-tax-'+id)?.value||'';
     if(!accId && !dr && !cr) return; // silently skip a fully empty row
     if(!accId || (dr>0&&cr>0) || dr<0 || cr<0 || (dr===0&&cr===0)){ bad=true; return; }
     // Final Gap Closure (2026-08-19, Gap #8) — governance, not a block: a
@@ -31389,7 +31637,7 @@ function saveJournalEntry(){
       const a=DB.accounts.find(x=>x.id===accId);
       missingSensitiveRef.push(a?a.name:accId);
     }
-    lines.push({accountId:accId, debit:dr, credit:cr, ref, costCentreId});
+    lines.push({accountId:accId, debit:dr, credit:cr, ref, costCentreId, partyType, partyId, partyName, projectId, taxCodeId});
   });
   if(bad){ toast('Every line needs an account and exactly one of Debit or Credit (not both, not neither, not negative)','err'); return; }
   if(lines.length<2){ toast('At least two lines are required','err'); return; }
@@ -31406,7 +31654,12 @@ function saveJournalEntry(){
   // same real transaction twice. Fingerprint the actual lines instead.
   const jeIdemToken = document.getElementById('je-idem-token').value;
   if(!_guardDuplicateSubmit('saveJournalEntry', date+'|'+narration+'|'+party+'|'+JSON.stringify(lines), 30000, {token: jeIdemToken, recordsArray: DB.journalEntries})) { toast('This looks like the same Journal Entry just submitted — please check the list before resubmitting.','err'); return; }
-  const entry = postJournalEntry({date, narration, lines, sourceType:'manualJournal', sourceId:'MJ'+uid(), voucherNo, party});
+  // Tax Code lines explode into extra base+tax lines here — the balance
+  // check just above already ran on the pre-expansion totals, which is
+  // sufficient (expansion re-splits a line's own amount, it never
+  // introduces new net value — see _expandTaxLine()'s own contract).
+  const expandedLines = lines.flatMap(_expandTaxLine);
+  const entry = postJournalEntry({date, dueDate, narration, lines:expandedLines, sourceType:'manualJournal', sourceId:'MJ'+uid(), voucherNo, party});
   if(!entry){ toast('Could not post — the entry did not balance','err'); return; }
   entry.submissionToken = jeIdemToken;
   // Final Gap Closure (2026-08-19, Gap #8) — a distinct, separately
