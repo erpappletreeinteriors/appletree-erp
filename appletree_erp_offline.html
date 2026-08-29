@@ -498,6 +498,7 @@ th{
 td{padding:9px 14px;border-bottom:1px solid var(--border2);color:var(--dark);vertical-align:middle;}
 tr:last-child td{border-bottom:none;}
 tbody tr:hover td{background:rgba(195,177,81,.04);}
+tbody tr.row-open{cursor:pointer}
 .tr-sum td{background:var(--gold-pale);font-weight:700;}
 
 .inp{
@@ -6293,6 +6294,23 @@ function delBtn(fn,id){
 }
 function historyBtn(entityType,id){return `<button class="btn btn-ghost btn-xs" onclick="openActivityTimeline('${entityType}','${id}')" title="Activity history">🕘</button>`;}
 
+// Row-click-to-open (CEO-reported: Purchases could only be opened via a
+// small Edit button off past a horizontal scrollbar — a basic feature
+// missing everywhere it applies). One shared handler, not one per table:
+// a click that started on any interactive element already inside the row
+// (a button, link, select, input, or an image with its own onclick) is
+// left alone — that element's own onclick already handles it. Only a
+// click on the row's own plain space falls through to opening the
+// record. fn is passed by NAME so this can replicate editBtn()'s own
+// EDIT_FN_MODULE permission check — a role that wouldn't see the ✏️
+// button today must not gain a working row-click either.
+function rowOpen(ev, fn, id){
+  if(ev.target.closest('button,a,select,input,textarea,option,img[onclick]')) return;
+  const mod = EDIT_FN_MODULE[fn];
+  if(mod && !roleCan('edit', mod)) return;
+  if(typeof window[fn]==='function') window[fn](id);
+}
+
 // Reusable activity timeline — reads DB.activityLog, never mutates it.
 // A Lead's timeline also folds in its linked Estimation Request's history
 // so the full journey (Lead Created → Quotation Requested → Claimed → …)
@@ -6745,7 +6763,7 @@ function renderDashboard(){
 // PROJECTS
 function renderProjects(){
   const tb=document.getElementById('tb-projects');
-  tb.innerHTML=DB.projects.map(p=>`<tr>
+  tb.innerHTML=DB.projects.map(p=>`<tr class="row-open" onclick="rowOpen(event,'editProject','${p.id}')">
     <td><span class="tag tag-dark">${p.code}</span></td>
     <td><strong>${escHtml(p.client)}</strong></td>
     <td>${escHtml(p.location||'—')}</td>
@@ -6868,7 +6886,7 @@ function renderLabour(){
   tb.innerHTML=labRecords.map(l=>{
     total+=l.amount;
     const status = l.status || (l.vchType==='Payable'?'Unpaid':'Paid'); // legacy rows saved before this field existed
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'editLabour','${l.id}')">
       <td>${fmtDate(l.date)}</td>
       <td class="small">${projName(l.projectId)}</td>
       <td class="small">${prodName(l.productId)}</td>
@@ -6904,7 +6922,7 @@ function renderExpenses(){
   tb.innerHTML=filteredExpenses.map(e=>{
     total+=e.amount;
     const status = e.status || (e.vchType==='Payable'?'Unpaid':'Paid'); // legacy rows saved before this field existed
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'editExpense','${e.id}')">
       <td>${fmtDate(e.date)}</td>
       <td class="small">${projName(e.projectId)}</td>
       <td class="small">${prodName(e.productId)}</td>
@@ -6929,7 +6947,7 @@ function renderWarehouse(){
     totalVal+=val;
     if(w.qty<=w.reorder)lowCount++;
     const qtyClass=w.qty===0?'stock-zero':w.qty<=w.reorder?'stock-low':'stock-ok';
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'editWarehouse','${w.id}')">
       <td class="mono">${w.code}</td>
       <td><strong>${w.name}</strong></td>
       <td><span class="tag tag-grey">${w.category}</span></td>
@@ -6991,7 +7009,7 @@ function renderPurchases(){
     // spurious pending badge on every historical GRN-sourced record.
     const status = p.status || 'Accepted';
     const src = _purchaseRecordSource(p);
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'openPurBuilder','${p.id}')">
     <td>${fmtDate(p.date)}</td>
     <td class="mono">${escHtml(p.vchNo)}</td>
     <td><strong>${escHtml(p.vendor)}</strong></td>
@@ -7142,7 +7160,7 @@ function renderIssues(){
     const consumedQty = i.consumedQty||0;
     const unconsumed = acceptedQty - consumedQty;
     const canProduce = canReturn && unconsumed>0;
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'editIssue','${i.id}')">
       <td class="mono">${i.issueNo}</td>
       <td>${fmtDate(i.date)}</td>
       <td><strong>${escHtml(i.itemName)}</strong></td>
@@ -7555,7 +7573,7 @@ function renderDamages(){
   const tb = document.getElementById('tb-damages');
   tb.innerHTML = list.length ? list.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(d=>{
     const proj = DB.projects.find(p=>p.id===d.projectId);
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'openDamageModal','${d.id}')">
       <td><span class="tag tag-dark">${escHtml(d.damageNo)}</span></td>
       <td>${fmtDate(d.date)}</td>
       <td class="small">${escHtml(proj?.client||'—')}</td>
@@ -7683,7 +7701,7 @@ function deleteDamage(id){
 // QC
 function renderQC(){
   const tb=document.getElementById('tb-qc');
-  tb.innerHTML=DB.qc.map(q=>`<tr>
+  tb.innerHTML=DB.qc.map(q=>`<tr class="row-open" onclick="rowOpen(event,'editQC','${q.id}')">
     <td>${fmtDate(q.date)}</td>
     <td class="small">${projName(q.projectId)}</td>
     <td class="small">${prodName(q.productId)}</td>
@@ -8187,7 +8205,7 @@ function renderCapaRegister(){
   const tb = document.getElementById('tb-capa');
   tb.innerHTML = list.map(c=>{
     const overdueFlag = _capaIsOverdue(c);
-    return `<tr${overdueFlag?' style="background:var(--red-l)"':''}>
+    return `<tr${overdueFlag?' style="background:var(--red-l)"':''} class="row-open" onclick="rowOpen(event,'openCapaModal','${c.id}')">
       <td><span class="tag tag-dark">${escHtml(c.capaId)}</span></td>
       <td><strong>${escHtml(c.title)}</strong>${overdueFlag?'<div class="small" style="color:var(--red)">⚠ overdue</div>':''}</td>
       <td class="small">${escHtml(c.triggerType)}</td>
@@ -8496,7 +8514,7 @@ function renderScorecard(){
   const tb = document.getElementById('tb-scorecard');
   tb.innerHTML = list.map(e=>{
     const gap = _scGap(e);
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'openScorecardModal','${e.id}')">
       <td><strong>${escHtml(e._kpi?e._kpi.name:e.metricId)}</strong><div class="small muted">${escHtml(e._kpi?e._kpi.dept:'')}</div></td>
       <td>${fmtDate(e.weekStart)}</td>
       <td>${e.target==null?'—':e.target}</td>
@@ -8647,7 +8665,7 @@ function renderServiceTickets(){
   tb.innerHTML = list.length ? list.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(t=>{
     const overdueFlag = _svcIsOverdue(t);
     const proj = DB.projects.find(p=>p.id===t.projectId);
-    return `<tr${overdueFlag?' style="background:var(--red-l)"':''}>
+    return `<tr${overdueFlag?' style="background:var(--red-l)"':''} class="row-open" onclick="rowOpen(event,'openServiceTicketModal','${t.id}')">
       <td><span class="tag tag-dark">${escHtml(t.ticketNo)}</span></td>
       <td>${fmtDate(t.date)}</td>
       <td class="small">${escHtml(t.type)}</td>
@@ -8784,7 +8802,7 @@ function renderSnags(){
   tb.innerHTML = list.length ? list.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(s=>{
     const proj = DB.projects.find(p=>p.id===s.projectId);
     const overdueFlag = s.status!=='Closed' && s.dueDate && new Date(s.dueDate)<new Date();
-    return `<tr${overdueFlag?' style="background:var(--red-l)"':''}>
+    return `<tr${overdueFlag?' style="background:var(--red-l)"':''} class="row-open" onclick="rowOpen(event,'openSnagModal','${s.id}')">
       <td><span class="tag tag-dark">${escHtml(s.snagNo)}</span></td>
       <td>${fmtDate(s.date)}</td>
       <td class="small">${escHtml(proj?.client||'—')}</td>
@@ -9658,7 +9676,7 @@ function renderTasks(){
   tb.innerHTML = list.length ? list.slice().sort((a,b)=>(a.dueDate||'9999').localeCompare(b.dueDate||'9999')).map(t=>{
     const proj = DB.projects.find(p=>p.id===t.projectId);
     const overdueFlag = t.status!=='Done' && t.dueDate && new Date(t.dueDate)<new Date();
-    return `<tr${overdueFlag?' style="background:var(--red-l)"':''}>
+    return `<tr${overdueFlag?' style="background:var(--red-l)"':''} class="row-open" onclick="rowOpen(event,'openTaskModal','${t.id}')">
       <td><strong>${escHtml(t.title)}</strong>${t.description?`<div class="muted small">${escHtml(t.description.slice(0,60))}</div>`:''}</td>
       <td class="small">${escHtml(proj?.client||'—')}</td>
       <td class="small muted">${escHtml(t.assignedTo)||'—'}</td>
@@ -9817,7 +9835,7 @@ function renderDeliverables(){
   tb.innerHTML = list.length ? list.slice().sort((a,b)=>(a.targetDate||'').localeCompare(b.targetDate||'')).map(d=>{
     const proj = DB.projects.find(p=>p.id===d.projectId);
     const overdueFlag = d.status!=='Completed' && d.targetDate && new Date(d.targetDate)<new Date();
-    return `<tr${overdueFlag?' style="background:var(--red-l)"':''}>
+    return `<tr${overdueFlag?' style="background:var(--red-l)"':''} class="row-open" onclick="rowOpen(event,'openDeliverableModal','${d.id}')">
       <td><strong>${escHtml(d.title)}</strong>${d.description?`<div class="muted small">${escHtml(d.description.slice(0,60))}</div>`:''}</td>
       <td class="small">${escHtml(proj?.client||'—')}</td>
       <td class="small muted">${escHtml(d.category)}</td>
@@ -10759,7 +10777,7 @@ function renderRecruitment(){
     ${kpiBox('Filled', filled.length, '', 'var(--green)')}
     ${kpiBox('Avg. Time-to-Hire', avgDays!=null?avgDays+'d':'—', '', '')}
   `;
-  tb.innerHTML = all.map(r=>`<tr>
+  tb.innerHTML = all.map(r=>`<tr class="row-open" onclick="rowOpen(event,'openRecruitmentModal','${r.id}')">
     <td><span class="tag tag-dark">${escHtml(r.reqId)}</span></td>
     <td><strong>${escHtml(r.role)}</strong></td>
     <td class="small">${escHtml(r.department)}</td>
@@ -10850,7 +10868,7 @@ function renderInductions(){
   tb.innerHTML = list.map(i=>{
     const emp = DB.employees.find(e=>e.id===i.employeeId);
     const done = i.items.filter(it=>it.status==='Done').length;
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'openInductionModal','${i.id}')">
       <td><strong>${escHtml(emp?.name||'—')}</strong></td>
       <td class="small muted">${escHtml(emp?.dept||'')}</td>
       <td>${done}/${i.items.length} complete</td>
@@ -10949,7 +10967,7 @@ function renderAppraisals(){
   `;
   tb.innerHTML = list.map(a=>{
     const emp = DB.employees.find(e=>e.id===a.employeeId);
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'openAppraisalModal','${a.id}')">
       <td><strong>${escHtml(emp?.name||'—')}</strong></td>
       <td class="small">${escHtml(a.cycle)}</td>
       <td>${a.rating?a.rating+'/5':'—'}</td>
@@ -11238,7 +11256,7 @@ function renderInvoices(){
   const from = document.getElementById('inv-date-from')?.value||'';
   const to = document.getElementById('inv-date-to')?.value||'';
   const rows = DB.invoices.filter(i=>(!from||i.date>=from)&&(!to||i.date<=to));
-  tb.innerHTML=rows.map(i=>`<tr>
+  tb.innerHTML=rows.map(i=>`<tr class="row-open" onclick="rowOpen(event,'editInvoice','${i.id}')">
     <td class="mono"><strong>${i.invNo}</strong></td>
     <td>${fmtDate(i.date)}</td>
     <td>${escHtml(i.customer)}</td>
@@ -11258,7 +11276,7 @@ function renderReceipts(){
   const tb=document.getElementById('tb-receipts');
   tb.innerHTML=DB.receipts.map(r=>{
     const inv = r.invoiceId ? DB.invoices.find(i=>i.id===r.invoiceId) : null;
-    return `<tr${r.cancelled?' style="opacity:.5;text-decoration:line-through"':''}>
+    return `<tr${r.cancelled?' style="opacity:.5;text-decoration:line-through"':''} class="row-open" onclick="rowOpen(event,'editReceipt','${r.id}')">
     <td>${fmtDate(r.date)}</td>
     <td class="mono">${r.refNo}</td>
     <td><strong>${escHtml(r.source)}</strong>${inv?`<div class="muted" style="font-size:10px">vs ${inv.invNo}</div>`:''}</td>
@@ -11392,7 +11410,7 @@ function renderVendorBills(){
   const tb=document.getElementById('tb-vendors');
   tb.innerHTML=DB.bills.map(b=>{
     const aging = billAgingBucket(b);
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'openBillBuilder','${b.id}')">
     <td class="mono"><strong>${escHtml(b.billNo)}</strong></td>
     <td>${fmtDate(b.date)}</td>
     <td><strong>${escHtml(b.vendor)}</strong></td>
@@ -11754,7 +11772,7 @@ function renderCostCentres(){
   tb.innerHTML = DB.costCentres.length ? DB.costCentres.map(c=>{
     const parent = c.parentId ? DB.costCentres.find(x=>x.id===c.parentId) : null;
     const cat = DB.costCategories.find(x=>x.id===c.category);
-    return `<tr${c.active===false?' style="opacity:.5"':''}>
+    return `<tr${c.active===false?' style="opacity:.5"':''} class="row-open" onclick="rowOpen(event,'editCostCentre','${c.id}')">
       <td>${escHtml(c.name)}</td>
       <td class="small">${cat?escHtml(cat.name):'—'}</td>
       <td class="small">${parent?escHtml(parent.name):'— Top level —'}</td>
@@ -11834,7 +11852,7 @@ function renderTaxCodes(){
   ensureDefaultTaxCodes();
   const tb = document.getElementById('tb-taxcodes');
   if(!tb) return;
-  tb.innerHTML = DB.taxCodes.length ? DB.taxCodes.map(t=>`<tr${t.active===false?' style="opacity:.5"':''}>
+  tb.innerHTML = DB.taxCodes.length ? DB.taxCodes.map(t=>`<tr${t.active===false?' style="opacity:.5"':''} class="row-open" onclick="rowOpen(event,'editTaxCode','${t.id}')">
       <td class="mono small">${escHtml(t.code)}</td>
       <td class="small">${escHtml(t.label)}</td>
       <td class="right mono">${t.ratePct}%</td>
@@ -11868,7 +11886,7 @@ function renderBomTemplates(){
   if(!requireRole('CEO','Admin','Estimator')){_accessDenied();return;}
   const tb = document.getElementById('tb-bomtemplates');
   if(!tb) return;
-  tb.innerHTML = (DB.bomTemplates||[]).length ? DB.bomTemplates.map(t=>`<tr>
+  tb.innerHTML = (DB.bomTemplates||[]).length ? DB.bomTemplates.map(t=>`<tr class="row-open" onclick="rowOpen(event,'openBomTemplateBuilder','${t.id}')">
     <td>${escHtml(t.name)}</td>
     <td class="small">v${t.version||1}</td>
     <td class="small">${fmtDate(t.effectiveDate)}</td>
@@ -14360,7 +14378,7 @@ function renderVendorMaster(){
 // LEADS
 function renderLeads(){
   const tb=document.getElementById('tb-leads');
-  tb.innerHTML=DB.leads.map(l=>`<tr>
+  tb.innerHTML=DB.leads.map(l=>`<tr class="row-open" onclick="rowOpen(event,'editLead','${l.id}')">
     <td>${fmtDate(l.date)}</td>
     <td><strong>${escHtml(l.name)}</strong></td>
     <td class="muted">${escHtml(l.phone||'—')}</td>
@@ -18928,7 +18946,7 @@ function renderBankCashMaster(){
   tb.innerHTML = DB.bankAccounts.map(a=>{
     const glAcc = DB.accounts.find(x=>x.id===a.glAccountId);
     const bal = glAcc ? glAccountBalance(glAcc.id).closing : 0;
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'openEditBankAccount','${a.id}')">
       <td><span class="tag ${a.type==='Cash'?'tag-blue':'tag-grey'}">${a.type}</span></td>
       <td><strong>${escHtml(a.accountName)}</strong></td>
       <td>${escHtml(a.bankName||'—')}</td>
@@ -24178,7 +24196,7 @@ function renderMfgJobs(){
     const overdue = j.dueDate && new Date(j.dueDate)<today && j.status!=='Completed';
     const effStatus = overdue && j.status!=='Completed' ? 'Delayed' : j.status;
     const prioColor = j.priority==='High'?'var(--red)':j.priority==='Urgent'?'var(--red)':'var(--muted)';
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'editMfgJob','${j.id}')">
       <td><span class="tag tag-dark">${j.jobNo}</span></td>
       <td><strong>${prod?prod.name:'—'}</strong></td>
       <td class="small">${proj?proj.client+' ('+proj.code+')':'—'}</td>
@@ -25695,7 +25713,7 @@ function renderDeliveries(){
   tb.innerHTML = list.map(d=>{
     const prod = DB.products.find(p=>p.id===d.productId);
     const proj = DB.projects.find(p=>p.id===d.projectId);
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'editDelivery','${d.id}')">
       <td>${fmtDate(d.date)}</td>
       <td><strong>${prod?prod.name:'—'}</strong></td>
       <td class="small">${proj?proj.client+' ('+proj.code+')':'—'}</td>
@@ -25740,7 +25758,7 @@ function renderInstallation(){
     const prod    = DB.products.find(p=>p.id===i.productId);
     const proj    = DB.projects.find(p=>p.id===i.projectId);
     const overdue = i.dueDate && new Date(i.dueDate)<today && i.status!=='Completed';
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'editInstall','${i.id}')">
       <td><strong>${prod?prod.name:'—'}</strong></td>
       <td class="small">${proj?proj.client+' ('+proj.code+')':'—'}</td>
       <td class="small">${i.team||'<span class="muted">Unassigned</span>'}</td>
@@ -25999,7 +26017,7 @@ function renderMilestones(){
         'Invoiced':'tag-teal','Ready to Invoice':'tag-gold',
         'Pending':'tag-grey','Received':'tag-green'
       }[m.status]||'tag-grey';
-      return `<tr>
+      return `<tr class="row-open" onclick="rowOpen(event,'editMilestone','${m.id}')">
         <td><strong>${m.name}</strong></td>
         <td class="mono">${INR(m.amount)}</td>
         <td class="muted small">${m.pct?m.pct+'%':'—'}</td>
@@ -26320,7 +26338,7 @@ function renderEmployees(){
   const tbody = document.getElementById('tb-employees');
   if(!tbody) return;
   tbody.innerHTML = emps.map(e=>`
-    <tr>
+    <tr class="row-open" onclick="rowOpen(event,'openEditEmployee','${e.id}')">
       <td>${e.empNo}</td>
       <td>${e.name}</td>
       <td>${e.dept}</td>
@@ -27987,7 +28005,7 @@ function renderUserMgmt(){
   // Users table
   document.getElementById('tb-usermgmt-body').innerHTML = users.map(u=>{
     const active = u.active !== false;
-    return `<tr>
+    return `<tr class="row-open" onclick="rowOpen(event,'openUserModal','${u.id}')">
       <td>
         <div style="display:flex;align-items:center;gap:10px">
           <div style="width:32px;height:32px;border-radius:50%;background:var(--gold-pale);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${u.initials}</div>
