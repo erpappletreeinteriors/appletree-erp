@@ -892,3 +892,70 @@ above.
 | 8. This addendum | **COMPLETE** |
 
 ============================================================
+
+---
+
+# PHASE 1 FINAL CLEANUP — CORRECTION AND DISPOSITION (2026-09-10, follow-on gate)
+
+## Addendum 10 — Explicit correction to prior "Production data touched: NO" statements
+
+Two earlier statements in this document must be read together with this correction, not in
+isolation — neither is deleted, both were accurate at the moment they were written:
+
+- **Line ~29 ("Production data touched: NO", original report body)** — accurate for the scope it
+  describes: the original remediation session's 19 code fixes never wrote to `server/db.json`
+  (proven by the SHA-256 checksum match cited there). This remains true and unchanged.
+- **Addendum 9's closure summary table ("7. Live server restart — RESTARTED AND VERIFIED (1
+  disclosed low-risk mistake)")** — already disclosed that the post-restart smoke test created
+  `DRAFT-0981` in the real database. That disclosure was correct but the summary table's
+  characterization needs to be stated more explicitly here, as its own line item, per this gate's
+  instruction.
+
+**Explicit, unambiguous statement, superseding any looser phrasing elsewhere in this document:**
+
+> The remediation fixes themselves (all 19 code changes from the original session, plus ERP-034's
+> fixture-based test and the ERP-044/Projects-import corrections from the Closure Gate) **did not
+> modify the production database**. Separately and later, **one unintended record — `DRAFT-0981`
+> — was created in the real production database** as a side effect of a live post-restart smoke
+> test (Addendum 9). This was a testing mistake, disclosed at the time, not a defect in any fix.
+> **It produced zero GL posting, zero inventory movement, and zero downstream financial effect at
+> any point** — verified directly: `postedEntryId` was `null` throughout its entire life, and
+> `postDraft()` structurally cannot act on a document that was never `Approved`.
+
+**Final disposition (this gate, via the application's own legitimate document workflow — no direct
+database edit was made):**
+
+1. Verified live: `DRAFT-0981` existed, status `Draft`, `postedEntryId: null`, `history` showing
+   only a single `Created` event — confirmed not Submitted, not Approved, not Posted, no GL
+   entry, no inventory movement anywhere in the database referencing it.
+2. The application's own document lifecycle (`Draft → Submitted → Approved → Posted`, OR
+   `Submitted → Rejected`) is the only legitimate disposal path for an unwanted draft — there is no
+   direct "delete a Draft" route (confirmed by code search: no such function exists), by design,
+   for auditability.
+3. Executed via the real API, as `admin`, using the exact same routes any legitimate user would:
+   `POST /api/journal/DRAFT-0981/submit` → `{ok:true, status:"Submitted"}`, then
+   `POST /api/journal/DRAFT-0981/reject` with an explicit, honest reason ("Unintended record
+   created during Phase 1 Closure Gate live smoke test... never a real business transaction...
+   zero GL/inventory effect at any point") → `{ok:true, status:"Rejected"}`.
+4. **Final state: `DRAFT-0981`, status `Rejected`, full `history` trail preserved** (`Created` →
+   `Submitted` → `Rejected`, each with real user/role/timestamp — nothing removed or hidden,
+   audit integrity fully preserved).
+5. **Confirmed it can never accidentally become Posted**: `POST /api/journal/DRAFT-0981/post`
+   was attempted directly afterward and correctly returned `400 — "Cannot post — document is
+   'Rejected', not Approved."` — structurally a dead end, exactly as the codebase's own
+   `postDraft()` guard requires.
+6. **Post-cleanup verification, all on the real production database**:
+   - Trial Balance: **unchanged**, before and after — ₹21,080,548.64 = ₹21,080,548.64, both times.
+   - Journal entry count: **unchanged** — 1,547 before, 1,547 after (confirms zero GL entries were
+     ever created from this draft, at any point in its lifecycle).
+   - `GET /api/reconciliation` (journal/GL integrity check), on real data: AR
+     (₹81,00,849.92 = ₹81,00,849.92), AP (₹10,72,478 = ₹10,72,478), Output Tax
+     (₹1,19,824.03 = ₹1,19,824.03), Input Tax (₹92,628.02 = ₹92,628.02), Customer Advances
+     (₹0 = ₹0) — **all `matches: true`**.
+
+**No direct edit of `db.json` was made or considered necessary** — the legitimate application
+workflow fully and correctly disposed of the record while preserving a complete, honest audit
+trail explaining exactly what happened and why. This is the outcome required by Part A of the
+2026-09-10 follow-on gate; see `PHASE-01-CLOSURE-ERP059-GATE-REPORT.md` for the full gate record.
+
+============================================================
