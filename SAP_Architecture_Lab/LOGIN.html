@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Appletree ERP — SAP Architecture Lab — Launcher</title>
+<meta http-equiv="refresh" content="0;url=http://localhost:4001/login.html">
+<script>window.location.replace('http://localhost:4001/login.html');</script>
+<style>
+  :root{ --gold:#C3B152; --ink:#2b2a26; --bg:#faf9f6; --card:#fff; --border:#e4e1d8; --muted:#7a7669; --credit:#a83232; }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Manrope',Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--ink);}
+  .envbar{background:#a83232;color:#fff;text-align:center;padding:6px;font-size:12px;font-weight:700;letter-spacing:.4px;}
+  .wrap{max-width:460px;margin:70px auto;padding:0 16px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:26px;box-shadow:0 2px 10px rgba(0,0,0,.04);text-align:center;}
+  h1{font-size:18px;margin:0 0 6px;}
+  .sub{color:var(--muted);font-size:12.5px;margin-bottom:18px;line-height:1.5;}
+  a.btn{display:inline-block;background:var(--gold);color:#2b2a26;font-weight:700;padding:11px 22px;border-radius:8px;text-decoration:none;font-size:14px;}
+  .note{color:var(--muted);font-size:11.5px;margin-top:18px;text-align:left;background:#f8f7f2;border:1px solid var(--border);border-radius:8px;padding:12px 14px;line-height:1.6;}
+  code{background:#f1efe6;padding:1px 5px;border-radius:4px;font-size:11px;}
+</style>
+</head>
+<body>
+<div class="envbar">APPLETREE ERP — SAP ARCHITECTURE LAB — TEST / DEVELOPMENT ENVIRONMENT — NO REAL TRANSACTIONS</div>
+<div class="wrap">
+  <div class="card">
+    <h1>Appletree ERP — SAP Architecture Lab</h1>
+    <div class="sub">Redirecting to the login page…<br>If nothing happens, click below.</div>
+    <a class="btn" href="http://localhost:4001/login.html">Open Login Page →</a>
+    <div class="note">
+      This file only <b>launches</b> the app — it cannot log you in by itself, because a page opened directly from disk (<code>file://</code>) isn't allowed to talk to the server.<br><br>
+      <b>Before clicking:</b> the server must be running. If the link doesn't load, start it with:<br>
+      <code>node server/server.js</code><br>
+      from inside this folder, then click the button again.
+    </div>
+  </div>
+</div>
+</body>
+</html>

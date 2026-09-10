@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Appletree ERP — SAP Architecture Lab — Login</title>
+<style>
+  :root{ --gold:#C3B152; --ink:#2b2a26; --bg:#faf9f6; --card:#fff; --border:#e4e1d8; --muted:#7a7669; --debit:#1f6f43; --credit:#a83232; }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:'Manrope',Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--ink);}
+  .envbar{background:#a83232;color:#fff;text-align:center;padding:6px;font-size:12px;font-weight:700;letter-spacing:.4px;}
+  .wrap{max-width:420px;margin:60px auto;padding:0 16px;}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px 26px;box-shadow:0 2px 10px rgba(0,0,0,.04);}
+  h1{font-size:18px;margin:0 0 4px;}
+  .sub{color:var(--muted);font-size:12.5px;margin-bottom:18px;}
+  label{font-size:11px;color:var(--muted);font-weight:700;display:block;margin:10px 0 3px;text-transform:uppercase;letter-spacing:.3px;}
+  input{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:7px;font-size:14px;font-family:inherit;}
+  button.primary{width:100%;background:var(--gold);border:none;color:#2b2a26;font-weight:700;padding:10px 16px;border-radius:8px;cursor:pointer;font-size:14px;margin-top:16px;}
+  button.primary:hover{filter:brightness(0.97);}
+  .msg{padding:8px 12px;border-radius:7px;font-size:13px;margin-top:10px;font-weight:600;}
+  .msg.ok{background:#e8f3ec;color:var(--debit);} .msg.err{background:#faeaea;color:var(--credit);}
+  .divider{display:flex;align-items:center;gap:10px;margin:20px 0 14px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.4px;}
+  .divider::before,.divider::after{content:'';flex:1;height:1px;background:var(--border);}
+  .roles{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .roles button{background:#f8f7f2;border:1px solid var(--border);border-radius:7px;padding:8px 6px;font-size:12px;font-weight:700;color:var(--ink);cursor:pointer;text-align:left;}
+  .roles button:hover{border-color:var(--gold);}
+  .roles button .r{display:block;font-size:10px;color:var(--muted);font-weight:600;}
+  .footnote{color:var(--muted);font-size:11px;text-align:center;margin-top:16px;}
+</style>
+</head>
+<body>
+<div class="envbar">APPLETREE ERP — SAP ARCHITECTURE LAB — TEST / DEVELOPMENT ENVIRONMENT — NO REAL TRANSACTIONS</div>
+<div class="wrap">
+  <div class="card">
+    <h1>Appletree ERP — SAP Architecture Lab</h1>
+    <div class="sub">Sign in with a seeded test account (see <code>server/domain.js</code> SEED_USERS).</div>
+    <label>Username</label><input id="lg-user" autocomplete="username">
+    <label>Password</label><input id="lg-pass" type="password" autocomplete="current-password">
+    <button class="primary" onclick="doLogin()">Log In</button>
+    <div id="loginMsg"></div>
+
+    <div class="divider">or quick test login</div>
+    <div class="roles" id="roleButtons"></div>
+  </div>
+  <div class="footnote">This page and the credentials on it are for internal testing only — never real Appletree data.</div>
+</div>
+
+<script>
+const TEST_USERS = [
+  {u:'admin', p:'Admin@12345', role:'Admin'},
+  {u:'ceo', p:'Ceo@12345', role:'CEO'},
+  {u:'accountant1', p:'Acc@12345', role:'Accountant'},
+  {u:'finance1', p:'Fin@12345', role:'FinanceManager'},
+  {u:'pm1', p:'Pm@123456', role:'ProjectManager'},
+  {u:'purchase1', p:'Pur@12345', role:'Purchase'},
+  {u:'sales1', p:'Sal@123456', role:'Sales'},
+  {u:'estimator1', p:'Est@12345', role:'Estimator'},
+  {u:'viewer1', p:'View@1234', role:'Viewer'}
+];
+document.getElementById('roleButtons').innerHTML = TEST_USERS.map(t=>
+  `<button onclick="quickLogin('${t.u}','${t.p}')">${t.u}<span class="r">${t.role}</span></button>`).join('');
+
+function quickLogin(u,p){
+  document.getElementById('lg-user').value = u;
+  document.getElementById('lg-pass').value = p;
+  doLogin();
+}
+async function doLogin(){
+  const username = document.getElementById('lg-user').value;
+  const password = document.getElementById('lg-pass').value;
+  const msgEl = document.getElementById('loginMsg');
+  msgEl.innerHTML = '';
+  try{
+    const res = await fetch('/api/login', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({username, password})});
+    const r = await res.json().catch(()=>({ok:false, error:'Unexpected server response.'}));
+    if(r.ok){
+      msgEl.innerHTML = `<div class="msg ok">Welcome, ${r.user.name} (${r.user.role}) — redirecting…</div>`;
+      setTimeout(()=>{ window.location.href = '/index.html'; }, 400);
+    } else {
+      msgEl.innerHTML = `<div class="msg err">${r.error || 'Login failed.'}</div>`;
+    }
+  } catch(e){
+    msgEl.innerHTML = `<div class="msg err">Could not reach the server at ${window.location.origin} — is it running?</div>`;
+  }
+}
+document.getElementById('lg-pass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+</script>
+</body>
+</html>

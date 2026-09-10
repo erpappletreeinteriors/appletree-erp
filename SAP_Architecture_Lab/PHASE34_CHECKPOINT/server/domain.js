@@ -1,0 +1,6289 @@
+'use strict';
+// ============================================================
+// Phase 6A — Domain / Accounting Engine (server-side, authoritative)
+// ============================================================
+// This is the SAME business logic proven in Phase 4/5 (appletree_sap_lab.html),
+// ported to run here instead of in the browser. Nothing about the accounting
+// rules changed — debit=credit enforcement, the document lifecycle, AR/AP
+// open-items/clearing, the reversal-blocks-if-cleared fix, and the
+// reconciliation scoping fix (Phase 5 defects 2 and 3) are all carried over
+// unchanged. What's NEW is that this code now runs in a process the browser
+// cannot inspect or bypass — see server.js for the authorization layer that
+// wraps every call into this module.
+const fs = require('fs');
+const path = require('path');
+
+const DB_FILE = path.join(__dirname, 'db.json');
+const BACKUP_DIR = path.join(__dirname, 'backups');
+
+const SEED = {
+  accounts: [
+    {id:'1000', name:'Bank', type:'Asset'},
+    {id:'1100', name:'Accounts Receivable', type:'Asset'},
+    {id:'1200', name:'Inventory / WIP', type:'Asset'},
+    {id:'1300', name:'Input Tax Recoverable', type:'Asset'},
+    {id:'2000', name:'Accounts Payable', type:'Liability'},
+    {id:'2100', name:'Customer Advance Liability', type:'Liability'},
+    {id:'2200', name:'Output Tax Payable', type:'Liability'},
+    {id:'4000', name:'Project Revenue', type:'Income'},
+    {id:'5000', name:'Material Cost', type:'Expense'},
+    {id:'5100', name:'Labour Cost', type:'Expense'},
+    {id:'5200', name:'Site Expense', type:'Expense'},
+    {id:'2050', name:'GR/IR Clearing', type:'Liability'},
+    // Phase 14 — genuinely new GL concept (inventory shrinkage/adjustment), does not fit any
+    // existing account without misclassifying it; no existing account reused for this.
+    {id:'5300', name:'Inventory Adjustment', type:'Expense'},
+    // Phase 19 §26/§27 — Fixed Assets. 4 new accounts, none reused from an existing one, since
+    // none of the existing 13 correctly represents capitalized cost / accumulated depreciation /
+    // depreciation expense / disposal gain-loss without misclassifying it.
+    {id:'1400', name:'Fixed Assets — Cost', type:'Asset'},
+    {id:'1450', name:'Accumulated Depreciation', type:'Asset'},
+    {id:'5400', name:'Depreciation Expense', type:'Expense'},
+    {id:'5500', name:'Gain/Loss on Asset Disposal', type:'Expense'},
+    // Phase 20 §7 — the ONE new technical/structural account the Opening Balance Engine needs to
+    // function at all: a universal balancing account for opening-balance entries (a standard
+    // accounting technique used by virtually every ERP — SAP itself uses a dedicated opening-
+    // balance/retained-earnings account for exactly this). This is infrastructure, not an invented
+    // Appletree business account — clearly labeled as such, never meant to carry a balance once
+    // the real opening trial balance is fully and correctly loaded (its balance = 0 is itself the
+    // reconciliation proof that the opening entries are complete and correct).
+    {id:'3000', name:'Opening Balance Equity (technical — not a real Appletree account)', type:'Liability'},
+    // Phase 33 — Finance SOP §3 (TDS). TDS deducted at source on a supplier payment is a real
+    // liability Apple Tree owes to the government until remitted — genuinely new GL concept, no
+    // existing account represents "tax withheld from someone else, payable by us" without
+    // misclassifying it.
+    {id:'2300', name:'TDS Payable', type:'Liability'}
+  ],
+  // Phase 14 §18 — Branch dimension. Only "Ullyeri" is evidenced (from the CEO-supplied real
+  // Appletree accounting screenshot); everything else is a neutral placeholder, not invented
+  // business data. Admin/CEO can add more via the Branches master — full branch list is
+  // BUSINESS POLICY REQUIRED / CONFIGURATION REQUIRED, not guessed here.
+  branches: [
+    {id:'BR-HO', code:'HO', name:'Head Office / Unspecified', active:true},
+    {id:'BR-ULLIYERI', code:'ULLIYERI', name:'Ulliyeri', active:true}
+  ],
+  // Phase 15 §5 — Bank Account master. Sub-ledger detail underneath the single existing GL
+  // account 1000 "Bank" (no evidence of Appletree needing separate GL accounts per physical bank
+  // account, so the control account stays unified — this master exists purely to record WHICH
+  // real bank account a payment/receipt/statement line belongs to). Only the ONE account visible
+  // in the CEO's screenshot is seeded; nothing else is invented.
+  bankAccounts: [
+    {id:'BANK-ICICI-1112', bankName:'ICICI Bank', accountName:'ICICI Areekkad A/c No.249005001112', accountNumberLast4:'1112', glAccount:'1000', active:true}
+  ],
+  materials: [
+    {id:'MAT-1', code:'PLY18', description:'Plywood 18mm Marine Grade', category:'Panel', uom:'sheet', stockItem:true, standardCost:2800, valuationMethod:'MovingAverage', taxCode:'GST18', active:true, reorderLevel:20, minStock:10, maxStock:200, hsnCode:null},
+    {id:'MAT-2', code:'LAM-STD', description:'Laminate — Standard Finish', category:'Panel', uom:'sheet', stockItem:true, standardCost:1200, valuationMethod:'MovingAverage', taxCode:'GST18', active:true, reorderLevel:15, minStock:5, maxStock:150, hsnCode:null},
+    {id:'MAT-3', code:'VEN-TEAK', description:'Teak Veneer', category:'Panel', uom:'sheet', stockItem:true, standardCost:3500, valuationMethod:'MovingAverage', taxCode:'GST18', active:true, reorderLevel:10, minStock:5, maxStock:100, hsnCode:null},
+    {id:'MAT-4', code:'PVC-EDGE', description:'PVC Edge Band 2mm', category:'Hardware', uom:'roll', stockItem:true, standardCost:450, valuationMethod:'MovingAverage', taxCode:'GST18', active:true, reorderLevel:20, minStock:10, maxStock:100, hsnCode:null},
+    {id:'MAT-5', code:'HNG-SS', description:'SS Soft-close Hinge', category:'Hardware', uom:'pc', stockItem:true, standardCost:180, valuationMethod:'MovingAverage', taxCode:'GST18', active:true, reorderLevel:100, minStock:50, maxStock:1000, hsnCode:null},
+    {id:'MAT-6', code:'MDF-12', description:'MDF Board 12mm', category:'Panel', uom:'sheet', stockItem:true, standardCost:1800, valuationMethod:'MovingAverage', taxCode:'GST18', active:true, reorderLevel:15, minStock:5, maxStock:150, hsnCode:null},
+    {id:'MAT-7', code:'GLS-TMP', description:'Toughened Glass 8mm', category:'Glass', uom:'sqft', stockItem:true, standardCost:220, valuationMethod:'MovingAverage', taxCode:'GST18', active:true, reorderLevel:50, minStock:20, maxStock:500, hsnCode:null},
+    {id:'MAT-8', code:'ALU-PRF', description:'Aluminium Profile — Standard', category:'Metal', uom:'meter', stockItem:true, standardCost:320, valuationMethod:'MovingAverage', taxCode:'GST18', active:true, reorderLevel:100, minStock:50, maxStock:800, hsnCode:null}
+  ],
+  warehouses: [
+    {id:'WH-1', name:'Main Factory Store', location:'Kochi Factory', active:true},
+    {id:'WH-2', name:'Site Store — Rotating', location:'Various project sites', active:true}
+  ],
+  projects: [
+    {id:'PRJ-1', name:'Habeeb Kaithakkunda — Residence', budget:500000, status:'ACTIVE', projectManagerId:null, salesOwnerId:null, quotationId:null, leadId:null, customerId:null, advanceRequiredAmount:null},
+    {id:'PRJ-2', name:'Silver Sands — Office Fitout', budget:300000, status:'ACTIVE', projectManagerId:null, salesOwnerId:null, quotationId:null, leadId:null, customerId:null, advanceRequiredAmount:null},
+    {id:'PRJ-3', name:'Marine Drive — Penthouse', budget:900000, status:'ACTIVE', projectManagerId:null, salesOwnerId:null, quotationId:null, leadId:null, customerId:null, advanceRequiredAmount:null},
+    {id:'PRJ-4', name:'Kakkanad — Villa Turnkey', budget:1200000, status:'ACTIVE', projectManagerId:null, salesOwnerId:null, quotationId:null, leadId:null, customerId:null, advanceRequiredAmount:null},
+    {id:'PRJ-5', name:'Infopark — Corporate Office', budget:650000, status:'ACTIVE', projectManagerId:null, salesOwnerId:null, quotationId:null, leadId:null, customerId:null, advanceRequiredAmount:null}
+  ],
+  costCentres: [
+    {id:'CC-DESIGN', name:'Design'}, {id:'CC-FACTORY', name:'Factory'}, {id:'CC-SITE', name:'Site'},
+    // Phase 15 §2 — extends the EXISTING cost-centre master (reuse, not a new dimension) to
+    // finally distinguish Installation labour from Production/Factory labour, both of which
+    // previously shared account 5100 with zero distinguishing tag.
+    {id:'CC-INSTALLATION', name:'Installation'}
+  ],
+  customers: [
+    {id:'CUST-1', name:'Mr. Habeeb'}, {id:'CUST-2', name:'Silver Sands Pvt Ltd'}, {id:'CUST-3', name:'Mrs. Anjali Menon'},
+    {id:'CUST-4', name:'Marine Drive Estates LLP'}, {id:'CUST-5', name:'Mr. Thomas Varghese'}, {id:'CUST-6', name:'Kakkanad Builders Pvt Ltd'},
+    {id:'CUST-7', name:'Ms. Priya Nair'}, {id:'CUST-8', name:'Infopark Developers Ltd'}, {id:'CUST-9', name:'Mr. Rajeev Kumar'}, {id:'CUST-10', name:'Mrs. Sarah Jacob'}
+  ],
+  vendors: [
+    {id:'VEND-1', name:'ABC Plywood Suppliers'}, {id:'VEND-2', name:'XYZ Hardware Traders'}, {id:'VEND-3', name:'Kerala Glass & Aluminium'},
+    {id:'VEND-4', name:'Cochin Veneer Depot'}, {id:'VEND-5', name:'Modern Kitchen Accessories'}, {id:'VEND-6', name:'Sree Lakshmi Carpentry Works'},
+    {id:'VEND-7', name:'Metro Polishing Contractors'}, {id:'VEND-8', name:'Ernakulam Transport Co.'}, {id:'VEND-9', name:'Precision Hardware Imports'}, {id:'VEND-10', name:'Coastal Site Supplies'}
+  ],
+  taxCodes: [
+    {code:'GST18', label:'GST 18% (9% CGST + 9% SGST)', cgstPct:9, sgstPct:9, igstPct:0, active:true},
+    {code:'GST5', label:'GST 5% (2.5% CGST + 2.5% SGST)', cgstPct:2.5, sgstPct:2.5, igstPct:0, active:true},
+    {code:'GST12', label:'GST 12% IGST (inter-state)', cgstPct:0, sgstPct:0, igstPct:12, active:true}
+  ],
+  // Phase 19 §24 (APPROVED — Decision A, required): metadata-only classification for HOW a
+  // Receipt/Payment moved, never the accounting account itself — the GL posting is always the
+  // same Dr/Cr 1000 (Bank) regardless of which method is tagged. Real, standard Indian payment
+  // rails only — nothing invented.
+  paymentMethods: [
+    {id:'PM-CASH', code:'CASH', name:'Cash', category:'Cash', active:true},
+    {id:'PM-CHEQUE', code:'CHEQUE', name:'Cheque', category:'Bank', active:true},
+    {id:'PM-BANKTRANSFER', code:'BANKTRANSFER', name:'Bank Transfer', category:'Bank', active:true},
+    {id:'PM-NEFT', code:'NEFT', name:'NEFT', category:'Bank', active:true},
+    {id:'PM-RTGS', code:'RTGS', name:'RTGS', category:'Bank', active:true},
+    {id:'PM-IMPS', code:'IMPS', name:'IMPS', category:'Bank', active:true},
+    {id:'PM-UPI', code:'UPI', name:'UPI', category:'Bank', active:true},
+    {id:'PM-CARD', code:'CARD', name:'Card', category:'Bank', active:true}
+  ],
+  glDocumentTypes: [
+    {code:'JE', label:'Journal Voucher', prefix:'JV', nextSeq:1},
+    {code:'INV', label:'Sales Invoice', prefix:'INV', nextSeq:1},
+    {code:'PO', label:'Purchase Order', prefix:'PO', nextSeq:1},
+    {code:'RCPT', label:'Customer Receipt', prefix:'RCPT', nextSeq:1},
+    {code:'PAY', label:'Vendor Payment', prefix:'PAY', nextSeq:1},
+    {code:'CN', label:'Credit Note', prefix:'CN', nextSeq:1},
+    {code:'DN', label:'Debit Note', prefix:'DN', nextSeq:1},
+    {code:'BILL', label:'Supplier Bill', prefix:'BILL', nextSeq:1},
+    {code:'CLR', label:'Clearing Document', prefix:'CLR', nextSeq:1},
+    {code:'QTN', label:'Quotation', prefix:'QTN', nextSeq:1},
+    {code:'MR', label:'Material Request', prefix:'MR', nextSeq:1},
+    {code:'RFQ', label:'RFQ', prefix:'RFQ', nextSeq:1},
+    {code:'GRN', label:'Goods Receipt Note', prefix:'GRN', nextSeq:1},
+    {code:'PRET', label:'Purchase Return', prefix:'PRET', nextSeq:1},
+    {code:'SCN', label:'Supplier Credit Note', prefix:'SCN', nextSeq:1},
+    {code:'PROD', label:'Production Order', prefix:'PROD', nextSeq:1},
+    {code:'ISS', label:'Material Issue', prefix:'ISS', nextSeq:1},
+    {code:'DSP', label:'Dispatch', prefix:'DSP', nextSeq:1},
+    {code:'DLV', label:'Delivery Confirmation', prefix:'DLV', nextSeq:1},
+    {code:'INST', label:'Installation', prefix:'INST', nextSeq:1},
+    {code:'QCK', label:'QC Checklist', prefix:'QCK', nextSeq:1},
+    {code:'SNG', label:'Snag', prefix:'SNG', nextSeq:1},
+    {code:'HO', label:'Handover', prefix:'HO', nextSeq:1},
+    {code:'WAR', label:'Warranty', prefix:'WAR', nextSeq:1},
+    {code:'CMP', label:'Complaint', prefix:'CMP', nextSeq:1},
+    {code:'TKT', label:'Service Ticket', prefix:'TKT', nextSeq:1},
+    {code:'VIS', label:'Service Visit', prefix:'VIS', nextSeq:1},
+    {code:'AMC', label:'AMC Contract', prefix:'AMC', nextSeq:1},
+    {code:'CAPA', label:'CAPA Case', prefix:'CAPA', nextSeq:1},
+    // Phase 14 — added directly to SEED (not just the migration-guard patch below), so a FRESH
+    // seed (resetToFreshSeed / first-ever run) gets these too. DEFECT FOUND & FIXED: the first
+    // version only patched an EXISTING db.json via the migration guard, leaving nextDocNumber()
+    // returning null (no voucher number) for these types on any freshly-reset database.
+    {code:'ITR', label:'Inventory Transfer', prefix:'ITR', nextSeq:1},
+    {code:'IADJ', label:'Inventory Adjustment', prefix:'IADJ', nextSeq:1},
+    {code:'JT', label:'Journal Template', prefix:'JT', nextSeq:1},
+    {code:'REC', label:'Recurring Entry', prefix:'REC', nextSeq:1},
+    {code:'FA', label:'Fixed Asset', prefix:'FA', nextSeq:1},
+    {code:'OB', label:'Opening Balance', prefix:'OB', nextSeq:1},
+    {code:'BXFR', label:'Bank/Cash Transfer', prefix:'BXFR', nextSeq:1},
+    {code:'SDN', label:'Supplier Debit Note', prefix:'SDN', nextSeq:1},
+    {code:'DMG', label:'Damage Report', prefix:'DMG', nextSeq:1},
+    {code:'SCT', label:'Stock Count', prefix:'SCT', nextSeq:1},
+    {code:'LBR', label:'Labour Wages', prefix:'LBR', nextSeq:1},
+    {code:'PEXP', label:'Project Expense', prefix:'PEXP', nextSeq:1},
+    {code:'JC', label:'Job Card', prefix:'JC', nextSeq:1},
+    // Phase 33 — Finance SOP compliance document types
+    {code:'PR', label:'Purchase Requisition', prefix:'PR', nextSeq:1},
+    {code:'MRS', label:'Material Requisition Slip (Site)', prefix:'MRS', nextSeq:1},
+    {code:'DC', label:'Delivery Challan', prefix:'DC', nextSeq:1},
+    {code:'SMR', label:'Site Material Receipt', prefix:'SMR', nextSeq:1},
+    {code:'PCV', label:'Petty Cash Voucher', prefix:'PCV', nextSeq:1},
+    {code:'PCF', label:'Petty Cash Float', prefix:'PCF', nextSeq:1}
+  ]
+};
+// Real Appletree supplier-master detail, additive to the existing 10 vendors (§7) —
+// bank details deliberately masked/partial, matching the field-security requirement (§38)
+// this data itself must satisfy: nothing here should be sent to an unauthorized client.
+const VENDOR_MASTER_DETAIL = {
+  'VEND-1':{gstNumber:'32AABCP1234A1Z5', paymentTerms:'30 days', bankAccountLast4:'4521', category:'Panel/Board'},
+  'VEND-2':{gstNumber:'32AABCX5678B1Z2', paymentTerms:'15 days', bankAccountLast4:'7788', category:'Hardware'},
+  'VEND-3':{gstNumber:'32AABCK9012C1Z8', paymentTerms:'30 days', bankAccountLast4:'3390', category:'Glass/Aluminium'},
+  'VEND-4':{gstNumber:'32AABCV3456D1Z1', paymentTerms:'45 days', bankAccountLast4:'1102', category:'Panel/Board'},
+  'VEND-5':{gstNumber:'32AABCM7890E1Z9', paymentTerms:'30 days', bankAccountLast4:'6654', category:'Hardware'},
+  'VEND-6':{gstNumber:'32AABCS1122F1Z4', paymentTerms:'15 days', bankAccountLast4:'8899', category:'Labour/Services'},
+  'VEND-7':{gstNumber:'32AABCP3344G1Z7', paymentTerms:'15 days', bankAccountLast4:'2233', category:'Labour/Services'},
+  'VEND-8':{gstNumber:'32AABCE5566H1Z3', paymentTerms:'7 days', bankAccountLast4:'5577', category:'Transport'},
+  'VEND-9':{gstNumber:'32AABCP7788I1Z6', paymentTerms:'45 days', bankAccountLast4:'9911', category:'Hardware'},
+  'VEND-10':{gstNumber:'32AABCC9900J1Z0', paymentTerms:'15 days', bankAccountLast4:'4433', category:'Transport'}
+};
+
+// Phase 6B addition: 'Estimator' is a new row, added because the CRM/costing process
+// genuinely needs a role distinct from Sales (can build costing, cannot post/approve/pay) —
+// per the brief's own §29. Every existing role's row is byte-for-byte unchanged from Phase 6A.
+// Phase 33 addition: 'SiteInCharge' — the Finance SOP repeatedly names this as a distinct
+// authority from Purchase/ProjectManager (raises/approves site-level MRS and petty purchases
+// within threshold, cannot approve above-threshold spend, cannot post/pay) — same "add only when
+// genuinely needed" discipline as Estimator in Phase 6B. Every existing role's row is unchanged.
+const ROLES = ['Admin','CEO','Accountant','FinanceManager','ProjectManager','Purchase','Sales','Estimator','SiteInCharge','Viewer'];
+const ROLE_ACTIONS = {
+  Admin:          {view:true, create:true,  edit:true,  submit:true,  approve:true,  post:true,  reverse:true,  clear:true,  pay:true,  masterData:true,  export:true,  configure:true},
+  CEO:            {view:true, create:true,  edit:true,  submit:true,  approve:true,  post:true,  reverse:true,  clear:true,  pay:true,  masterData:true,  export:true,  configure:true},
+  Accountant:     {view:true, create:true,  edit:true,  submit:true,  approve:false, post:false, reverse:false, clear:true,  pay:false, masterData:false, export:true,  configure:false},
+  FinanceManager: {view:true, create:true,  edit:true,  submit:true,  approve:true,  post:true,  reverse:true,  clear:true,  pay:true,  masterData:false, export:true,  configure:false},
+  ProjectManager: {view:true, create:false, edit:false, submit:false, approve:false, post:false, reverse:false, clear:false, pay:false, masterData:false, export:true,  configure:false},
+  Purchase:       {view:true, create:true,  edit:true,  submit:true,  approve:false, post:false, reverse:false, clear:false, pay:false, masterData:false, export:true,  configure:false},
+  Sales:          {view:true, create:true,  edit:true,  submit:true,  approve:false, post:false, reverse:false, clear:false, pay:false, masterData:false, export:true,  configure:false},
+  Estimator:      {view:true, create:true,  edit:true,  submit:true,  approve:false, post:false, reverse:false, clear:false, pay:false, masterData:false, export:true,  configure:false},
+  SiteInCharge:   {view:true, create:true,  edit:true,  submit:true,  approve:false, post:false, reverse:false, clear:false, pay:false, masterData:false, export:true,  configure:false},
+  Viewer:         {view:true, create:false, edit:false, submit:false, approve:false, post:false, reverse:false, clear:false, pay:false, masterData:false, export:false, configure:false}
+};
+
+// ---------- Phase 6B: business-process enums (one place, not scattered through UI) ----------
+const LEAD_STATUSES = ['NEW','CONTACTED','QUALIFIED','ESTIMATION','QUOTATION','NEGOTIATION','WON','LOST','ON HOLD'];
+const ESTIMATION_STATUSES = ['DRAFT','SUBMITTED','IN PROGRESS','COMPLETED','CANCELLED'];
+const QUOTATION_STATUSES = ['Draft','Submitted','PendingApproval','Approved','Sent','Accepted','Rejected','Superseded'];
+const PROJECT_STATUSES = ['DRAFT','PLANNED','ACTIVE','ON HOLD','COMPLETED','CLOSED'];
+const DESIGN_STATUSES = ['Submitted','UnderReview','Approved','RevisionRequested'];
+// Discount approval thresholds — REAL, not invented: sourced from the Discovery Report §2.7 /
+// BOS Manual §1.6 policy already discovered and approved in the live ERP for QuotationDiscount
+// (≤5% no approval, ≤10% Accounts-tier, above that CEO). "Accounts" in the live ERP's role model
+// maps to this Lab's FinanceManager (the finance-approval-tier role). This is data-driven and
+// editable via DB.discountApprovalRules, not hardcoded into UI/business-logic code, per §13/§34.
+const DEFAULT_DISCOUNT_APPROVAL_RULES = [
+  {id:'DAR-1', upToPct:5, requiredRole:null, sourceNote:'BOS §1.6 — no approval required'},
+  {id:'DAR-2', upToPct:10, requiredRole:'FinanceManager', sourceNote:'BOS §1.6 — Accounts-tier, mapped to FinanceManager in this Lab'},
+  {id:'DAR-3', upToPct:null, requiredRole:'CEO', sourceNote:'BOS §1.6 — unlimited discount requires CEO'}
+];
+// Same real, cited BOS §1.6 policy already discovered for PO approval in the original
+// Discovery Report §2.7 (not invented — the live ERP's own DOA rules): ≤500,000 no approval,
+// ≤2,000,000 Accounts-tier (→FinanceManager in this Lab), above that CEO.
+const DEFAULT_PO_APPROVAL_RULES = [
+  {id:'PAR-1', upToAmount:500000, requiredRole:null, sourceNote:'BOS §1.6 — no approval required'},
+  {id:'PAR-2', upToAmount:2000000, requiredRole:'FinanceManager', sourceNote:'BOS §1.6 — Accounts-tier'},
+  {id:'PAR-3', upToAmount:null, requiredRole:'CEO', sourceNote:'BOS §1.6 — unlimited requires CEO'}
+];
+const MR_STATUSES = ['DRAFT','SUBMITTED','APPROVED','REJECTED','CONVERTED'];
+const PO_STATUSES = ['Draft','Submitted','Approved','PartiallyReceived','FullyReceived','Closed','Cancelled'];
+const GRN_TOLERANCE_PCT = 0; // Phase 13 POL-03 (approved): STRICT 0% — a deliberate, tested, permanent policy, not a placeholder. Kept as a hard constant (not admin-editable via the config screen) precisely because the approved policy is "enforce server-side, do not rely on UI validation" — a runtime-toggleable value would undercut that.
+// Phase 8 enums — carried forward, unchanged Phase 7 policy decisions (§36): inventory
+// valuation stays Moving Average, over-receipt tolerance stays 0%. Neither is touched here.
+const PROD_STATUSES = ['Draft','Released','InProgress','PartiallyCompleted','Completed','Closed','OnHold','Cancelled'];
+const DISPATCH_STATUSES = ['Draft','Ready','Approved','Dispatched','Delivered','Cancelled'];
+const INSTALLATION_STATUSES = ['Planned','InProgress','Completed','OnHold'];
+const QC_STATUSES = ['Pending','InProgress','Passed','Failed'];
+const SNAG_STATUSES = ['Open','Assigned','InProgress','Resolved','Verified','Closed'];
+const SNAG_SEVERITIES = ['Critical','Major','Minor'];
+const MILESTONE_TYPES = ['Advance','Production','Dispatch','Delivery','Installation','Handover','FinalBilling'];
+// GL/financial-statement visibility is its own scope, separate from action permissions —
+// Sales/Purchase/ProjectManager/Viewer can operate their own module without seeing the
+// company's full General Ledger, bank balances, or cross-project financials (§11/§19 of brief).
+const GL_VISIBLE_ROLES = new Set(['Admin','CEO','Accountant','FinanceManager']);
+
+const { hashPassword, verifyPassword } = require('./auth');
+
+const SEED_USERS = [
+  {id:'U-ADMIN', username:'admin', name:'System Administrator', role:'Admin', active:true, password:'Admin@12345'},
+  {id:'U-CEO', username:'ceo', name:'CEO — Appletree Interiors', role:'CEO', active:true, password:'Ceo@12345'},
+  {id:'U-ACC1', username:'accountant1', name:'Divya (Accountant)', role:'Accountant', active:true, password:'Acc@12345'},
+  {id:'U-FIN1', username:'finance1', name:'Rajan (Finance Manager)', role:'FinanceManager', active:true, password:'Fin@12345'},
+  {id:'U-PM1', username:'pm1', name:'Sunil (Project Manager)', role:'ProjectManager', active:true, password:'Pm@123456', assignedProjects:['PRJ-1','PRJ-3']},
+  {id:'U-PUR1', username:'purchase1', name:'Anitha (Purchase)', role:'Purchase', active:true, password:'Pur@12345'},
+  {id:'U-SALES1', username:'sales1', name:'Vinod (Sales)', role:'Sales', active:true, password:'Sal@123456', assignedCustomers:['CUST-1','CUST-2','CUST-3']},
+  {id:'U-SALES2', username:'sales2', name:'Meera (Sales)', role:'Sales', active:true, password:'Sal2@12345', assignedCustomers:['CUST-4','CUST-5']},
+  {id:'U-EST1', username:'estimator1', name:'Arjun (Estimator)', role:'Estimator', active:true, password:'Est@12345'},
+  {id:'U-SITE1', username:'site1', name:'Manoj (Site In-charge)', role:'SiteInCharge', active:true, password:'Site@12345'},
+  {id:'U-VIEW1', username:'viewer1', name:'Read-Only User', role:'Viewer', active:true, password:'View@1234'}
+];
+
+function nowIso(){ return new Date().toISOString(); }
+
+function freshDB(){
+  const users = SEED_USERS.map(u=>{
+    const {hash, salt} = hashPassword(u.password);
+    return { id:u.id, username:u.username, name:u.name, role:u.role, active:u.active,
+      assignedProjects:u.assignedProjects||null, assignedCustomers:u.assignedCustomers||null,
+      passwordHash:hash, passwordSalt:salt, failedLoginCount:0, lockedUntil:null, mustChangePassword:false };
+  });
+  return {
+    ...JSON.parse(JSON.stringify(SEED)),
+    // Phase 21 §7/§8 — every fresh-seeded material gets explicit "no conversion" UoM defaults
+    // (purchaseUom = its own base uom, factor = 1), same as createMaterialMaster() and the
+    // legacy-DB migration backfill above, so freshDB()/resetToFreshSeed() behave identically
+    // rather than silently relying on undefined-defaults-to-1 fallbacks scattered in call sites.
+    materials: JSON.parse(JSON.stringify(SEED.materials)).map(m=>({...m, purchaseUom:m.purchaseUom||m.uom, purchaseConversionFactor:m.purchaseConversionFactor||1})),
+    journalEntries: [], jeDrafts: [], purchaseOrders: [], clearings: [], auditLog: [],
+    users, loginHistory: [],
+    // Phase 6B business-process collections
+    leads: [], leadActivities: [], estimationRequests: [], costingVersions: [], quotations: [],
+    acceptances: [], designs: [], changeRequests: [], standardCostBaselines: [],
+    discountApprovalRules: JSON.parse(JSON.stringify(DEFAULT_DISCOUNT_APPROVAL_RULES)),
+    // Phase 19 §5 — Customer GSTIN: OPTIONAL, starts null for every seeded customer. No real
+    // GSTIN value is ever invented — only entered later by an authorized user via setCustomerGSTIN().
+    customers: JSON.parse(JSON.stringify(SEED.customers)).map(c=>({...c, active:true, salesOwnerId:null, createdFromLeadId:null, createdFromQuotationId:null, createdAt:null, createdBy:null, gstin:null, state:null})),
+    vendors: JSON.parse(JSON.stringify(SEED.vendors)).map(v=>({...v, active:true, ...(VENDOR_MASTER_DETAIL[v.id]||{})})),
+    // Phase 7 collections
+    materialRequirements: [], materialRequests: [], rfqs: [], supplierQuotations: [], supplierComparisons: [],
+    purchaseOrders: [], grns: [], inventoryMovements: [], threeWayMatchExceptions: [],
+    purchaseReturns: [], supplierCreditNotes: [], supplierDebitNotes: [], commitments: [], boms: [], productionOrders: [],
+    poApprovalRules: JSON.parse(JSON.stringify(DEFAULT_PO_APPROVAL_RULES)),
+    // Phase 8 collections
+    dispatches: [], deliveries: [], installations: [], qcChecklists: [], snags: [], handovers: [], billingMilestones: [],
+    // Phase 10 — After-Sales collections
+    warranties: [], complaints: [], serviceTickets: [], serviceVisits: [], amcContracts: [], amcSchedules: [], capaCases: [],
+    // Phase 13 — Approved Policy Implementation collections
+    serviceLabourRates: [],
+    // §14 Policy Configuration — admin-editable, audited, versioned (history array). Defaults
+    // are the values management explicitly approved this phase, not invented ones.
+    // Phase 21 §2 — Future-Dated Posting Control. maxFuturePostingDays is a PROPOSED default,
+    // not an approved Appletree business policy — explicitly flagged via
+    // maxFuturePostingDaysApproved:false so every consumer of this config (API, UI) can see the
+    // number has not been signed off, rather than only a source-code comment nobody outside this
+    // file would ever read.
+    policyConfig: { warrantyApprovalThreshold:10000, slaResponseHours:4, slaVisitHours:72, slaWarningThresholdHours:null,
+      maxFuturePostingDays:550, maxFuturePostingDaysApproved:false, history:[] },
+    // Phase 14 — SAP-style accounting entry architecture
+    customerCreditNotes: [], customerDebitNotes: [], inventoryTransfers: [], inventoryAdjustments: [],
+    attachments: [], journalTemplates: [], recurringEntries: [], importBatches: [],
+    // Phase 15 §3 — Profit Centre master: DELIBERATELY EMPTY. Unlike Branch (where the CEO's
+    // screenshot evidenced one real value, "Ulliyeri"), no real Appletree profit-centre value has
+    // ever been supplied in this engagement. Seeding even one invented row would violate the
+    // explicit "do NOT invent arbitrary profit centres" instruction — the master exists and is
+    // fully wired (create/search/assign/report/audit), but starts with zero rows until
+    // management defines real values via the Profit Centres screen.
+    profitCentres: [],
+    // Phase 15 §5 — Bank Account master, seeded with the ONE real account evidenced in the CEO's
+    // own screenshot ("ICICI Areekkad A/c No.249005001112"), same evidence-only discipline as
+    // Branch in Phase 14. No other bank account is invented.
+    bankAccounts: JSON.parse(JSON.stringify(SEED.bankAccounts)),
+    bankStatementLines: [],
+    // Phase 18 §2 — Financial Period master. DELIBERATELY EMPTY on a fresh seed: no real Appletree
+    // period calendar has ever been supplied, and per §1 "do not alter historical accounting data
+    // merely to implement this," a date with no matching period record is simply unrestricted
+    // (open-by-default) — periods are an opt-in gate, not a retroactive block on every pre-Phase-18
+    // transaction. Each period's `overrideRole` field starts null (nobody may post into it once
+    // closed) — see the MANAGEMENT DECISION REQUIRED note in the Phase 18 report; this is NOT an
+    // invented role default, it is the explicit absence of one.
+    financialPeriods: [],
+    // Phase 19 §26 — Fixed Assets. Real, empty until real assets exist — nothing invented.
+    fixedAssets: [], assetClasses: [],
+    // Phase 19 §7-19 — ICICI Bank Import. Batches = one row per statement import attempt
+    // (duplicate-detection scope); Lines = every parsed transaction, independent of `bankStatementLines`
+    // (the existing Phase 15 generic CSV mechanism, untouched) since this is a richer, ICICI-specific
+    // pipeline with its own status lifecycle (Imported/Matched/Unmatched/PartiallyMatched/Reconciled/
+    // Posted/Excluded/Returned/Duplicate/Error).
+    bankImportBatches: [], bankImportLines: [],
+    // Phase 20 §4/§7 — Master Data Import Framework + Opening Balance Engine. Real, empty until
+    // the accounts team actually imports something — nothing invented.
+    masterImportBatches: [], openingBalanceBatches: [], openingBalanceLines: [],
+    // Phase 28 — operational modules that exist in the mature offline ERP but had no counterpart
+    // here (Purchases Intelligence / Inventory Operations / Operations / Factory-MES). All real,
+    // empty until real activity exists — same "never invent starting rows" discipline as every
+    // other master above.
+    damageReports: [], locations: [], stockCounts: [], labourWages: [], projectExpenses: [],
+    timesheetEntries: [], tasks: [], riskRegister: [], weeklySnapshots: [], machines: [], jobCards: [],
+    // Phase 33 — Finance SOP compliance. All real, empty until real activity exists.
+    purchaseRequisitions: [], sites: [], siteMaterialRequisitions: [], deliveryChallans: [],
+    siteMaterialReceipts: [], pettyCashFloats: [], pettyCashVouchers: [], tdsDeductions: [],
+    cashControlExceptions: [], paymentApprovals: [],
+    // Phase 33 — Finance SOP company-level configuration. Deliberately empty/false/null until
+    // Appletree supplies real values — never invented. See PHASE33_SOP_COMPLIANCE_MATRIX.md.
+    companyGSTConfig: { newGSTIN: null, oldGSTIN: null, gstinConfirmedBy: null, gstinConfirmedAt: null,
+      companyState: null, turnoverExceeds10CrPrecedingFY: null },
+    tdsConfig: {
+      // Rates/thresholds are the Finance SOP's OWN stated values (Section 3 of the SOP), not
+      // independently re-verified current tax law — see Part 50's disclaimer, surfaced verbatim
+      // via the /api/tds-config route and the Compliance Dashboard.
+      goods: { thresholdPerSellerFY:5000000, ratePct:0.1, noPanRatePct:5, active:true },
+      contractorJobWork: { singleBillThreshold:30000, aggregateFYThreshold:100000, rateIndividualHUFPct:1, rateOtherPct:2, active:true },
+      transport: { singleBillThreshold:30000, aggregateFYThreshold:100000, rateIndividualHUFPct:1, rateOtherPct:2, exemptionRequiresPanAndDeclaration:true, maxCarriagesForExemption:10, active:true },
+      professional: { thresholdPerAnnum:50000, ratePct:10, technicalServicesRatePct:2, active:true },
+      rent: { thresholdPerAnnum:600000, rateLandBuildingPct:10, ratePlantMachineryPct:2, active:true },
+      commission: { thresholdFY:15000, ratePct:5, active:true, note:'SOP itself says "verify current threshold" — TAX REVIEW REQUIRED' },
+      approvedByFinance:false
+    },
+    cashLimits: {
+      // SOP Section 4 — exact figures as stated. Not independently re-verified as current
+      // Income Tax Act thresholds (Sections 40A(3)/269SS/269T/269ST) by this engagement.
+      dailyExpensePerPerson:10000, dailyTransporterExpense:35000,
+      loanDepositReceived:20000, loanDepositRepaid:20000, cashReceiptAggregate:200000,
+      approvedByFinance:false
+    },
+    purchaseApprovalConfig: {
+      // SOP Section 1 — centralized-purchase threshold. NOTE: this conflicts with the pre-existing
+      // BOS §1.6-derived PO approval thresholds already configured elsewhere in this Lab — see
+      // PHASE33_SOP_COMPLIANCE_MATRIX.md Gap 15. Both are surfaced, neither silently overrides
+      // the other; Appletree must reconcile which governs.
+      centralizedThreshold:25000, sitePettyDailyLimit:5000, sopThresholdApprovedByFinance:false, requirePRForPO:false
+    },
+    paymentApprovalMatrix: {
+      // SOP Section 9.1 — the SOP's OWN table itself is headed "To Be Finalised — calibrate to
+      // Board-approved DOA." NEVER treated as final policy — finalised:false always shown.
+      tiers: [ {upTo:5000, role:'Accountant'}, {upTo:100000, role:'Purchase Head (Purchase role)'}, {upTo:null, role:'Director (CEO)'} ],
+      finalised:false
+    },
+    pettyCashDefaultFloat: 10000,
+    weighmentTolerancePct: 1
+  };
+}
+
+// Phase 21 §3/§4 — crash-safety on load (audit finding: the database was a single file written
+// directly, non-atomically, on every save — a crash mid-write could corrupt or truncate the
+// ENTIRE database). A leftover .tmp file means a PREVIOUS save was interrupted before its atomic
+// rename ever completed — the rename never happened, so db.json itself (never touched by that
+// interrupted save) is still the last fully-written state and remains authoritative. The .tmp
+// file is never blindly trusted (it may itself be a partial write from the exact moment of a
+// crash) — it is only ever discarded, per the brief's explicit "do not blindly use a corrupt
+// temporary state" instruction.
+function loadDbFromDisk(){
+  const tmpFile = DB_FILE + '.tmp';
+  if(fs.existsSync(tmpFile)){
+    try { fs.unlinkSync(tmpFile); } catch(e){ /* best-effort cleanup only */ }
+  }
+  if(!fs.existsSync(DB_FILE)) return freshDB();
+  try {
+    return JSON.parse(fs.readFileSync(DB_FILE,'utf8'));
+  } catch(parseErr){
+    // Should now be structurally impossible going forward thanks to save()'s atomic rename below,
+    // but handled defensively for any db.json that predates this phase or was corrupted by an
+    // external process. Recover from the one-save-behind backup rather than silently starting
+    // from an empty seed and losing everything without a trace.
+    const bakFile = DB_FILE + '.bak';
+    if(fs.existsSync(bakFile)){
+      try {
+        const recovered = JSON.parse(fs.readFileSync(bakFile,'utf8'));
+        console.error(`[RECOVERY] db.json was corrupted (${parseErr.message}) — recovered from db.json.bak (one save behind). Investigate the corrupted db.json immediately; it has been left in place, not deleted.`);
+        return recovered;
+      } catch(bakErr){
+        console.error(`[RECOVERY FAILED] Both db.json and db.json.bak are corrupted/unreadable — starting from a fresh seed. THIS IS DATA LOSS. db.json error: ${parseErr.message}; db.json.bak error: ${bakErr.message}`);
+        return freshDB();
+      }
+    }
+    console.error(`[RECOVERY FAILED] db.json is corrupted and no db.json.bak exists — starting from a fresh seed. THIS IS DATA LOSS. Error: ${parseErr.message}`);
+    return freshDB();
+  }
+}
+let DB = loadDbFromDisk();
+// Backward/forward compatible patch, same discipline as the client Lab's own migration guards.
+if(!DB.users || !DB.users.length){ const f = freshDB(); DB.users = f.users; }
+// Phase 6B additions — patched in for a DB saved before this phase existed, never overwriting
+// existing journalEntries/customers/etc.
+['leads','leadActivities','estimationRequests','costingVersions','quotations','acceptances','designs','changeRequests','standardCostBaselines'].forEach(k=>{ if(!DB[k]) DB[k]=[]; });
+if(!DB.discountApprovalRules) DB.discountApprovalRules = JSON.parse(JSON.stringify(DEFAULT_DISCOUNT_APPROVAL_RULES));
+if(!DB.glDocumentTypes.find(d=>d.code==='QTN')) DB.glDocumentTypes.push({code:'QTN', label:'Quotation', prefix:'QTN', nextSeq:1});
+// Phase 7 additions — patched in for a DB saved before this phase, nothing existing removed.
+[['MR','Material Request'],['RFQ','RFQ'],['GRN','Goods Receipt Note'],['PRET','Purchase Return'],['SCN','Supplier Credit Note'],['PROD','Production Order'],['ISS','Material Issue'],
+ ['DSP','Dispatch'],['DLV','Delivery Confirmation'],['INST','Installation'],['QCK','QC Checklist'],['SNG','Snag'],['HO','Handover']]
+  .forEach(([code,label])=>{ if(!DB.glDocumentTypes.find(d=>d.code===code)) DB.glDocumentTypes.push({code, label, prefix:code, nextSeq:1}); });
+['dispatches','deliveries','installations','qcChecklists','snags','handovers','billingMilestones'].forEach(k=>{ if(!DB[k]) DB[k]=[]; });
+if(!DB.accounts.find(a=>a.id==='2050')) DB.accounts.push({id:'2050', name:'GR/IR Clearing', type:'Liability'});
+if(!DB.materials) DB.materials = JSON.parse(JSON.stringify(SEED.materials));
+DB.materials.forEach(m=>{ if(m.hsnCode===undefined) m.hsnCode=null; });
+if(DB.customers) DB.customers.forEach(c=>{
+  if(c.gstin===undefined) c.gstin=null;
+  // Phase 20 cleanup: migrate any leftover `gstNumber` value (the pre-Phase-19, never-actually-
+  // populated-in-practice field) onto the real `gstin` field, then remove the redundant field
+  // entirely so the customer record has exactly one GSTIN concept, not two.
+  if(c.gstNumber!==undefined){ if(!c.gstin && c.gstNumber) c.gstin = String(c.gstNumber).trim().toUpperCase(); delete c.gstNumber; }
+});
+if(!DB.warehouses) DB.warehouses = JSON.parse(JSON.stringify(SEED.warehouses));
+['materialRequirements','materialRequests','rfqs','supplierQuotations','supplierComparisons','grns','inventoryMovements','threeWayMatchExceptions','purchaseReturns','supplierCreditNotes','boms','productionOrders']
+  .forEach(k=>{ if(!DB[k]) DB[k]=[]; });
+if(!DB.poApprovalRules) DB.poApprovalRules = JSON.parse(JSON.stringify(DEFAULT_PO_APPROVAL_RULES));
+if(DB.vendors) DB.vendors.forEach(v=>{ if(v.gstNumber===undefined) Object.assign(v, {active:true, ...(VENDOR_MASTER_DETAIL[v.id]||{})}); });
+// Phase 7 also replaces the Phase-4-era simple `purchaseOrders` shape (no supplier/lines/
+// workflow) with the richer version below — any Phase-4 POs in an old DB are harmless leftover
+// records (never read by any Phase 7 function) and are not deleted.
+if(DB.customers) DB.customers.forEach(c=>{ if(c.active===undefined) c.active=true; if(c.salesOwnerId===undefined) c.salesOwnerId=null; });
+if(DB.projects) DB.projects.forEach(p=>{
+  if(p.status===undefined) p.status='ACTIVE'; // pre-Phase-6B projects are treated as already-active
+  if(p.projectManagerId===undefined) p.projectManagerId=null;
+  if(p.salesOwnerId===undefined) p.salesOwnerId=null;
+  if(p.quotationId===undefined) p.quotationId=null;
+  if(p.leadId===undefined) p.leadId=null;
+  if(p.customerId===undefined) p.customerId=null;
+  if(p.advanceRequiredAmount===undefined) p.advanceRequiredAmount=null;
+});
+if(!DB.users.find(u=>u.role==='Estimator')){
+  const {hash, salt} = hashPassword('Est@12345');
+  DB.users.push({id:'U-EST1', username:'estimator1', name:'Arjun (Estimator)', role:'Estimator', active:true, assignedProjects:null, assignedCustomers:null, passwordHash:hash, passwordSalt:salt, failedLoginCount:0, lockedUntil:null, mustChangePassword:false});
+}
+// Phase 10 additions — patched in for a DB saved before this phase existed, nothing existing removed.
+[['WAR','Warranty'],['CMP','Complaint'],['TKT','Service Ticket'],['VIS','Service Visit'],['AMC','AMC Contract'],['CAPA','CAPA Case']]
+  .forEach(([code,label])=>{ if(!DB.glDocumentTypes.find(d=>d.code===code)) DB.glDocumentTypes.push({code, label, prefix:code, nextSeq:1}); });
+['warranties','complaints','serviceTickets','serviceVisits','amcContracts','amcSchedules','capaCases','serviceLabourRates'].forEach(k=>{ if(!DB[k]) DB[k]=[]; });
+if(!DB.policyConfig) DB.policyConfig = { warrantyApprovalThreshold:10000, slaResponseHours:4, slaVisitHours:72, slaWarningThresholdHours:null, maxFuturePostingDays:550, maxFuturePostingDaysApproved:false, history:[] };
+if(DB.policyConfig && DB.policyConfig.maxFuturePostingDays===undefined) DB.policyConfig.maxFuturePostingDays = 550;
+if(DB.policyConfig && DB.policyConfig.maxFuturePostingDaysApproved===undefined) DB.policyConfig.maxFuturePostingDaysApproved = false;
+// Phase 14 additions — patched in for a DB saved before this phase existed, nothing existing removed.
+if(!DB.accounts.find(a=>a.id==='5300')) DB.accounts.push({id:'5300', name:'Inventory Adjustment', type:'Expense'});
+if(!DB.branches) DB.branches = JSON.parse(JSON.stringify(SEED.branches));
+['customerCreditNotes','customerDebitNotes','inventoryTransfers','inventoryAdjustments','attachments','journalTemplates','recurringEntries','importBatches'].forEach(k=>{ if(!DB[k]) DB[k]=[]; });
+[['ITR','Inventory Transfer'],['IADJ','Inventory Adjustment'],['JT','Journal Template'],['REC','Recurring Entry']]
+  .forEach(([code,label])=>{ if(!DB.glDocumentTypes.find(d=>d.code===code)) DB.glDocumentTypes.push({code, label, prefix:code, nextSeq:1}); });
+// Phase 15 additions — patched in for a DB saved before this phase existed, nothing existing removed.
+if(!DB.costCentres.find(c=>c.id==='CC-INSTALLATION')) DB.costCentres.push({id:'CC-INSTALLATION', name:'Installation'});
+if(!DB.profitCentres) DB.profitCentres = [];
+if(!DB.bankAccounts) DB.bankAccounts = JSON.parse(JSON.stringify(SEED.bankAccounts||[]));
+['bankStatementLines'].forEach(k=>{ if(!DB[k]) DB[k]=[]; });
+if(DB.projects) DB.projects.forEach(p=>{ if(p.branchId===undefined) p.branchId=null; });
+// Phase 18 additions — patched in for a DB saved before this phase existed, nothing existing removed.
+if(!DB.financialPeriods) DB.financialPeriods = [];
+DB.financialPeriods.forEach(p=>{ if(p.overrideRole===undefined) p.overrideRole=null; });
+// Phase 19 additions — patched in for a DB saved before this phase existed, nothing existing removed.
+if(!DB.paymentMethods) DB.paymentMethods = JSON.parse(JSON.stringify(SEED.paymentMethods));
+// Phase 21 §7/§8 — backfill purchaseUom/purchaseConversionFactor onto every material saved before
+// this phase existed, defaulted to "no conversion" (purchaseUom = its own base uom, factor = 1) so
+// nothing about any existing material's behavior changes until someone explicitly configures a
+// real conversion.
+if(DB.materials) DB.materials.forEach(m=>{ if(m.purchaseUom===undefined) m.purchaseUom = m.uom; if(m.purchaseConversionFactor===undefined) m.purchaseConversionFactor = 1; });
+if(!DB.supplierDebitNotes) DB.supplierDebitNotes = [];
+if(!DB.commitments) DB.commitments = [];
+if(!DB.fixedAssets) DB.fixedAssets = [];
+if(!DB.assetClasses) DB.assetClasses = [];
+if(!DB.bankImportBatches) DB.bankImportBatches = [];
+if(!DB.bankImportLines) DB.bankImportLines = [];
+if(!DB.glDocumentTypes.find(d=>d.code==='FA')) DB.glDocumentTypes.push({code:'FA', label:'Fixed Asset', prefix:'FA', nextSeq:1});
+if(!DB.glDocumentTypes.find(d=>d.code==='OB')) DB.glDocumentTypes.push({code:'OB', label:'Opening Balance', prefix:'OB', nextSeq:1});
+// Phase 24 — Bank/Cash Transfer + Supplier Debit Note document types.
+if(!DB.glDocumentTypes.find(d=>d.code==='BXFR')) DB.glDocumentTypes.push({code:'BXFR', label:'Bank/Cash Transfer', prefix:'BXFR', nextSeq:1});
+if(!DB.glDocumentTypes.find(d=>d.code==='SDN')) DB.glDocumentTypes.push({code:'SDN', label:'Supplier Debit Note', prefix:'SDN', nextSeq:1});
+if(!DB.accounts.find(a=>a.id==='3000')) DB.accounts.push({id:'3000', name:'Opening Balance Equity (technical — not a real Appletree account)', type:'Liability'});
+if(!DB.openingBalanceBatches) DB.openingBalanceBatches = [];
+if(!DB.openingBalanceLines) DB.openingBalanceLines = [];
+if(!DB.masterImportBatches) DB.masterImportBatches = [];
+if(!DB.accounts.find(a=>a.id==='1400')) DB.accounts.push({id:'1400', name:'Fixed Assets — Cost', type:'Asset'});
+if(!DB.accounts.find(a=>a.id==='1450')) DB.accounts.push({id:'1450', name:'Accumulated Depreciation', type:'Asset'});
+if(!DB.accounts.find(a=>a.id==='5400')) DB.accounts.push({id:'5400', name:'Depreciation Expense', type:'Expense'});
+if(!DB.accounts.find(a=>a.id==='5500')) DB.accounts.push({id:'5500', name:'Gain/Loss on Asset Disposal', type:'Expense'});
+// Phase 28 additions — patched in for a DB saved before this phase existed, nothing existing
+// removed. Same discipline as every prior phase's migration guard above: `if(!DB[k])`, never
+// unconditionally overwriting a key that might already hold real data.
+['damageReports','locations','stockCounts','labourWages','projectExpenses','timesheetEntries','tasks','riskRegister','weeklySnapshots','machines','jobCards']
+  .forEach(k=>{ if(!DB[k]) DB[k]=[]; });
+[['DMG','Damage Report'],['SCT','Stock Count'],['LBR','Labour Wages'],['PEXP','Project Expense'],['JC','Job Card']]
+  .forEach(([code,label])=>{ if(!DB.glDocumentTypes.find(d=>d.code===code)) DB.glDocumentTypes.push({code, label, prefix:code, nextSeq:1}); });
+// Phase 33 additions — Finance SOP compliance. Patched in for a DB saved before this phase
+// existed, nothing existing removed. Same discipline as every prior phase's migration guard
+// above: `if(!DB[k])`, never unconditionally overwriting a key that might already hold real data.
+['purchaseRequisitions','sites','siteMaterialRequisitions','deliveryChallans','siteMaterialReceipts',
+ 'pettyCashFloats','pettyCashVouchers','tdsDeductions','cashControlExceptions','paymentApprovals']
+  .forEach(k=>{ if(!DB[k]) DB[k]=[]; });
+[['PR','Purchase Requisition'],['MRS','Material Requisition Slip (Site)'],['DC','Delivery Challan'],
+ ['SMR','Site Material Receipt'],['PCV','Petty Cash Voucher'],['PCF','Petty Cash Float']]
+  .forEach(([code,label])=>{ if(!DB.glDocumentTypes.find(d=>d.code===code)) DB.glDocumentTypes.push({code, label, prefix:code, nextSeq:1}); });
+if(!DB.accounts.find(a=>a.id==='2300')) DB.accounts.push({id:'2300', name:'TDS Payable', type:'Liability'});
+if(!DB.companyGSTConfig) DB.companyGSTConfig = { newGSTIN:null, oldGSTIN:null, gstinConfirmedBy:null, gstinConfirmedAt:null, companyState:null, turnoverExceeds10CrPrecedingFY:null };
+if(!DB.tdsConfig) DB.tdsConfig = {
+  goods: { thresholdPerSellerFY:5000000, ratePct:0.1, noPanRatePct:5, active:true },
+  contractorJobWork: { singleBillThreshold:30000, aggregateFYThreshold:100000, rateIndividualHUFPct:1, rateOtherPct:2, active:true },
+  transport: { singleBillThreshold:30000, aggregateFYThreshold:100000, rateIndividualHUFPct:1, rateOtherPct:2, exemptionRequiresPanAndDeclaration:true, maxCarriagesForExemption:10, active:true },
+  professional: { thresholdPerAnnum:50000, ratePct:10, technicalServicesRatePct:2, active:true },
+  rent: { thresholdPerAnnum:600000, rateLandBuildingPct:10, ratePlantMachineryPct:2, active:true },
+  commission: { thresholdFY:15000, ratePct:5, active:true, note:'SOP itself says "verify current threshold" — TAX REVIEW REQUIRED' },
+  approvedByFinance:false
+};
+if(!DB.cashLimits) DB.cashLimits = { dailyExpensePerPerson:10000, dailyTransporterExpense:35000, loanDepositReceived:20000, loanDepositRepaid:20000, cashReceiptAggregate:200000, approvedByFinance:false };
+if(!DB.purchaseApprovalConfig) DB.purchaseApprovalConfig = { centralizedThreshold:25000, sitePettyDailyLimit:5000, sopThresholdApprovedByFinance:false, requirePRForPO:false };
+if(DB.purchaseApprovalConfig && DB.purchaseApprovalConfig.requirePRForPO===undefined) DB.purchaseApprovalConfig.requirePRForPO = false;
+if(!DB.paymentApprovalMatrix) DB.paymentApprovalMatrix = { tiers:[{upTo:5000, role:'Accountant'}, {upTo:100000, role:'Purchase Head (Purchase role)'}, {upTo:null, role:'Director (CEO)'}], finalised:false };
+if(DB.pettyCashDefaultFloat===undefined) DB.pettyCashDefaultFloat = 10000;
+if(DB.weighmentTolerancePct===undefined) DB.weighmentTolerancePct = 1;
+if(!DB.users.find(u=>u.role==='SiteInCharge')){
+  const {hash, salt} = hashPassword('Site@12345');
+  DB.users.push({id:'U-SITE1', username:'site1', name:'Manoj (Site In-charge)', role:'SiteInCharge', active:true, assignedProjects:null, assignedCustomers:null, passwordHash:hash, passwordSalt:salt, failedLoginCount:0, lockedUntil:null, mustChangePassword:false});
+}
+if(DB.customers) DB.customers.forEach(c=>{ if(c.state===undefined) c.state=null; });
+
+// Phase 21 §3 — atomic persistence (audit finding: direct fs.writeFileSync(DB_FILE,...) on every
+// single mutating call, with no atomic-swap pattern — a process kill mid-write could corrupt or
+// truncate the whole file, not just the one in-flight transaction). Fix: write the full new state
+// to a temp file, fsync it to force it to disk (not just the OS page cache), THEN atomically
+// rename it onto db.json. A rename onto an existing filename is atomic at the filesystem level on
+// both POSIX and Windows/NTFS — at every instant either the OLD db.json is still fully intact or
+// the NEW one is; there is no window where db.json itself is partially written. This does not
+// introduce an external database (explicitly out of scope for this phase) — it hardens the
+// existing single-file architecture, exactly as instructed. db.json.bak is kept as the
+// one-save-behind last-known-good copy, used only if db.json itself is ever found corrupted on a
+// future load (see loadDbFromDisk above).
+function save(){
+  const tmpFile = DB_FILE + '.tmp';
+  const bakFile = DB_FILE + '.bak';
+  const data = JSON.stringify(DB);
+  const fd = fs.openSync(tmpFile, 'w');
+  try {
+    fs.writeSync(fd, data);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  try { if(fs.existsSync(DB_FILE)) fs.copyFileSync(DB_FILE, bakFile); } catch(e){ /* best-effort; never blocks the actual save */ }
+  fs.renameSync(tmpFile, DB_FILE);
+}
+// DEFECT FOUND & FIXED (Phase 19, discovered live while testing the Fixed Asset screen in the
+// browser): `allLines()`'s Phase 16 memoization cache (`_allLinesCache`, declared further below)
+// is keyed ONLY on `DB.journalEntries.length` — a plain number, not tied to which "generation" of
+// DB it came from. `resetToFreshSeed()` reassigns `DB` to a brand-new object whose
+// `journalEntries` restarts at length 0 and climbs back up from there — meaning after a reset,
+// the FIRST time the entry count happens to re-cross a length that was ALSO cached from BEFORE
+// the reset (a near-certainty in normal use, e.g. both states pass through length 1, 2, 3...),
+// `allLines()` would silently serve the STALE PRE-RESET data instead of recomputing, because the
+// numeric length matched even though the underlying entries were completely different documents.
+// Reproduced directly: reset -> post exactly 1 new entry (Fixed Asset capitalization, accounts
+// 1400/1000) -> Trial Balance showed account 5200 from an unrelated PRIOR session's leftover
+// cache instead of the real new 1400/1000 lines. The safe fix is the same principle already used
+// throughout this engagement for any function that reassigns `DB` wholesale (`restoreBackup()`
+// has the identical shape) — explicitly invalidate the cache the moment `DB` itself is replaced,
+// not just rely on the length check, since length alone is not a reliable generation marker
+// across a reset/restore. `_allLinesCache` is declared with `let` at module scope below; this
+// function only ever EXECUTES after the full module has loaded, so referencing it here (textually
+// earlier in the file) is safe — same as any other forward function-scope reference in this file.
+function resetToFreshSeed(){ DB = freshDB(); _allLinesCache = { length: -1, data: null }; save(); return DB; }
+
+// ============================================================
+// Phase 17 §4 — Backup / Restore. This entire system stores EVERYTHING (GL, subledgers,
+// masters, attachments, audit log, policy config) in the ONE `db.json` file (`DB_FILE` above,
+// see the `let DB = ...` / `save()` pair) — so a backup is genuinely complete by copying that
+// single file, not a partial snapshot missing attachments or audit history. Backups are written
+// to a separate `backups/` directory (created on first use), never overwriting each other,
+// admin-only to create AND restore, every action logged.
+const crypto = require('crypto');
+function ensureBackupDir(){ if(!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, {recursive:true}); }
+function createBackup({label, actor}){
+  ensureBackupDir();
+  save(); // flush any pending in-memory state to disk first, so the backup reflects the true current state
+  const raw = fs.readFileSync(DB_FILE, 'utf8');
+  const checksum = crypto.createHash('sha256').update(raw).digest('hex');
+  const ts = nowIso().replace(/[:.]/g,'-');
+  const filename = `db.backup.${ts}${label?'.'+label.replace(/[^a-zA-Z0-9_-]/g,''):''}.json`;
+  fs.writeFileSync(path.join(BACKUP_DIR, filename), raw, 'utf8');
+  const meta = { filename, label:label||'', sizeBytes:raw.length, checksum, journalEntryCount:DB.journalEntries.length,
+    createdBy:actor.id, createdByRole:actor.role, createdAt:nowIso() };
+  logAudit({type:'BackupCreated', filename, sizeBytes:meta.sizeBytes, checksum, journalEntryCount:meta.journalEntryCount, userId:actor.id, role:actor.role});
+  return meta;
+}
+function listBackups(){
+  ensureBackupDir();
+  return fs.readdirSync(BACKUP_DIR).filter(f=>f.endsWith('.json')).map(filename=>{
+    const full = path.join(BACKUP_DIR, filename);
+    const stat = fs.statSync(full);
+    const raw = fs.readFileSync(full, 'utf8');
+    let journalEntryCount = null;
+    try{ journalEntryCount = JSON.parse(raw).journalEntries.length; }catch(e){}
+    return { filename, sizeBytes: stat.size, modifiedAt: stat.mtime.toISOString(), journalEntryCount };
+  }).sort((a,b)=> b.modifiedAt.localeCompare(a.modifiedAt));
+}
+// Restoring REPLACES the live in-memory DB and persists it — deliberately the single most
+// destructive action in this whole Lab, so it is the most heavily gated (Admin/CEO only,
+// enforced at the server.js route layer) and the most heavily logged.
+function restoreBackup({filename, actor}){
+  ensureBackupDir();
+  const full = path.join(BACKUP_DIR, filename);
+  if(!full.startsWith(BACKUP_DIR) || !fs.existsSync(full)) return {ok:false, error:'Backup file not found.'};
+  let restored;
+  try{ restored = JSON.parse(fs.readFileSync(full, 'utf8')); }
+  catch(e){ return {ok:false, error:'Backup file is corrupted / not valid JSON — restore aborted, live database untouched.'}; }
+  if(!restored.journalEntries || !Array.isArray(restored.journalEntries)) return {ok:false, error:'Backup file does not look like a valid database snapshot — restore aborted, live database untouched.'};
+  const beforeJECount = DB.journalEntries.length;
+  DB = restored;
+  // Same defect class fixed in resetToFreshSeed() above, same fix — restoreBackup() ALSO
+  // reassigns `DB` wholesale, so the length-keyed allLines() cache must be invalidated here too.
+  _allLinesCache = { length: -1, data: null };
+  save();
+  logAudit({type:'BackupRestored', filename, journalEntryCountBefore:beforeJECount, journalEntryCountAfter:DB.journalEntries.length, userId:actor.id, role:actor.role});
+  return {ok:true, journalEntryCount:DB.journalEntries.length};
+}
+
+function logAudit(entry){
+  DB.auditLog.push({ id:'AUD-'+String(DB.auditLog.length+1).padStart(6,'0'), ...entry, at: nowIso() });
+  save();
+}
+
+// ---------- Numbering ----------
+// Phase 19 §25 (APPROVED — Decision B: annual reset) — Indian Financial Year (1 April to 31
+// March), matching the "31 March -> 1 April" transition the brief explicitly asks to test and
+// the real GST/accounting fiscal year an Indian company like Appletree operates on. Returns a
+// label like "2026-27" for a date anywhere in that FY.
+function financialYearKey(dateStr){
+  const [y, m] = String(dateStr).slice(0,10).split('-').map(Number);
+  const startYear = (m>=4) ? y : y-1;
+  return `${startYear}-${String((startYear+1)%100).padStart(2,'0')}`;
+}
+// Voucher NUMBERS now reset to 0001 at the start of each Financial Year, scoped independently
+// per document type (`dt.yearlySeq[fy]`) — but the document's own internal `id` field (JE-0001,
+// DRAFT-0001, GRN-0001, etc, assigned separately at record-creation time throughout this file)
+// is COMPLETELY UNTOUCHED by this change: it keeps incrementing globally, forever, never reset.
+// That `id` is what makes "the full document identity must remain unique" true even though the
+// human-readable voucherNo can legitimately repeat across different years (e.g. two different
+// JE-xxxx records can both show voucherNo "JV/2026-27/0001" and "JV/2027-28/0001" — never the
+// same year twice, and never ambiguous internally since `id` always differs). The FY is embedded
+// directly in the printed voucher string (not just tracked as a hidden internal field) precisely
+// so two documents from different years are never visually indistinguishable to a human reading
+// two printouts side by side — this is standard real-world practice for annual-reset numbering,
+// not a cosmetic choice. Historical documents already posted before this phase are NEVER
+// renumbered — `dt.nextSeq` (the old global counter) is left in place, untouched, purely as a
+// harmless historical relic; only NEW documents use `dt.yearlySeq` from this phase forward.
+function nextDocNumber(typeCode, dateStr){
+  const dt = DB.glDocumentTypes.find(d => d.code === typeCode);
+  if(!dt) return null;
+  const fy = financialYearKey(dateStr || new Date().toISOString().slice(0,10));
+  if(!dt.yearlySeq) dt.yearlySeq = {};
+  if(!dt.yearlySeq[fy]) dt.yearlySeq[fy] = 1;
+  const num = `${dt.prefix}/${fy}/${String(dt.yearlySeq[fy]).padStart(4,'0')}`;
+  dt.yearlySeq[fy] += 1;
+  return num;
+}
+
+// ---------- Core posting engine (Phase 4/5 logic unchanged; Phase 8 added rounding — see below) ----------
+// DEFECT FOUND & FIXED during Phase 8 volume testing: line debit/credit amounts were stored
+// exactly as passed in, with no rounding to 2 decimal places (paise). A single hand-crafted
+// test amount like ₹1,18,000 is already "clean," so this was invisible until the volume test
+// posted ~100 invoices built from unrounded random amounts (`50000 + Math.random()*100000`),
+// which accumulated a real ~3-paisa AR reconciliation mismatch — small, but real money must
+// never have more than 2 decimal places in INR. Fixed at the single lowest level (this
+// function, the only place that ever writes a journalEntries line) rather than in each caller,
+// so every current AND future caller is protected, not just the two that triggered this.
+function r2(n){ return Math.round((+n||0) * 100) / 100; }
+// Phase 14 §6/§7 — standard accounting document header/line dimensions, added at this single
+// lowest-level function so every current AND future posting path gets them for free (same
+// discipline as Phase 8's r2() rounding fix). All new fields are optional/nullable — no existing
+// caller needs to change, and no transaction is blocked for lacking a Branch/Location/Ref it
+// genuinely doesn't have. docDate defaults to the posting date when not supplied (§10 — the two
+// must be allowed to differ, never silently forced equal, but a sensible default keeps every
+// pre-Phase-14 caller working unchanged).
+function postJournalEntry({date, docDate, narration, lines, sourceType, sourceId, voucherNo, party, reversalOfId, dueDate, docCategory, branchId, refNo1, refNo2, refNo3, postedByUserId, postedByRole, overrideReason, paymentMethodId}){
+  if(!date) return {ok:false, error:'Date is required.'};
+  if(!Array.isArray(lines) || lines.length < 2) return {ok:false, error:'A journal entry needs at least 2 lines.'};
+  if(branchId && !DB.branches.find(b=>b.id===branchId)) return {ok:false, error:`Unknown branch "${branchId}".`};
+  // Phase 18 §2 / Phase 19 §1+§30 — Financial Period Control + approved Override. This is the ONE
+  // function every accounting-relevant posting path funnels through (Manual JE, AR, AP, Receipt,
+  // Payment, GRN, Material Issue, Production/Installation/Service labour, AMC billing/
+  // recognition, Credit/Debit Notes, Inventory Adjustment, Reversal — confirmed via the Phase 14
+  // Entry-Type Catalogue grep, still true) — so the lock AND the override are enforced HERE ONCE,
+  // same discipline as the r2() rounding fix (Phase 8) and the Phase 14 header-dimension
+  // additions, rather than duplicated at every caller. `findPeriodForDate` returns null when no
+  // period record covers this date at all — an undefined period is NOT the same as a closed one,
+  // so undefined dates stay fully open, satisfying §1's "do not alter historical accounting data
+  // merely to implement this."
+  //
+  // Phase 19 decision 1/30 (APPROVED — "B: an authorized person may post into a closed period"):
+  // the override role itself is STILL never invented (unchanged from Phase 18 — `overrideRole`
+  // stays null on every period until CEO/Admin explicitly configures it). What Phase 19 ADDS is
+  // that the override role match is no longer sufficient by itself — a real `overrideReason` is
+  // now REQUIRED too, so "authorization + reason" are both structurally enforced, not just the
+  // role. Direct API manipulation cannot bypass this: the role check reads `postedByRole`, which
+  // is always derived server-side from the authenticated actor (never client-supplied), and the
+  // reason check is a plain non-empty-string requirement enforced in this same function, so no
+  // caller — UI, API, or a tampered request — can skip either half.
+  const _period = findPeriodForDate(date);
+  let _periodOverrideUsed = false;
+  if(_period && _period.status==='Closed'){
+    const _roleMatches = _period.overrideRole && postedByRole===_period.overrideRole;
+    if(!_roleMatches){
+      return {ok:false, error:`Posting blocked — financial period "${_period.name}" (${_period.startDate} to ${_period.endDate}) is CLOSED. ${_period.overrideRole ? `Only role "${_period.overrideRole}" may post into this closed period.` : 'No override role is configured for this period (MANAGEMENT DECISION REQUIRED) — reopen the period first if this posting is genuinely required.'}`};
+    }
+    if(!overrideReason || !String(overrideReason).trim()){
+      return {ok:false, error:`Posting blocked — financial period "${_period.name}" is CLOSED. Your role ("${postedByRole}") is authorized to override, but a reason is required for every closed-period override posting.`};
+    }
+    _periodOverrideUsed = true;
+  }
+  // Phase 21 §2 — Future-Dated Posting Control (audit finding: a 2030-dated invoice previously
+  // posted with zero restriction). Mirrors the closed-period pattern immediately above: a
+  // configurable limit (DB.policyConfig.maxFuturePostingDays — a PROPOSED default, see its
+  // maxFuturePostingDaysApproved flag, NOT an invented Appletree business policy), override
+  // restricted to CEO/Admin (the same authority level already trusted for closed-period override
+  // eligibility and SoD self-approval elsewhere in this codebase — not a new invented role
+  // concept), and a mandatory reason, fully audited with a real document reference. A null/
+  // undefined limit means the control is switched off entirely (management has not configured
+  // one yet) rather than silently defaulting to "no future dating allowed," which would be
+  // inventing a stricter policy than anyone approved.
+  let _futureDateOverrideUsed = false;
+  const _maxFutureDays = DB.policyConfig.maxFuturePostingDays;
+  if(_maxFutureDays !== null && _maxFutureDays !== undefined){
+    const _todayMidnight = new Date(new Date().toISOString().slice(0,10)+'T00:00:00Z').getTime();
+    const _postDateMidnight = new Date(date+'T00:00:00Z').getTime();
+    const _daysAhead = Math.round((_postDateMidnight - _todayMidnight) / 86400000);
+    if(_daysAhead > _maxFutureDays){
+      const _roleAllowed = postedByRole==='CEO' || postedByRole==='Admin';
+      if(!_roleAllowed){
+        return {ok:false, error:`Posting blocked — date ${date} is ${_daysAhead} days in the future, exceeding the configured maximum of ${_maxFutureDays} days (${DB.policyConfig.maxFuturePostingDaysApproved ? 'approved configuration' : 'TEST / PROPOSED CONFIGURATION — not yet approved by management'}). Role "${postedByRole}" is not authorized to override future-dated posting.`};
+      }
+      if(!overrideReason || !String(overrideReason).trim()){
+        return {ok:false, error:`Posting blocked — date ${date} exceeds the configured future-posting limit of ${_maxFutureDays} days. Your role ("${postedByRole}") is authorized to override, but a reason is required for every future-date override posting.`};
+      }
+      _futureDateOverrideUsed = true;
+    }
+  }
+  let totalDebit = 0, totalCredit = 0;
+  for(const l of lines){
+    if(!l.account) return {ok:false, error:'Every line requires a GL account.'};
+    totalDebit += r2(l.debit); totalCredit += r2(l.credit);
+  }
+  if(Math.abs(totalDebit - totalCredit) > 0.01){
+    return {ok:false, error:`Not balanced — total debit ₹${totalDebit.toFixed(2)} ≠ total credit ₹${totalCredit.toFixed(2)}. Posting rejected.`};
+  }
+  const normalizedLines = lines.map(l => ({
+    account: l.account, debit: r2(l.debit), credit: r2(l.credit),
+    customerId: l.customerId || null, vendorId: l.vendorId || null, projectId: l.projectId || null,
+    costCentreId: l.costCentreId || null, profitCentreId: l.profitCentreId || null,
+    taxCode: l.taxCode || null, currency: l.currency || 'INR',
+    remarks: l.remarks || '', branchId: l.branchId || branchId || null, locationId: l.locationId || null,
+    distributionRule: l.distributionRule || null, itemId: l.itemId || null, reference: l.reference || null
+  }));
+  if(paymentMethodId && !DB.paymentMethods.find(m=>m.id===paymentMethodId)) return {ok:false, error:`Unknown payment method "${paymentMethodId}".`};
+  const entry = {
+    id: 'JE-' + String(DB.journalEntries.length + 1).padStart(4,'0'),
+    date, docDate: docDate || date, narration: narration || '', sourceType: sourceType || 'Manual', sourceId: sourceId || null,
+    voucherNo: voucherNo || nextDocNumber('JE', date),
+    party: party || null, reversalOfId: reversalOfId || null,
+    dueDate: dueDate || null, docCategory: docCategory || null,
+    branchId: branchId || null, refNo1: refNo1 || '', refNo2: refNo2 || '', refNo3: refNo3 || '',
+    postedByUserId: postedByUserId || null, postedByRole: postedByRole || null, paymentMethodId: paymentMethodId || null,
+    totalDebit, totalCredit, lines: normalizedLines, postedAt: nowIso()
+  };
+  DB.journalEntries.push(entry);
+  save();
+  if(_periodOverrideUsed){
+    // Full override audit record: authorization (role matched _period.overrideRole, already
+    // proven above), reason, user identity, timestamp (nowIso(), not client-supplied), and a real
+    // document reference (the entry actually created — entry.id + voucherNo — not a placeholder).
+    logAudit({type:'ClosedPeriodOverridePosting', periodId:_period.id, periodName:_period.name,
+      date, overrideReason: String(overrideReason).trim(), documentReference:entry.id, voucherNo:entry.voucherNo,
+      userId:postedByUserId, role:postedByRole});
+  }
+  if(_futureDateOverrideUsed){
+    logAudit({type:'FutureDatedOverridePosting', date, maxFuturePostingDays:_maxFutureDays,
+      overrideReason: String(overrideReason).trim(), documentReference:entry.id, voucherNo:entry.voucherNo,
+      userId:postedByUserId, role:postedByRole});
+  }
+  return {ok:true, entry, periodOverrideUsed:_periodOverrideUsed, futureDateOverrideUsed:_futureDateOverrideUsed};
+}
+
+function addDays(dateStr, n){ const d = new Date(dateStr); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+
+// ---------- Document lifecycle (unchanged from Phase 5) ----------
+// DEFECT FOUND & FIXED (Phase 14 Accountant UAT, phase14_accountant_uat.js): a draft with no
+// `date` could be Created, Submitted, and even Approved — passing three real authorization
+// gates — before finally failing at Post with a generic "Date is required." error several steps
+// after the actual mistake was made. The live UI already always supplies a date (checked:
+// Service Billing and every other screen), so this was only reachable via a direct API call
+// missing the field — but per this engagement's "server-side enforcement, never rely on the UI"
+// principle, rejecting at the earliest possible point protects every current AND future caller,
+// exactly like Phase 8's r2() rounding fix.
+function createDraft({date, docDate, narration, docTypeCode, sourceType, docCategory, party, lines, dueDate, branchId, refNo1, refNo2, refNo3, createdByUserId, createdByRole}){
+  if(!date) return {ok:false, error:'Date is required.'};
+  if(branchId && !DB.branches.find(b=>b.id===branchId)) return {ok:false, error:`Unknown branch "${branchId}".`};
+  const draft = {
+    id: 'DRAFT-' + String(DB.jeDrafts.length + 1).padStart(4,'0'), status: 'Draft',
+    date, docDate: docDate || date, narration: narration||'', docTypeCode: docTypeCode||'JE', sourceType: sourceType||'Manual',
+    docCategory: docCategory||'JournalVoucher', party: party||null, lines: lines||[],
+    dueDate: dueDate || (date ? addDays(date,30) : null),
+    branchId: branchId || null, refNo1: refNo1||'', refNo2: refNo2||'', refNo3: refNo3||'',
+    createdByUserId, createdByRole, createdAt: nowIso(), postedEntryId: null, rejectReason: null,
+    history: [{action:'Created', userId:createdByUserId, role:createdByRole, at: nowIso()}]
+  };
+  DB.jeDrafts.push(draft);
+  save();
+  return {ok:true, draft};
+}
+function simulateDraft(lines){
+  let totalDebit=0, totalCredit=0;
+  (lines||[]).forEach(l=>{ totalDebit += (+l.debit||0); totalCredit += (+l.credit||0); });
+  return { totalDebit, totalCredit, balanced: Math.abs(totalDebit-totalCredit) < 0.01, lineCount: (lines||[]).filter(l=>l.account).length };
+}
+function findDraft(id){ return DB.jeDrafts.find(d=>d.id===id); }
+function submitDraft(id, actor){
+  const d = findDraft(id); if(!d) return {ok:false, error:'Draft not found.'};
+  if(d.status!=='Draft') return {ok:false, error:`Cannot submit — document is "${d.status}", not Draft.`};
+  const sim = simulateDraft(d.lines);
+  if(!sim.balanced) return {ok:false, error:`Cannot submit an unbalanced document.`};
+  d.status='Submitted'; d.history.push({action:'Submitted', userId:actor.id, role:actor.role, at:nowIso()});
+  save(); return {ok:true, draft:d};
+}
+function approveDraft(id, actor){
+  const d = findDraft(id); if(!d) return {ok:false, error:'Draft not found.'};
+  if(d.status!=='Submitted') return {ok:false, error:`Cannot approve — document is "${d.status}", not Submitted.`};
+  const isOverride = actor.role==='CEO' || actor.role==='Admin';
+  if(d.createdByUserId===actor.id && !isOverride){
+    return {ok:false, error:`Segregation of duties: you created this document and cannot also approve it.`};
+  }
+  if(d.createdByUserId===actor.id && isOverride){
+    logAudit({type:'SelfApprovalOverride', draftId:d.id, userId:actor.id, role:actor.role, reason:`${actor.role} approved a document they created`});
+  }
+  d.status='Approved'; d.history.push({action:'Approved', userId:actor.id, role:actor.role, at:nowIso()});
+  save(); return {ok:true, draft:d};
+}
+function rejectDraft(id, reason, actor){
+  const d = findDraft(id); if(!d) return {ok:false, error:'Draft not found.'};
+  if(d.status!=='Submitted') return {ok:false, error:`Cannot reject — document is "${d.status}", not Submitted.`};
+  d.status='Rejected'; d.rejectReason = reason||'(no reason given)';
+  d.history.push({action:'Rejected', userId:actor.id, role:actor.role, at:nowIso(), reason:d.rejectReason});
+  save();
+  releaseInvoiceReservation(d); // Phase 27 — a rejected PO-aware bill must not permanently block re-billing
+  return {ok:true, draft:d};
+}
+function postDraft(id, actor, overrideReason){
+  const d = findDraft(id); if(!d) return {ok:false, error:'Draft not found.'};
+  if(d.status!=='Approved') return {ok:false, error:`Cannot post — document is "${d.status}", not Approved.`};
+  const isOverride = actor.role==='CEO' || actor.role==='Admin';
+  if(d.createdByUserId===actor.id && !isOverride){
+    return {ok:false, error:`Segregation of duties: you created this document and cannot also post it without CEO/Admin override.`};
+  }
+  const voucherNo = nextDocNumber(d.docTypeCode, d.date);
+  const result = postJournalEntry({ date:d.date, docDate:d.docDate, narration:d.narration, sourceType:d.sourceType, sourceId:d.id,
+    voucherNo, party:d.party, lines:d.lines, dueDate:d.dueDate, docCategory:d.docCategory,
+    branchId:d.branchId, refNo1:d.refNo1, refNo2:d.refNo2, refNo3:d.refNo3, postedByUserId:actor.id, postedByRole:actor.role, overrideReason });
+  if(!result.ok){
+    const dt = DB.glDocumentTypes.find(x=>x.code===d.docTypeCode); if(dt) dt.nextSeq -= 1; save();
+    return {ok:false, error:result.error};
+  }
+  d.status='Posted'; d.postedEntryId = result.entry.id;
+  d.history.push({action:'Posted', userId:actor.id, role:actor.role, at:nowIso(), entryId:result.entry.id});
+  save();
+  // Phase 20 §9/§16 — an Opening Inventory draft can be posted through EITHER the generic
+  // Document Workflow screen OR the dedicated Opening Balance screen (both call this SAME
+  // function, per §16's "every entry must use the SAME central posting architecture") — so the
+  // physical stock movement side-effect belongs HERE, the one place both paths funnel through,
+  // not duplicated in a wrapper only one of the two paths would call.
+  if(d.openingBalanceBatchId){
+    const obLine = DB.openingBalanceLines.find(l=>l.draftId===d.id);
+    if(obLine && obLine.type==='OpeningInventory' && !obLine.inventoryMovementPosted){
+      postInventoryMovement({type:'Receipt', materialId:obLine.materialId, qty:obLine.qty, uom:'', warehouseId:obLine.warehouseId,
+        sourceType:'OpeningBalanceImport', sourceId:obLine.id, valuationRate:obLine.unitCost, actor});
+      obLine.inventoryMovementPosted = true; save();
+    }
+  }
+  return {ok:true, draft:d, entry:result.entry};
+}
+function cancelDraft(id, actor){
+  const d = findDraft(id); if(!d) return {ok:false, error:'Draft not found.'};
+  if(['Posted','Cancelled','Reversed'].includes(d.status)) return {ok:false, error:`Cannot cancel a "${d.status}" document.`};
+  d.status='Cancelled'; d.history.push({action:'Cancelled', userId:actor.id, role:actor.role, at:nowIso()});
+  save();
+  releaseInvoiceReservation(d); // Phase 27 — see rejectDraft()
+  return {ok:true, draft:d};
+}
+function reverseEntry(entryId, reason, actor){
+  const orig = DB.journalEntries.find(e=>e.id===entryId);
+  if(!orig) return {ok:false, error:'Original document not found.'};
+  if(orig.reversedByEntryId) return {ok:false, error:`Already reversed by ${orig.reversedByEntryId}.`};
+  if(DB.clearings.some(c=>c.invoiceEntryId===entryId)){
+    return {ok:false, error:'Cannot reverse a document that already has clearings against it — the clearing(s) must be reversed/undone first.'};
+  }
+  // Phase 24 self-test defect fix: reversing the PAYMENT SIDE of a clearing (a receipt, supplier
+  // payment, credit note or debit note that already cleared an invoice) used to leave the
+  // clearing record in place, so the invoice stayed "Cleared" in the open-items subledger even
+  // though the GL now correctly showed the payment reversed — AR/AP subledger silently diverged
+  // from the control account. Found live via the Phase 24 multi-bank self-test (a routine
+  // "reverse this receipt" scenario). Fixed by voiding the clearing(s) that reference THIS entry
+  // as their paymentEntryId at the same moment it is reversed, so the invoice correctly reopens
+  // and subledger/control move back into agreement together — not by blocking the reversal
+  // outright, which would make correcting a mistaken receipt/payment impractical.
+  const clearingsToVoid = DB.clearings.filter(c=>c.paymentEntryId===entryId);
+  const flippedLines = orig.lines.map(l=>({...l, debit:l.credit, credit:l.debit}));
+  // A reversal already mandates a real business reason (the `reason` param) — if it also happens
+  // to need a closed-period override, that SAME reason satisfies the override requirement too,
+  // rather than forcing the user to type it twice.
+  const result = postJournalEntry({ date:new Date().toISOString().slice(0,10), narration:`Reversal of ${orig.voucherNo} (${orig.id}) — ${reason||'no reason given'}`,
+    sourceType:'Reversal', sourceId:orig.id, party:orig.party, reversalOfId:orig.id, docCategory:orig.docCategory, lines:flippedLines,
+    postedByUserId:actor.id, postedByRole:actor.role, overrideReason:reason });
+  if(!result.ok) return result;
+  orig.reversedByEntryId = result.entry.id;
+  save();
+  logAudit({type:'Reversal', originalEntryId:orig.id, reversalEntryId:result.entry.id, reason:reason||'(no reason given)', userId:actor.id, role:actor.role});
+  // Phase 24 self-test defect fix (continued from the clearingsToVoid declaration above): void
+  // every clearing this entry was the PAYMENT side of, so the invoice it had cleared correctly
+  // reopens in the open-items subledger, keeping it in agreement with the GL control account
+  // which the reversal above already corrected. Removed, not merely flagged, so
+  // customerOpenItems()/supplierOpenItems() (which sum ALL matching clearings unconditionally)
+  // never see it again — audited individually so the removal itself is traceable.
+  if(clearingsToVoid.length){
+    clearingsToVoid.forEach(c=>{
+      logAudit({type:'ClearingVoidedByReversal', clearingId:c.id, invoiceEntryId:c.invoiceEntryId, paymentEntryId:c.paymentEntryId, amount:c.amount, reversalEntryId:result.entry.id, userId:actor.id, role:actor.role});
+    });
+    DB.clearings = DB.clearings.filter(c=>c.paymentEntryId!==entryId);
+    save();
+  }
+  // Phase 13 POL-01 (Option B, approved): if this reversed a milestone-sourced invoice, the
+  // ORIGINAL milestone is never reopened/reset to Ready — it is marked as a distinct terminal
+  // state that preserves it was genuinely invoiced and that invoice was later reversed. This is
+  // an additive hook on the business-process record only; the accounting document itself (orig,
+  // result.entry) is never touched beyond the standard reversal already performed above.
+  const sourceDraft = DB.jeDrafts.find(d=>d.postedEntryId===orig.id && d.billingMilestoneId);
+  if(sourceDraft){
+    const bm = DB.billingMilestones.find(m=>m.id===sourceDraft.billingMilestoneId);
+    if(bm && bm.status==='Invoiced'){
+      bm.status = 'Invoiced-Reversed'; bm.reversalEntryId = result.entry.id; bm.reversedAt = nowIso(); save();
+      logAudit({type:'BillingMilestoneMarkedReversed', milestoneId:bm.id, reversalEntryId:result.entry.id, userId:actor.id, role:actor.role});
+    }
+  }
+  // Phase 24 Part C12 — same additive-hook pattern as the billing-milestone case above: if this
+  // reversed a GRN's own posting, restore the commitment by that exact GRN's received value.
+  // Purely additive — the accounting reversal above (orig/result.entry) is complete and correct
+  // on its own; this only keeps the SEPARATE operational commitment model in sync with it.
+  if(orig.sourceType==='GRN'){
+    const grn = DB.grns.find(g=>g.id===orig.sourceId);
+    if(grn){
+      const restoredValue = orig.totalDebit; // the GRN's own Dr Inventory line = totalAcceptedValue at the time it was posted
+      const c = DB.commitments.find(x=>x.poId===grn.poId);
+      if(c){
+        c.consumedAmount = r2(Math.max(0, c.consumedAmount - restoredValue));
+        c.remainingAmount = r2(c.originalAmount - c.consumedAmount);
+        if(c.status==='FullyConsumed' && c.remainingAmount>0.01) c.status = 'Open';
+        c.lastUpdated = nowIso(); save();
+        logAudit({type:'CommitmentRestoredByReversal', commitmentId:c.id, poId:grn.poId, restoredValue, remainingAmount:c.remainingAmount, userId:actor.id, role:actor.role});
+      }
+    }
+  }
+  // Phase 27 — same additive-hook pattern as the GRN/commitment case above: if this reversed a
+  // PO-aware Supplier Bill (draftSupplierInvoiceFromPO), release the qty it had reserved against
+  // the GRN/PO's invoiceable balance, so the same material can be correctly rebilled after the
+  // mistaken invoice is reversed — otherwise the balance would stay permanently consumed even
+  // though the AP/GR-IR side was correctly reversed above.
+  if(orig.docCategory==='SupplierInvoice'){
+    const sourceDraft2 = DB.jeDrafts.find(d=>d.postedEntryId===orig.id && d.grnId);
+    if(sourceDraft2) releaseInvoiceReservation(sourceDraft2);
+  }
+  return {ok:true, entry:result.entry, original:orig};
+}
+// Phase 13 POL-01: the ONLY way to re-bill after a milestone's invoice was reversed — creates a
+// genuinely NEW milestone record (its own id, its own full Pending->Ready->Invoiced lifecycle),
+// explicitly linked back to the one it supersedes. The original stays frozen at
+// 'Invoiced-Reversed' forever — never reopened, never silently reused for a second invoice.
+function createRebillMilestone({originalMilestoneId, amount, triggerNote, actor}){
+  const orig = DB.billingMilestones.find(m=>m.id===originalMilestoneId);
+  if(!orig) return {ok:false, error:'Original billing milestone not found.'};
+  if(orig.status!=='Invoiced-Reversed') return {ok:false, error:`Cannot rebill — original milestone is "${orig.status}", not Invoiced-Reversed. A milestone can only be rebilled after its invoice was reversed.`};
+  const bm = { id:'BM-'+String(DB.billingMilestones.length+1).padStart(4,'0'), projectId:orig.projectId, milestoneType:orig.milestoneType,
+    amount: amount!==undefined ? +amount : orig.amount, triggerNote: triggerNote || `Rebill of ${orig.id} (reversed)`,
+    status:'Pending', invoiceEntryId:null, rebillOfMilestoneId:orig.id, createdBy:actor.id, createdAt:nowIso() };
+  DB.billingMilestones.push(bm); save();
+  orig.rebilledIntoId = bm.id; save();
+  logAudit({type:'BillingMilestoneRebilled', originalMilestoneId:orig.id, newMilestoneId:bm.id, userId:actor.id, role:actor.role});
+  return {ok:true, milestone:bm, original:orig};
+}
+
+// ---------- AR/AP (unchanged from Phase 5, including the Phase-5 defect fixes) ----------
+const AR_ACCOUNT='1100', AP_ACCOUNT='2000';
+const AR_DOC_CATEGORIES=['CustomerInvoice','CustomerReceipt'], AP_DOC_CATEGORIES=['SupplierInvoice','SupplierPayment'];
+function calcTax(taxCode, baseAmount){
+  const tc = DB.taxCodes.find(t=>t.code===taxCode); if(!tc) return null;
+  const base = +baseAmount||0;
+  const cgst = Math.round(base*tc.cgstPct)/100, sgst = Math.round(base*tc.sgstPct)/100, igst = Math.round(base*tc.igstPct)/100;
+  const taxAmount = cgst+sgst+igst;
+  return {base, cgst, sgst, igst, taxAmount, total: base+taxAmount};
+}
+// Phase 15 §8 — Branch inherits from the Project (a project genuinely belongs to one branch/
+// office in Appletree's real business), so downstream transactions (GRN, Material Issue,
+// Invoices) don't need a manual Branch selector on every single form — only Manual JE and the
+// Project master itself need explicit selection. Never forces Branch onto something meaningless.
+function projectBranch(projectId){ const p = DB.projects.find(x=>x.id===projectId); return p ? (p.branchId||null) : null; }
+function setProjectBranch({projectId, branchId, actor}){
+  const p = DB.projects.find(x=>x.id===projectId);
+  if(!p) return {ok:false, error:'Project not found.'};
+  if(branchId && !DB.branches.find(b=>b.id===branchId)) return {ok:false, error:`Unknown branch "${branchId}".`};
+  p.branchId = branchId||null; save();
+  logAudit({type:'ProjectBranchSet', projectId, branchId, userId:actor.id, role:actor.role});
+  return {ok:true, project:p};
+}
+function draftCustomerInvoice({customerId, projectId, baseAmount, taxCode, date, narration, branchId, createdByUserId, createdByRole}){
+  const base = +baseAmount||0;
+  if(!customerId || !projectId || base<=0) return {ok:false, error:'Customer, project and a positive amount are required.'};
+  const inactiveErr = assertCustomerSelectable(customerId); if(inactiveErr) return {ok:false, error:inactiveErr};
+  const tax = taxCode ? calcTax(taxCode, base) : null;
+  const lines = [ {account:AR_ACCOUNT, debit: base+(tax?tax.taxAmount:0), credit:0, customerId, projectId, taxCode:taxCode||null},
+    {account:'4000', debit:0, credit:base, customerId, projectId} ];
+  if(tax && tax.taxAmount>0) lines.push({account:'2200', debit:0, credit:tax.taxAmount, customerId, projectId, taxCode});
+  return createDraft({date, narration:narration||'Customer Invoice', docTypeCode:'INV', sourceType:'Customer Invoice', docCategory:'CustomerInvoice', party:customerId, lines, branchId:branchId||projectBranch(projectId), createdByUserId, createdByRole});
+}
+function draftSupplierInvoice({vendorId, projectId, baseAmount, taxCode, date, narration, branchId, createdByUserId, createdByRole}){
+  const base = +baseAmount||0;
+  if(!vendorId || !projectId || base<=0) return {ok:false, error:'Vendor, project and a positive amount are required.'};
+  const inactiveErr = assertVendorSelectable(vendorId); if(inactiveErr) return {ok:false, error:inactiveErr};
+  const tax = taxCode ? calcTax(taxCode, base) : null;
+  const lines = [{account:'5000', debit:base, credit:0, vendorId, projectId}];
+  if(tax && tax.taxAmount>0) lines.push({account:'1300', debit:tax.taxAmount, credit:0, vendorId, projectId, taxCode});
+  lines.push({account:AP_ACCOUNT, debit:0, credit: base+(tax?tax.taxAmount:0), vendorId, projectId, taxCode:taxCode||null});
+  return createDraft({date, narration:narration||'Supplier Bill', docTypeCode:'BILL', sourceType:'Supplier Bill', docCategory:'SupplierInvoice', party:vendorId, lines, branchId:branchId||projectBranch(projectId), createdByUserId, createdByRole});
+}
+// Phase 16 §11 — Company Profitability performance. Profiled first, per instruction, before
+// touching anything: `companyProjectProfitability()` calls `projectFinancial360()` once per
+// project, and a SINGLE `projectFinancial360()` call independently invokes `allLines()` at least
+// 4 times (materialCost/labourCostAll/installationCost directly, plus once more via `projectPL()`)
+// — each a full re-flatten of every journal entry's every line. At 155 projects that's ~620 full
+// re-scans of the entire journal-entries dataset per Company Profitability request, which
+// measured at 419ms avg / 511ms max (Phase 15 performance test).
+//
+// Fix: memoize the pure output of `allLines()`, invalidated by `DB.journalEntries.length`.
+// Journal entries are immutable once posted — established as an explicit accounting-safety rule
+// since Phase 5 ("never rewrite history"; reversal/recognition always PUSH a new entry, never
+// mutate an existing one's lines) — so an append-only-log length check is a correct, not merely
+// convenient, cache-invalidation strategy. This changes NOTHING about what is computed, only how
+// often the same computation repeats; every caller's accounting output is byte-identical before
+// and after (verified — see `phase16_performance_tests.js` for a before/after figure comparison).
+let _allLinesCache = { length: -1, data: null };
+function allLines(){
+  if(_allLinesCache.length === DB.journalEntries.length && _allLinesCache.data) return _allLinesCache.data;
+  const out=[];
+  // Phase 30 — docCategory/sourceType/reversal flags added, purely additive (every existing
+  // consumer reads only the fields it already knew about; these are new fields on the same
+  // objects, not a shape change to anything that existed). Needed by the new General Ledger/
+  // Customer/Supplier Ledger drill-downs so they can filter by voucher type and show reversal
+  // status without a second per-line lookup into DB.journalEntries for every row.
+  DB.journalEntries.forEach(je=>je.lines.forEach(l=>out.push({...l, entryId:je.id, date:je.date, narration:je.narration, voucherNo:je.voucherNo,
+    docCategory:je.docCategory, sourceType:je.sourceType, reversalOfId:je.reversalOfId||null, reversedByEntryId:je.reversedByEntryId||null})));
+  _allLinesCache = { length: DB.journalEntries.length, data: out };
+  return out;
+}
+function customerOpenItems(customerId){
+  return DB.journalEntries.filter(je=>je.docCategory==='CustomerInvoice' && !je.reversalOfId && !je.reversedByEntryId && je.lines.some(l=>l.customerId===customerId && l.account===AR_ACCOUNT))
+    .map(je=>{
+      const arLine = je.lines.find(l=>l.customerId===customerId && l.account===AR_ACCOUNT);
+      const original = arLine.debit;
+      const cleared = DB.clearings.filter(c=>c.type==='AR' && c.invoiceEntryId===je.id).reduce((s,c)=>s+c.amount,0);
+      const open = Math.round((original-cleared)*100)/100;
+      return {customerId, entryId:je.id, docNo:je.voucherNo, date:je.date, dueDate:je.dueDate||addDays(je.date,30),
+        original, cleared, open, projectId:arLine.projectId, status: open<=0.01?'Cleared':(cleared>0?'Partially Cleared':'Open')};
+    });
+}
+function supplierOpenItems(vendorId){
+  return DB.journalEntries.filter(je=>je.docCategory==='SupplierInvoice' && !je.reversalOfId && !je.reversedByEntryId && je.lines.some(l=>l.vendorId===vendorId && l.account===AP_ACCOUNT))
+    .map(je=>{
+      const apLine = je.lines.find(l=>l.vendorId===vendorId && l.account===AP_ACCOUNT);
+      const original = apLine.credit;
+      const cleared = DB.clearings.filter(c=>c.type==='AP' && c.invoiceEntryId===je.id).reduce((s,c)=>s+c.amount,0);
+      const open = Math.round((original-cleared)*100)/100;
+      return {vendorId, entryId:je.id, docNo:je.voucherNo, date:je.date, dueDate:je.dueDate||addDays(je.date,30),
+        original, cleared, open, projectId:apLine.projectId, status: open<=0.01?'Cleared':(cleared>0?'Partially Cleared':'Open')};
+    });
+}
+function applyClearing({type, invoiceEntryId, paymentEntryId, amount, actor}){
+  const clr = { id:'CLR-'+String(DB.clearings.length+1).padStart(4,'0'), clearingDocNo: nextDocNumber('CLR'),
+    type, invoiceEntryId, paymentEntryId, amount:r2(amount), date:new Date().toISOString().slice(0,10), userId:actor.id, role:actor.role };
+  DB.clearings.push(clr); save(); return clr;
+}
+// SYNCHRONOUS, no I/O awaited mid-check — this is what makes concurrent requests safe on a
+// single-threaded Node process: the "read open balance, then commit against it" sequence below
+// cannot be interleaved by another request, because nothing yields the event loop in between.
+function postCustomerReceipt({customerId, invoiceEntryId, amount, date, narration, actor, overrideReason, paymentMethodId, bankAccountId}){
+  const invoice = DB.journalEntries.find(e=>e.id===invoiceEntryId);
+  if(!invoice) return {ok:false, error:'Select an open invoice to apply this receipt against.'};
+  const openItem = customerOpenItems(customerId).find(i=>i.entryId===invoiceEntryId);
+  if(!openItem) return {ok:false, error:'That invoice is not an open item for this customer.'};
+  if(+amount > openItem.open + 0.01) return {ok:false, error:`Amount exceeds the open balance of ₹${openItem.open.toLocaleString('en-IN')}.`};
+  // Phase 33 SOP §4 — cash receipt aggregate limit. Only triggers when genuinely tagged Cash;
+  // every existing test/call site uses a bank-rail method or none, so this is a no-op for them.
+  if(isCashPayment({paymentMethodId})){
+    const cashCheck = checkCashLimit({kind:'receiptAggregate', amount:+amount, actor, overrideReason});
+    if(!cashCheck.ok) return cashCheck;
+  }
+  // Phase 24 Part A4 — was unconditionally Dr 1000 regardless of bankAccountId (Phase 19 §24's
+  // original "Payment Method is metadata only" decision, now superseded for the ACCOUNT itself —
+  // Payment Method remains metadata; WHICH bank/cash account received the money is not). Omitting
+  // bankAccountId still defaults to 1000, so every pre-existing call site (800+ tests) is
+  // completely unaffected; supplying one routes to THAT account's own GL.
+  let bankGlAccount = '1000';
+  if(bankAccountId){
+    const acct = DB.bankAccounts.find(b=>b.id===bankAccountId);
+    if(!acct) return {ok:false, error:`Unknown bank/cash account "${bankAccountId}".`};
+    if(acct.active===false) return {ok:false, error:`Account "${acct.accountName}" is inactive and cannot receive a new receipt.`};
+    bankGlAccount = acct.glAccount;
+  }
+  const arLine = invoice.lines.find(l=>l.customerId===customerId && l.account===AR_ACCOUNT);
+  const lines = [ {account:bankGlAccount, debit:+amount, credit:0, customerId, projectId:arLine.projectId},
+    {account:AR_ACCOUNT, debit:0, credit:+amount, customerId, projectId:arLine.projectId} ];
+  const result = postJournalEntry({date, narration:narration||`Receipt against ${invoice.voucherNo}`, sourceType:'Customer Receipt', sourceId:invoiceEntryId,
+    voucherNo:nextDocNumber('RCPT', date), party:customerId, docCategory:'CustomerReceipt', branchId:invoice.branchId, lines, postedByUserId:actor.id, postedByRole:actor.role, overrideReason, paymentMethodId});
+  if(!result.ok) return result;
+  const clr = applyClearing({type:'AR', invoiceEntryId, paymentEntryId:result.entry.id, amount:+amount, actor});
+  return {ok:true, entry:result.entry, clearing:clr};
+}
+function postSupplierPayment({vendorId, invoiceEntryId, amount, date, narration, actor, overrideReason, paymentMethodId, bankAccountId, tdsCategory, tdsOptions, isTransporterPayment}){
+  const bill = DB.journalEntries.find(e=>e.id===invoiceEntryId);
+  if(!bill) return {ok:false, error:'Select an open bill to apply this payment against.'};
+  const openItem = supplierOpenItems(vendorId).find(i=>i.entryId===invoiceEntryId);
+  if(!openItem) return {ok:false, error:'That bill is not an open item for this vendor.'};
+  if(+amount > openItem.open + 0.01) return {ok:false, error:`Amount exceeds the open balance of ₹${openItem.open.toLocaleString('en-IN')}.`};
+  // Phase 33 SOP §9 — three-way match re-verified AT PAYMENT, not just at bill creation, for a
+  // PO-linked bill. By construction a PO-linked bill can only have been POSTED if it either passed
+  // checkThreeWayMatch() or had an authorized exception recorded at creation time
+  // (draftSupplierInvoiceFromPO) — so this never fires against any currently-reachable state; it
+  // is a defense-in-depth re-verification so a future code path can never silently skip that
+  // guarantee. A bill with NO PO reference (rent/professional fees/transport/etc. — a genuine
+  // service payment has no GRN concept to match against) is unaffected: the SOP's literal "before
+  // ANY vendor payment" is in real tension with non-goods vendor payments having no PO/GRN at all
+  // — flagged BUSINESS DECISION REQUIRED in PHASE33_SOP_COMPLIANCE_MATRIX.md rather than silently
+  // blocking every service payment or silently ignoring the SOP's own wording.
+  const sourceDraft = DB.jeDrafts.find(d=>d.postedEntryId===invoiceEntryId);
+  if(sourceDraft && sourceDraft.poId && sourceDraft.grnId && Array.isArray(sourceDraft.invoiceLines)){
+    const match = checkThreeWayMatch({poId:sourceDraft.poId, grnId:sourceDraft.grnId, invoiceLines:sourceDraft.invoiceLines});
+    if(!match.matched){
+      const hasException = DB.threeWayMatchExceptions.some(x=>x.poId===sourceDraft.poId && x.grnId===sourceDraft.grnId);
+      if(!hasException) return {ok:false, error:'Cannot release payment — underlying bill fails three-way match and no authorized exception is on record (SOP §9). Investigate before paying.', mismatches:match.mismatches};
+    }
+  }
+  // Phase 24 Part A5 — same fix as postCustomerReceipt above, mirrored for payments.
+  let bankGlAccount = '1000';
+  if(bankAccountId){
+    const acct = DB.bankAccounts.find(b=>b.id===bankAccountId);
+    if(!acct) return {ok:false, error:`Unknown bank/cash account "${bankAccountId}".`};
+    if(acct.active===false) return {ok:false, error:`Account "${acct.accountName}" is inactive and cannot make a new payment.`};
+    bankGlAccount = acct.glAccount;
+  }
+  // Phase 33 SOP §4 — cash payment limit check. Only triggers when this payment is genuinely tagged
+  // as Cash (paymentMethodId category==='Cash') — every existing test/call site uses a bank-rail
+  // payment method (or none at all), so this branch never fires against any pre-Phase-33 call.
+  if(isCashPayment({paymentMethodId})){
+    const cashCheck = checkCashLimit({kind:'expense', amount:+amount, isTransporter:!!isTransporterPayment, actor, overrideReason});
+    if(!cashCheck.ok) return cashCheck;
+  }
+  // Phase 33 SOP §3 — TDS engine. Purely opt-in via tdsCategory; omitting it (every existing call
+  // site) leaves this function's behavior byte-for-byte unchanged.
+  let tdsAmount = 0, tdsInfo = null;
+  if(tdsCategory){
+    tdsInfo = computeTDS({category:tdsCategory, billAmount:+amount, vendorId, ...(tdsOptions||{})});
+    if(!tdsInfo.ok) return {ok:false, error:tdsInfo.error};
+    tdsAmount = tdsInfo.tdsAmount;
+  }
+  const netPay = r2(+amount - tdsAmount);
+  const apLine = bill.lines.find(l=>l.vendorId===vendorId && l.account===AP_ACCOUNT);
+  const lines = [ {account:AP_ACCOUNT, debit:+amount, credit:0, vendorId, projectId:apLine.projectId},
+    {account:bankGlAccount, debit:0, credit:netPay, vendorId, projectId:apLine.projectId} ];
+  if(tdsAmount>0) lines.push({account:'2300', debit:0, credit:tdsAmount, vendorId, projectId:apLine.projectId});
+  const result = postJournalEntry({date, narration:narration||`Payment against ${bill.voucherNo}`, sourceType:'Supplier Payment', sourceId:invoiceEntryId,
+    voucherNo:nextDocNumber('PAY', date), party:vendorId, docCategory:'SupplierPayment', branchId:bill.branchId, lines, postedByUserId:actor.id, postedByRole:actor.role, overrideReason, paymentMethodId});
+  if(!result.ok) return result;
+  const clr = applyClearing({type:'AP', invoiceEntryId, paymentEntryId:result.entry.id, amount:+amount, actor});
+  if(tdsAmount>0){
+    DB.tdsDeductions.push({ id:'TDS-'+String(DB.tdsDeductions.length+1).padStart(4,'0'), vendorId, invoiceEntryId, paymentEntryId:result.entry.id,
+      category:tdsCategory, billAmount:+amount, ratePct:tdsInfo.ratePct, tdsAmount, date:date||new Date().toISOString().slice(0,10), createdBy:actor.id, at:nowIso() });
+    save();
+    logAudit({type:'TDSDeducted', vendorId, category:tdsCategory, tdsAmount, ratePct:tdsInfo.ratePct, userId:actor.id, role:actor.role});
+  }
+  return {ok:true, entry:result.entry, clearing:clr, tds:tdsInfo};
+}
+function reconcileAR(){
+  const subledgerTotal = DB.customers.reduce((s,c)=>s+customerOpenItems(c.id).reduce((s2,i)=>s2+i.open,0),0);
+  const controlAccountBalance = DB.journalEntries.filter(je=>AR_DOC_CATEGORIES.includes(je.docCategory)).flatMap(je=>je.lines).filter(l=>l.account===AR_ACCOUNT).reduce((s,l)=>s+l.debit-l.credit,0);
+  const nonSubledgerLines = DB.journalEntries.filter(je=>!AR_DOC_CATEGORIES.includes(je.docCategory)).flatMap(je=>je.lines).filter(l=>l.account===AR_ACCOUNT).reduce((s,l)=>s+l.debit-l.credit,0);
+  return {subledgerTotal, controlAccountBalance, nonSubledgerLines, matches: Math.abs(subledgerTotal-controlAccountBalance)<0.01};
+}
+function reconcileAP(){
+  const subledgerTotal = DB.vendors.reduce((s,v)=>s+supplierOpenItems(v.id).reduce((s2,i)=>s2+i.open,0),0);
+  const controlAccountBalance = DB.journalEntries.filter(je=>AP_DOC_CATEGORIES.includes(je.docCategory)).flatMap(je=>je.lines).filter(l=>l.account===AP_ACCOUNT).reduce((s,l)=>s+l.credit-l.debit,0);
+  const nonSubledgerLines = DB.journalEntries.filter(je=>!AP_DOC_CATEGORIES.includes(je.docCategory)).flatMap(je=>je.lines).filter(l=>l.account===AP_ACCOUNT).reduce((s,l)=>s+l.credit-l.debit,0);
+  return {subledgerTotal, controlAccountBalance, nonSubledgerLines, matches: Math.abs(subledgerTotal-controlAccountBalance)<0.01};
+}
+// Phase 21 §17 — Tax and Customer/Vendor Advance reconciliation reports, closing the audit's own
+// disclosed gap ("Tax/Advance reconciliation tooling is weaker than AR/AP/Inventory/Asset — no
+// dedicated report exists"). Structurally IDENTICAL to reconcileAR()/reconcileAP() immediately
+// above (control-account-balance vs. transactions-that-should-have-produced-it, plus a
+// non-source-line check) — no new tax/advance POLICY is invented, this only builds the missing
+// REPORTING TOOL over data that was already being posted correctly (proven independently, by hand,
+// in this engagement's own audit passes today).
+// Output Tax (2200, a Liability — tax collected from customers, owed to the tax authority) and
+// Input Tax (1300, an Asset — tax paid to vendors, recoverable from the tax authority) are TWO
+// SEPARATE accounts in this Lab's existing Chart of Accounts (confirmed by reading
+// draftCustomerInvoice/draftSupplierInvoice directly, not assumed) — reconciled separately, each
+// against its own real source document category, exactly mirroring reconcileAR()/reconcileAP().
+function reconcileOutputTax(){
+  const sourceLines = DB.journalEntries.filter(je=>je.docCategory==='CustomerInvoice').flatMap(je=>je.lines);
+  const subledgerTotal = r2(sourceLines.filter(l=>l.account==='2200').reduce((s,l)=>s+l.credit-l.debit,0));
+  const controlAccountBalance = r2(allLines().filter(l=>l.account==='2200').reduce((s,l)=>s+l.credit-l.debit,0));
+  const nonSourceLines = r2(DB.journalEntries.filter(je=>je.docCategory!=='CustomerInvoice').flatMap(je=>je.lines).filter(l=>l.account==='2200').reduce((s,l)=>s+l.credit-l.debit,0));
+  return {subledgerTotal, controlAccountBalance, nonSourceLines, matches: Math.abs(subledgerTotal-controlAccountBalance)<0.02};
+}
+function reconcileInputTax(){
+  const sourceLines = DB.journalEntries.filter(je=>je.docCategory==='SupplierInvoice').flatMap(je=>je.lines);
+  const subledgerTotal = r2(sourceLines.filter(l=>l.account==='1300').reduce((s,l)=>s+l.debit-l.credit,0));
+  const controlAccountBalance = r2(allLines().filter(l=>l.account==='1300').reduce((s,l)=>s+l.debit-l.credit,0));
+  const nonSourceLines = r2(DB.journalEntries.filter(je=>je.docCategory!=='SupplierInvoice').flatMap(je=>je.lines).filter(l=>l.account==='1300').reduce((s,l)=>s+l.debit-l.credit,0));
+  return {subledgerTotal, controlAccountBalance, nonSourceLines, matches: Math.abs(subledgerTotal-controlAccountBalance)<0.02};
+}
+const CUSTOMER_ADVANCE_ACCOUNT = '2100';
+function reconcileCustomerAdvances(){
+  const sourceLines = DB.journalEntries.filter(je=>je.docCategory==='CustomerAdvance').flatMap(je=>je.lines);
+  const subledgerTotal = r2(sourceLines.filter(l=>l.account===CUSTOMER_ADVANCE_ACCOUNT).reduce((s,l)=>s+l.credit-l.debit,0));
+  const controlAccountBalance = r2(allLines().filter(l=>l.account===CUSTOMER_ADVANCE_ACCOUNT).reduce((s,l)=>s+l.credit-l.debit,0));
+  const nonSourceLines = r2(DB.journalEntries.filter(je=>je.docCategory!=='CustomerAdvance').flatMap(je=>je.lines).filter(l=>l.account===CUSTOMER_ADVANCE_ACCOUNT).reduce((s,l)=>s+l.credit-l.debit,0));
+  return {subledgerTotal, controlAccountBalance, nonSourceLines, matches: Math.abs(subledgerTotal-controlAccountBalance)<0.02};
+}
+function projectPL(projectId){
+  const lines = allLines().filter(l=>l.projectId===projectId);
+  let revenue=0, cost=0;
+  lines.forEach(l=>{ const acct=DB.accounts.find(a=>a.id===l.account); if(!acct) return;
+    if(acct.type==='Income') revenue += l.credit-l.debit; if(acct.type==='Expense') cost += l.debit-l.credit; });
+  const profit = revenue-cost;
+  return {revenue, cost, profit, marginPct: revenue>0 ? profit/revenue*100 : null};
+}
+const AGE_BUCKETS=['Current','1-30','31-60','61-90','91-180','181-365','365+'];
+function ageingBucket(dueDate, asOf){
+  const days = Math.floor((new Date(asOf)-new Date(dueDate))/86400000);
+  if(days<=0) return 'Current'; if(days<=30) return '1-30'; if(days<=60) return '31-60'; if(days<=90) return '61-90';
+  if(days<=180) return '91-180'; if(days<=365) return '181-365'; return '365+';
+}
+function customerAgeing(asOf){
+  asOf = asOf || new Date().toISOString().slice(0,10);
+  return DB.customers.map(c=>{ const buckets={}; AGE_BUCKETS.forEach(b=>buckets[b]=0); let total=0;
+    customerOpenItems(c.id).filter(i=>i.open>0.01).forEach(i=>{ buckets[ageingBucket(i.dueDate,asOf)]+=i.open; total+=i.open; });
+    return {customer:c, buckets, total}; });
+}
+function supplierAgeing(asOf){
+  asOf = asOf || new Date().toISOString().slice(0,10);
+  return DB.vendors.map(v=>{ const buckets={}; AGE_BUCKETS.forEach(b=>buckets[b]=0); let total=0;
+    supplierOpenItems(v.id).filter(i=>i.open>0.01).forEach(i=>{ buckets[ageingBucket(i.dueDate,asOf)]+=i.open; total+=i.open; });
+    return {vendor:v, buckets, total}; });
+}
+
+// ============================================================
+// Phase 6B — Lead → Estimation → Quotation → Won → Customer → Project → Baseline → Design
+// ============================================================
+// Per §27 of the brief: Lead/Estimation/Costing/Quotation/Revision/Acceptance are commercial
+// documents, NOT accounting documents — none of the functions below call postJournalEntry().
+// Accounting only begins at the Advance function further down, and it reuses the EXISTING
+// Phase 5 lifecycle (createDraft → ... → postJournalEntry) rather than inventing a second
+// posting path — satisfying §22's "do not duplicate financial postings."
+
+function createLead({date, source, name, contact, site, requirement, expectedValue, salesOwnerId, actor}){
+  if(!name) return {ok:false, error:'Prospect/customer name is required.'};
+  const lead = {
+    id: 'LEAD-' + String(DB.leads.length+1).padStart(4,'0'),
+    date: date || new Date().toISOString().slice(0,10), source: source||'', name, contact: contact||'', site: site||'',
+    requirement: requirement||'', expectedValue: +expectedValue||0, salesOwnerId: salesOwnerId||actor.id,
+    status: 'NEW', nextFollowUp: null, createdBy: actor.id, createdAt: nowIso()
+  };
+  DB.leads.push(lead); save();
+  logAudit({type:'LeadCreated', leadId:lead.id, userId:actor.id, role:actor.role});
+  return {ok:true, lead};
+}
+function canSeeLead(lead, actor){
+  if(['Admin','CEO','Viewer'].includes(actor.role)) return true;
+  if(actor.role==='Sales') return lead.salesOwnerId===actor.id;
+  return false;
+}
+function addLeadActivity({leadId, type, notes, nextAction, actor}){
+  const lead = DB.leads.find(l=>l.id===leadId);
+  if(!lead) return {ok:false, error:'Lead not found.'};
+  const act = {id:'ACT-'+String(DB.leadActivities.length+1).padStart(5,'0'), leadId, type:type||'note', notes:notes||'', nextAction:nextAction||null, userId:actor.id, role:actor.role, at:nowIso()};
+  DB.leadActivities.push(act); // append-only — no update/delete function exists for this array
+  if(nextAction) lead.nextFollowUp = nextAction;
+  save();
+  logAudit({type:'LeadActivity', leadId, activityId:act.id, userId:actor.id, role:actor.role});
+  return {ok:true, activity:act};
+}
+function changeLeadStatus({leadId, newStatus, actor}){
+  const lead = DB.leads.find(l=>l.id===leadId);
+  if(!lead) return {ok:false, error:'Lead not found.'};
+  if(!LEAD_STATUSES.includes(newStatus)) return {ok:false, error:`Invalid status "${newStatus}".`};
+  const old = lead.status; lead.status = newStatus; save();
+  logAudit({type:'LeadStatusChange', leadId, oldState:old, newState:newStatus, userId:actor.id, role:actor.role});
+  return {ok:true, lead};
+}
+
+function createEstimationRequest({leadId, site, requirement, estimatorId, requestedDate, scope, notes, actor}){
+  const lead = DB.leads.find(l=>l.id===leadId);
+  if(!lead) return {ok:false, error:'Source lead not found.'};
+  const er = {
+    id: 'ER-'+String(DB.estimationRequests.length+1).padStart(4,'0'), leadId, site:site||lead.site, requirement:requirement||lead.requirement,
+    estimatorId: estimatorId||null, requestedDate: requestedDate||new Date().toISOString().slice(0,10), scope:scope||'', notes:notes||'',
+    status:'DRAFT', createdBy:actor.id, createdAt:nowIso()
+  };
+  DB.estimationRequests.push(er); save();
+  changeLeadStatus({leadId, newStatus:'ESTIMATION', actor});
+  logAudit({type:'EstimationRequestCreated', estimationRequestId:er.id, leadId, userId:actor.id, role:actor.role});
+  return {ok:true, estimationRequest:er};
+}
+function setEstimationStatus({id, status, actor}){
+  const er = DB.estimationRequests.find(e=>e.id===id);
+  if(!er) return {ok:false, error:'Estimation request not found.'};
+  if(!ESTIMATION_STATUSES.includes(status)) return {ok:false, error:`Invalid status "${status}".`};
+  const old = er.status; er.status = status; save();
+  logAudit({type:'EstimationStatusChange', estimationRequestId:id, oldState:old, newState:status, userId:actor.id, role:actor.role});
+  return {ok:true, estimationRequest:er};
+}
+
+// Costing versions are NEVER edited in place — every call creates a new, immutable version.
+function createCostingVersion({estimationRequestId, lines, overheadPct, profitPct, reason, actor}){
+  const er = DB.estimationRequests.find(e=>e.id===estimationRequestId);
+  if(!er) return {ok:false, error:'Estimation request not found.'};
+  const cats = {Material:0, Labour:0, Transport:0, Installation:0, Other:0};
+  (lines||[]).forEach(l=>{ const amt = (+l.qty||0)*(+l.rate||0); if(cats[l.category]!==undefined) cats[l.category]+=amt; });
+  const baseCost = Object.values(cats).reduce((s,v)=>s+v,0);
+  const overheadAmt = baseCost * (+overheadPct||0)/100;
+  const sellingPrice = (baseCost+overheadAmt) * (1 + (+profitPct||0)/100);
+  const priorVersions = DB.costingVersions.filter(c=>c.estimationRequestId===estimationRequestId);
+  const version = {
+    id:'COST-'+String(DB.costingVersions.length+1).padStart(4,'0'), estimationRequestId, version: priorVersions.length+1,
+    lines: (lines||[]).map(l=>({...l, amount:(+l.qty||0)*(+l.rate||0)})),
+    materialCost:cats.Material, labourCost:cats.Labour, transportCost:cats.Transport, installationCost:cats.Installation, otherCost:cats.Other,
+    baseCost, overheadPct:+overheadPct||0, overheadAmt, profitPct:+profitPct||0, sellingPrice,
+    reason: reason || (priorVersions.length===0 ? 'Initial costing' : 'Revision'), createdBy:actor.id, createdAt:nowIso()
+  };
+  DB.costingVersions.push(version); save();
+  logAudit({type:'CostingVersionCreated', costingVersionId:version.id, estimationRequestId, version:version.version, userId:actor.id, role:actor.role});
+  return {ok:true, costingVersion:version};
+}
+
+function nextQuotationNo(){ return nextDocNumber('QTN') || ('QTN/'+String(DB.quotations.length+1).padStart(4,'0')); }
+function createQuotation({leadId, estimationRequestId, costingVersionId, customerId, prospectName, validityDays, discountPct, terms, paymentTerms, notes, actor}){
+  const costing = DB.costingVersions.find(c=>c.id===costingVersionId);
+  if(!costing) return {ok:false, error:'Costing version not found.'};
+  const discount = +discountPct||0;
+  const finalPrice = costing.sellingPrice * (1 - discount/100);
+  const margin = finalPrice - (costing.materialCost+costing.labourCost+costing.transportCost+costing.installationCost+costing.otherCost);
+  const q = {
+    id:'QTN-'+String(DB.quotations.length+1).padStart(4,'0'), quotationNo: nextQuotationNo(), revision:0, previousRevisionId:null,
+    leadId, estimationRequestId, costingVersionId, customerId:customerId||null, prospectName:prospectName||null,
+    date:new Date().toISOString().slice(0,10), validityDays:+validityDays||30,
+    baseCost:costing.baseCost, sellingPrice:costing.sellingPrice, discountPct:discount, finalPrice, margin,
+    terms:terms||'', paymentTerms:paymentTerms||'', notes:notes||'',
+    status:'Draft', createdBy:actor.id, createdAt:nowIso(), approvedBy:null, approvedAt:null
+  };
+  DB.quotations.push(q); save();
+  if(leadId) changeLeadStatus({leadId, newStatus:'QUOTATION', actor});
+  logAudit({type:'QuotationCreated', quotationId:q.id, userId:actor.id, role:actor.role});
+  return {ok:true, quotation:q};
+}
+function requiredDiscountApprovalRole(discountPct){
+  const rules = [...DB.discountApprovalRules].sort((a,b)=>(a.upToPct??Infinity)-(b.upToPct??Infinity));
+  for(const r of rules){ if(r.upToPct===null || discountPct<=r.upToPct) return r.requiredRole; }
+  return 'CEO';
+}
+function submitQuotation({id, actor}){
+  const q = DB.quotations.find(x=>x.id===id);
+  if(!q) return {ok:false, error:'Quotation not found.'};
+  if(q.status!=='Draft') return {ok:false, error:`Cannot submit — quotation is "${q.status}", not Draft.`};
+  const reqRole = requiredDiscountApprovalRole(q.discountPct);
+  q.status = reqRole ? 'PendingApproval' : 'Approved';
+  if(!reqRole){ q.approvedBy='(auto — within no-approval threshold)'; q.approvedAt=nowIso(); }
+  save();
+  logAudit({type:'QuotationSubmitted', quotationId:id, discountPct:q.discountPct, requiredApprovalRole:reqRole, userId:actor.id, role:actor.role});
+  return {ok:true, quotation:q};
+}
+function approveQuotationDiscount({id, actor}){
+  const q = DB.quotations.find(x=>x.id===id);
+  if(!q) return {ok:false, error:'Quotation not found.'};
+  if(q.status!=='PendingApproval') return {ok:false, error:`Cannot approve — quotation is "${q.status}", not PendingApproval.`};
+  const reqRole = requiredDiscountApprovalRole(q.discountPct);
+  if(reqRole && actor.role!==reqRole && !(actor.role==='Admin')){
+    return {ok:false, error:`This quotation's ${q.discountPct}% discount requires approval by "${reqRole}" (per BOS §1.6 policy) — "${actor.role}" is not authorized.`};
+  }
+  if(q.createdBy===actor.id && !['CEO','Admin'].includes(actor.role)){
+    return {ok:false, error:'Segregation of duties: you created this quotation and cannot also approve its discount.'};
+  }
+  q.status='Approved'; q.approvedBy=actor.id; q.approvedAt=nowIso(); save();
+  logAudit({type:'DiscountApproved', quotationId:id, discountPct:q.discountPct, userId:actor.id, role:actor.role});
+  return {ok:true, quotation:q};
+}
+// Revision — the OLD quotation is marked Superseded (never edited/deleted), a NEW one is created.
+function reviseQuotation({id, changes, reason, actor}){
+  const q = DB.quotations.find(x=>x.id===id);
+  if(!q) return {ok:false, error:'Quotation not found.'};
+  if(['Accepted','Superseded'].includes(q.status)) return {ok:false, error:`Cannot revise a "${q.status}" quotation.`};
+  const rev = { ...q, id:'QTN-'+String(DB.quotations.length+1).padStart(4,'0'), revision:q.revision+1, previousRevisionId:q.id,
+    quotationNo:q.quotationNo, status:'Draft', createdBy:actor.id, createdAt:nowIso(), approvedBy:null, approvedAt:null, ...changes };
+  DB.quotations.push(rev);
+  q.status='Superseded'; save();
+  logAudit({type:'QuotationRevised', quotationId:id, newRevisionId:rev.id, revision:rev.revision, reason:reason||'', userId:actor.id, role:actor.role});
+  return {ok:true, quotation:rev, superseded:q.id};
+}
+function recordAcceptance({quotationId, status, acceptedBy, evidenceRef, notes, actor}){
+  const q = DB.quotations.find(x=>x.id===quotationId);
+  if(!q) return {ok:false, error:'Quotation not found.'};
+  if(!['Approved','Sent'].includes(q.status)) return {ok:false, error:`Cannot record acceptance — quotation is "${q.status}", must be Approved/Sent first.`};
+  const acc = { id:'ACC-'+String(DB.acceptances.length+1).padStart(4,'0'), quotationId, status: status||'Pending',
+    acceptedBy: acceptedBy||null, acceptedDate: status==='Accepted' ? new Date().toISOString().slice(0,10) : null,
+    evidenceRef: evidenceRef||null, notes:notes||'', evidenceMethod: 'MANUAL_RECORD — E-SIGNATURE INTEGRATION PENDING',
+    userId:actor.id, at:nowIso() };
+  DB.acceptances.push(acc);
+  if(status==='Accepted') q.status='Accepted';
+  save();
+  logAudit({type:'AcceptanceRecorded', quotationId, status:acc.status, userId:actor.id, role:actor.role});
+  return {ok:true, acceptance:acc};
+}
+
+// DEFECT FOUND & FIXED (Phase 20 §2 gap-discovery audit): this function accepted its own
+// `gstNumber` parameter/field, independent of the `gstin` field Phase 19 added to the SAME
+// Customer entity for the SAME real-world concept (a customer's GST registration number). In
+// practice `gstNumber` was never actually populated by the one real internal caller
+// (`wonTransition`), so no live data was lost — but the duplicate field was a genuine data-model
+// risk for the real accounts team (two differently-named, differently-defaulted fields for one
+// concept, only one of which the Phase 19 UI/audit trail actually knows about). Consolidated onto
+// `gstin` — the field with the working setter, audit trail (`CustomerGSTINChanged`), and
+// normalization (uppercase-trim) already built and tested in Phase 19.
+function findOrCreateCustomer({name, contact, billingAddress, siteAddress, gstin, paymentTerms, salesOwnerId, leadId, quotationId, actor}){
+  const existing = DB.customers.find(c=>c.name && name && c.name.trim().toLowerCase()===name.trim().toLowerCase());
+  if(existing){
+    logAudit({type:'CustomerLinked', customerId:existing.id, leadId, quotationId, userId:actor.id, role:actor.role, note:'Matched by name — simple heuristic, not a full dedup engine'});
+    return {ok:true, customer:existing, created:false};
+  }
+  const cust = { id:'CUST-'+String(DB.customers.length+1).padStart(3,'0'), name, contact:contact||'', billingAddress:billingAddress||'', siteAddress:siteAddress||'',
+    gstin: gstin ? String(gstin).trim().toUpperCase() : null, paymentTerms:paymentTerms||'', active:true, salesOwnerId:salesOwnerId||actor.id,
+    createdFromLeadId:leadId||null, createdFromQuotationId:quotationId||null, createdAt:nowIso(), createdBy:actor.id };
+  DB.customers.push(cust); save();
+  logAudit({type:'CustomerCreated', customerId:cust.id, leadId, quotationId, userId:actor.id, role:actor.role});
+  return {ok:true, customer:cust, created:true};
+}
+
+function freezeStandardCostBaseline({projectId, costingVersionId, approvedRevenue, reason, actor}){
+  const costing = DB.costingVersions.find(c=>c.id===costingVersionId);
+  if(!costing) return {ok:false, error:'Costing version not found.'};
+  const prior = DB.standardCostBaselines.filter(b=>b.projectId===projectId);
+  const baseline = { id:'BASE-'+String(DB.standardCostBaselines.length+1).padStart(4,'0'), projectId, version:prior.length+1, costingVersionId,
+    materialCost:costing.materialCost, labourCost:costing.labourCost, transportCost:costing.transportCost, installationCost:costing.installationCost, otherCost:costing.otherCost,
+    totalStandardCost: costing.materialCost+costing.labourCost+costing.transportCost+costing.installationCost+costing.otherCost,
+    approvedRevenue: +approvedRevenue||0, expectedMargin: (+approvedRevenue||0) - (costing.materialCost+costing.labourCost+costing.transportCost+costing.installationCost+costing.otherCost),
+    reason: reason || (prior.length===0?'Initial baseline at project creation':'Re-baseline'), createdBy:actor.id, createdAt:nowIso() };
+  DB.standardCostBaselines.push(baseline); save();
+  logAudit({type:'BaselineCreated', baselineId:baseline.id, projectId, version:baseline.version, userId:actor.id, role:actor.role});
+  return {ok:true, baseline};
+}
+
+// Won transition — validated SERVER-SIDE, not by any UI button state (§16).
+function wonTransition({quotationId, projectManagerId, startDate, expectedCompletion, actor}){
+  const q = DB.quotations.find(x=>x.id===quotationId);
+  if(!q) return {ok:false, error:'Quotation not found.'};
+  // Idempotency guard against the exact race §39 warns about (two users hitting Won
+  // simultaneously must not create two projects/customers). Checked and set synchronously,
+  // with no I/O in between, so Node's single-threaded event loop cannot interleave two
+  // concurrent calls between the check and the set — same pattern as the Phase 6A clearing guard.
+  if(q.wonProjectId) return {ok:false, error:`This quotation was already marked Won — project ${q.wonProjectId} already exists.`};
+  if(q.status!=='Accepted') return {ok:false, error:`Cannot mark Won — quotation status is "${q.status}", must be Accepted first.`};
+  const acceptance = DB.acceptances.filter(a=>a.quotationId===quotationId).slice(-1)[0];
+  if(!acceptance || acceptance.status!=='Accepted') return {ok:false, error:'No valid acceptance record found for this quotation.'};
+  if(!q.approvedBy) return {ok:false, error:'Quotation was never through commercial/discount approval.'};
+
+  let customer;
+  if(q.customerId){ customer = DB.customers.find(c=>c.id===q.customerId); }
+  if(!customer){
+    const lead = DB.leads.find(l=>l.id===q.leadId);
+    const r = findOrCreateCustomer({name: q.prospectName || lead?.name || ('Customer for '+q.quotationNo), contact: lead?.contact, salesOwnerId: lead?.salesOwnerId, leadId:q.leadId, quotationId:q.id, actor});
+    if(!r.ok) return r;
+    customer = r.customer;
+  }
+  const project = { id:'PRJ-'+String(DB.projects.length+1).padStart(3,'0'), name:`${customer.name} — ${q.quotationNo}`,
+    budget: q.finalPrice, customerId:customer.id, leadId:q.leadId, quotationId:q.id, estimationRequestId:q.estimationRequestId,
+    salesOwnerId: DB.leads.find(l=>l.id===q.leadId)?.salesOwnerId || null, projectManagerId: projectManagerId||null,
+    site: DB.estimationRequests.find(e=>e.id===q.estimationRequestId)?.site || '', startDate: startDate||null, expectedCompletion: expectedCompletion||null,
+    status:'PLANNED', approvedRevenue:q.finalPrice, advanceRequiredAmount:null, createdBy:actor.id, createdAt:nowIso() };
+  DB.projects.push(project);
+  q.wonProjectId = project.id; // set immediately, synchronously — closes the race window
+  if(q.leadId) changeLeadStatus({leadId:q.leadId, newStatus:'WON', actor});
+  save();
+  const baseline = freezeStandardCostBaseline({projectId:project.id, costingVersionId:q.costingVersionId, approvedRevenue:q.finalPrice, reason:'Initial baseline at project creation', actor});
+  logAudit({type:'Won', quotationId, projectId:project.id, customerId:customer.id, userId:actor.id, role:actor.role});
+  return {ok:true, project, customer, baseline: baseline.baseline};
+}
+
+function setProjectAdvanceRequirement({projectId, amount, actor}){
+  const p = DB.projects.find(x=>x.id===projectId);
+  if(!p) return {ok:false, error:'Project not found.'};
+  p.advanceRequiredAmount = +amount>0 ? +amount : null; save();
+  logAudit({type:'AdvanceRequirementSet', projectId, amount:p.advanceRequiredAmount, userId:actor.id, role:actor.role});
+  return {ok:true, project:p};
+}
+// Reuses the EXISTING Phase 5 draft lifecycle — Bank Dr / Customer Advance Liability Cr — not a
+// new posting mechanism. Never recognized as revenue (§22).
+function draftCustomerAdvance({customerId, projectId, amount, date, narration, createdByUserId, createdByRole}){
+  const amt = +amount||0;
+  if(!customerId || !projectId || amt<=0) return {ok:false, error:'Customer, project and a positive amount are required.'};
+  const inactiveErr = assertCustomerSelectable(customerId); if(inactiveErr) return {ok:false, error:inactiveErr};
+  const lines = [ {account:'1000', debit:amt, credit:0, customerId, projectId}, {account:'2100', debit:0, credit:amt, customerId, projectId} ];
+  return createDraft({date, narration:narration||'Customer Advance', docTypeCode:'RCPT', sourceType:'Customer Advance', docCategory:'CustomerAdvance', party:customerId, lines, createdByUserId, createdByRole});
+}
+function projectFinancialReadiness(projectId){
+  const p = DB.projects.find(x=>x.id===projectId);
+  if(!p) return null;
+  // Phase 16 §13 — netted credit-debit (same reversal-visibility fix class as §13's other cases):
+  // a reversed Customer Advance would otherwise still count toward Financial Readiness forever.
+  const advanceReceived = DB.journalEntries.filter(je=>je.docCategory==='CustomerAdvance' && je.lines.some(l=>l.projectId===projectId))
+    .flatMap(je=>je.lines).filter(l=>l.projectId===projectId && l.account==='2100').reduce((s,l)=>s+l.credit-l.debit,0);
+  return { projectId, advanceRequiredAmount:p.advanceRequiredAmount, advanceReceived,
+    financiallyReady: p.advanceRequiredAmount!=null && advanceReceived >= p.advanceRequiredAmount - 0.01,
+    status: p.advanceRequiredAmount==null ? 'BUSINESS THRESHOLD PENDING — no advance requirement set for this project yet' : (advanceReceived>=p.advanceRequiredAmount-0.01?'Financially Ready':'Advance Pending') };
+}
+
+function submitDesign({projectId, version, actor}){
+  const p = DB.projects.find(x=>x.id===projectId);
+  if(!p) return {ok:false, error:'Project not found.'};
+  const prior = DB.designs.filter(d=>d.projectId===projectId);
+  const d = { id:'DSN-'+String(DB.designs.length+1).padStart(4,'0'), projectId, version: version||(prior.length+1),
+    submittedBy:actor.id, submittedDate:nowIso(), reviewerId:null, status:'Submitted', approvedDate:null, remarks:null };
+  DB.designs.push(d); save();
+  logAudit({type:'DesignSubmitted', designId:d.id, projectId, version:d.version, userId:actor.id, role:actor.role});
+  return {ok:true, design:d};
+}
+function reviewDesign({designId, status, remarks, actor}){
+  const d = DB.designs.find(x=>x.id===designId);
+  if(!d) return {ok:false, error:'Design not found.'};
+  if(!DESIGN_STATUSES.includes(status)) return {ok:false, error:`Invalid status "${status}".`};
+  if(d.status==='Approved') return {ok:false, error:'This design version is already Approved and cannot be silently overwritten — submit a new version instead.'};
+  d.status=status; d.reviewerId=actor.id; d.remarks=remarks||''; if(status==='Approved') d.approvedDate=nowIso();
+  save();
+  logAudit({type:'DesignReviewed', designId, projectId:d.projectId, newState:status, userId:actor.id, role:actor.role});
+  return {ok:true, design:d};
+}
+
+function createChangeRequest({projectId, description, costImpact, revenueImpact, scheduleImpactDays, actor}){
+  const p = DB.projects.find(x=>x.id===projectId);
+  if(!p) return {ok:false, error:'Project not found.'};
+  const cr = { id:'CR-'+String(DB.changeRequests.length+1).padStart(4,'0'), projectId, description:description||'',
+    costImpact:+costImpact||0, revenueImpact:+revenueImpact||0, scheduleImpactDays:+scheduleImpactDays||0,
+    status:'Draft', createdBy:actor.id, createdAt:nowIso() };
+  DB.changeRequests.push(cr); save();
+  logAudit({type:'ChangeRequestCreated', changeRequestId:cr.id, projectId, userId:actor.id, role:actor.role});
+  return {ok:true, changeRequest:cr};
+}
+function approveChangeRequest({id, actor}){
+  const cr = DB.changeRequests.find(x=>x.id===id);
+  if(!cr) return {ok:false, error:'Change request not found.'};
+  if(cr.status!=='Draft') return {ok:false, error:`Cannot approve — already "${cr.status}".`};
+  cr.status='Approved'; save();
+  logAudit({type:'ChangeRequestApproved', changeRequestId:id, projectId:cr.projectId, userId:actor.id, role:actor.role});
+  // Deliberately does NOT auto-create a new baseline/re-price anything — §25: "do not implement
+  // full variation billing... but the data model must not prevent it later." A FinanceManager/
+  // CEO can call freezeStandardCostBaseline() again manually if a re-baseline is warranted.
+  return {ok:true, changeRequest:cr};
+}
+
+// ============================================================
+// Phase 7 — Procurement → Inventory → Supplier Bill → AP → Payment → Manufacturing Cost
+// ============================================================
+// Valuation policy decision, made explicit rather than invented (§19 allows this): inventory
+// is valued at MOVING AVERAGE (recomputed from real receipt history each time), fully
+// implemented — not just "architecture supports it." `material.standardCost` remains a
+// reference field for estimation/costing purposes (Phase 6B) only; it does NOT drive actual
+// inventory valuation. Standard-Cost-with-variance (price-variance postings) was NOT built —
+// disclosed as a real simplification, not hidden.
+//
+// GL account flow (uses ONLY the existing postJournalEntry — no second accounting engine):
+//   GRN:              Dr Inventory (1200)         / Cr GR/IR Clearing (2050)   — at PO rate × qty accepted
+//   Supplier Invoice:  Dr GR/IR Clearing (2050) [+ Dr Input Tax 1300] / Cr AP (2000) — clears GR/IR when matched
+//   Material Issue:    Dr Project Material Cost (5000) / Cr Inventory (1200)   — at moving-average rate
+// This is the concrete implementation of §21/§31/§32's repeated "purchased cost ≠ inventory
+// value ≠ project actual consumption" requirement.
+
+function createMaterialRequirement({projectId, materialId, qty, uom, requiredDate, priority, reason, actor}){
+  if(!projectId || !materialId || !(+qty>0)) return {ok:false, error:'Project, material and a positive quantity are required.'};
+  const req = { id:'MRQ-'+String(DB.materialRequirements.length+1).padStart(4,'0'), projectId, materialId, qty:+qty, uom:uom||'',
+    requiredDate:requiredDate||null, priority:priority||'Normal', reason:reason||'', status:'DRAFT', createdBy:actor.id, createdAt:nowIso() };
+  DB.materialRequirements.push(req); save();
+  logAudit({type:'MaterialRequirementCreated', requirementId:req.id, projectId, userId:actor.id, role:actor.role});
+  return {ok:true, requirement:req};
+}
+function submitMaterialRequirement({id, actor}){
+  const r = DB.materialRequirements.find(x=>x.id===id);
+  if(!r) return {ok:false, error:'Requirement not found.'};
+  if(r.status!=='DRAFT') return {ok:false, error:`Cannot submit — "${r.status}", not DRAFT.`};
+  r.status='SUBMITTED'; save();
+  return {ok:true, requirement:r};
+}
+function approveMaterialRequirement({id, actor}){
+  const r = DB.materialRequirements.find(x=>x.id===id);
+  if(!r) return {ok:false, error:'Requirement not found.'};
+  if(r.status!=='SUBMITTED') return {ok:false, error:`Cannot approve — "${r.status}", not SUBMITTED.`};
+  if(r.createdBy===actor.id && !['CEO','Admin'].includes(actor.role)) return {ok:false, error:'Segregation of duties: creator cannot approve.'};
+  r.status='APPROVED'; save();
+  logAudit({type:'MaterialRequirementApproved', requirementId:id, userId:actor.id, role:actor.role});
+  return {ok:true, requirement:r};
+}
+
+function createMaterialRequest({projectId, requirementIds, lines, actor}){
+  if(!projectId || !Array.isArray(lines) || !lines.length) return {ok:false, error:'Project and at least one line are required.'};
+  const mr = { id:'MR-'+String(DB.materialRequests.length+1).padStart(4,'0'), reqNo:nextDocNumber('MR'), projectId,
+    requirementIds:requirementIds||[], lines, status:'DRAFT', createdBy:actor.id, createdAt:nowIso() };
+  DB.materialRequests.push(mr);
+  (requirementIds||[]).forEach(rid=>{ const r=DB.materialRequirements.find(x=>x.id===rid); if(r && r.status==='APPROVED') r.status='PARTIALLY_PROCESSED'; });
+  save();
+  logAudit({type:'MaterialRequestCreated', materialRequestId:mr.id, projectId, userId:actor.id, role:actor.role});
+  return {ok:true, materialRequest:mr};
+}
+function submitMaterialRequest({id, actor}){
+  const mr = DB.materialRequests.find(x=>x.id===id);
+  if(!mr) return {ok:false, error:'Material Request not found.'};
+  if(mr.status!=='DRAFT') return {ok:false, error:`Cannot submit — "${mr.status}", not DRAFT.`};
+  mr.status='SUBMITTED'; save();
+  return {ok:true, materialRequest:mr};
+}
+function approveMaterialRequest({id, actor}){
+  const mr = DB.materialRequests.find(x=>x.id===id);
+  if(!mr) return {ok:false, error:'Material Request not found.'};
+  if(mr.status!=='SUBMITTED') return {ok:false, error:`Cannot approve — "${mr.status}", not SUBMITTED.`};
+  if(mr.createdBy===actor.id && !['CEO','Admin'].includes(actor.role)) return {ok:false, error:'Segregation of duties: creator cannot approve.'};
+  mr.status='APPROVED'; save();
+  logAudit({type:'MaterialRequestApproved', materialRequestId:id, userId:actor.id, role:actor.role});
+  return {ok:true, materialRequest:mr};
+}
+function rejectMaterialRequest({id, reason, actor}){
+  const mr = DB.materialRequests.find(x=>x.id===id);
+  if(!mr) return {ok:false, error:'Material Request not found.'};
+  if(mr.status!=='SUBMITTED') return {ok:false, error:`Cannot reject — "${mr.status}", not SUBMITTED.`};
+  mr.status='REJECTED'; mr.rejectReason=reason||''; save();
+  return {ok:true, materialRequest:mr};
+}
+
+function createRFQ({projectId, materialRequestId, supplierIds, lines, requiredDate, terms, responseDeadline, actor}){
+  const mr = DB.materialRequests.find(x=>x.id===materialRequestId);
+  if(!mr || mr.status!=='APPROVED') return {ok:false, error:'Source Material Request must exist and be APPROVED before an RFQ can be issued.'};
+  const rfq = { id:'RFQ-'+String(DB.rfqs.length+1).padStart(4,'0'), rfqNo:nextDocNumber('RFQ'), projectId, materialRequestId,
+    supplierIds:supplierIds||[], lines:lines||mr.lines, requiredDate:requiredDate||null, terms:terms||'', responseDeadline:responseDeadline||null,
+    status:'Issued', createdBy:actor.id, createdAt:nowIso() };
+  DB.rfqs.push(rfq);
+  mr.status='CONVERTED'; save();
+  logAudit({type:'RFQIssued', rfqId:rfq.id, supplierCount:(supplierIds||[]).length, userId:actor.id, role:actor.role});
+  return {ok:true, rfq};
+}
+
+function recordSupplierQuotation({rfqId, supplierId, lines, leadTime, validity, paymentTerms, actor}){
+  const rfq = DB.rfqs.find(x=>x.id===rfqId);
+  if(!rfq) return {ok:false, error:'RFQ not found.'};
+  const priorVersions = DB.supplierQuotations.filter(q=>q.rfqId===rfqId && q.supplierId===supplierId);
+  const total = (lines||[]).reduce((s,l)=>s+(+l.qty||0)*(+l.rate||0), 0);
+  const sq = { id:'SQ-'+String(DB.supplierQuotations.length+1).padStart(4,'0'), rfqId, supplierId, version:priorVersions.length+1,
+    lines:lines||[], total, leadTime:leadTime||'', validity:validity||'', paymentTerms:paymentTerms||'', createdAt:nowIso(), createdBy:actor.id };
+  DB.supplierQuotations.push(sq); save(); // never overwrites a prior version — always a new record
+  logAudit({type:'SupplierQuotationRecorded', supplierQuotationId:sq.id, rfqId, supplierId, version:sq.version, userId:actor.id, role:actor.role});
+  return {ok:true, supplierQuotation:sq};
+}
+
+function createSupplierComparison({rfqId, recommendedSupplierId, reason, actor}){
+  const rfq = DB.rfqs.find(x=>x.id===rfqId);
+  if(!rfq) return {ok:false, error:'RFQ not found.'};
+  const quotesLatestPerSupplier = {};
+  DB.supplierQuotations.filter(q=>q.rfqId===rfqId).forEach(q=>{ if(!quotesLatestPerSupplier[q.supplierId] || q.version>quotesLatestPerSupplier[q.supplierId].version) quotesLatestPerSupplier[q.supplierId]=q; });
+  const rows = Object.values(quotesLatestPerSupplier).map(q=>({supplierId:q.supplierId, supplierQuotationId:q.id, total:q.total, leadTime:q.leadTime, paymentTerms:q.paymentTerms}));
+  if(rows.length<2) return {ok:false, error:'At least 2 supplier quotations are required for a comparison (do not auto-select without a real comparison).'};
+  const comp = { id:'CMP-'+String(DB.supplierComparisons.length+1).padStart(4,'0'), rfqId, rows,
+    recommendedSupplierId:recommendedSupplierId||null, reason:reason||'', status:'PendingApproval', approvedBy:null, createdBy:actor.id, createdAt:nowIso() };
+  DB.supplierComparisons.push(comp); save();
+  logAudit({type:'SupplierComparisonCreated', comparisonId:comp.id, rfqId, recommendedSupplierId, userId:actor.id, role:actor.role});
+  return {ok:true, comparison:comp};
+}
+function approveSupplierComparison({id, actor}){
+  const c = DB.supplierComparisons.find(x=>x.id===id);
+  if(!c) return {ok:false, error:'Comparison not found.'};
+  if(c.status!=='PendingApproval') return {ok:false, error:`Cannot approve — "${c.status}".`};
+  if(c.createdBy===actor.id && !['CEO','Admin'].includes(actor.role)) return {ok:false, error:'Segregation of duties: creator cannot approve their own recommendation.'};
+  c.status='Approved'; c.approvedBy=actor.id; save();
+  logAudit({type:'SupplierComparisonApproved', comparisonId:id, userId:actor.id, role:actor.role});
+  return {ok:true, comparison:c};
+}
+
+function requiredPOApprovalRole(amount){
+  const rules = [...DB.poApprovalRules].sort((a,b)=>(a.upToAmount??Infinity)-(b.upToAmount??Infinity));
+  for(const r of rules){ if(r.upToAmount===null || amount<=r.upToAmount) return r.requiredRole; }
+  return 'CEO';
+}
+function createPurchaseOrder({projectId, materialRequestId, rfqId, supplierComparisonId, purchaseRequisitionId, vendorId, lines, deliveryLocation, expectedDate, paymentTerms, terms, actor}){
+  if(!projectId || !vendorId || !Array.isArray(lines) || !lines.length) return {ok:false, error:'Project, vendor and at least one line are required.'};
+  const vendorInactiveErr = assertVendorSelectable(vendorId); if(vendorInactiveErr) return {ok:false, error:vendorInactiveErr};
+  for(const l of lines){ if(l.materialId){ const err = assertMaterialSelectable(l.materialId); if(err) return {ok:false, error:err}; } }
+  const total = lines.reduce((s,l)=>s+(+l.qty||0)*(+l.rate||0), 0);
+  // Phase 33 SOP §1/§7 — Purchase Requisition gate. Configurable, DEFAULTS OFF
+  // (DB.purchaseApprovalConfig.requirePRForPO) — every existing PO-creation call site/test is
+  // completely unaffected until Appletree Finance formally adopts this as a live control (flipping
+  // a business process, not just a code deploy). When ON: every PO needs either an APPROVED,
+  // not-yet-converted PR reference, or qualifies for the SOP's own defined site-petty exception
+  // (total within the configured daily limit). See PHASE33_SOP_GAP_REGISTER.md #1.
+  let pr = null;
+  if(DB.purchaseApprovalConfig && DB.purchaseApprovalConfig.requirePRForPO){
+    const sitePettyLimit = DB.purchaseApprovalConfig.sitePettyDailyLimit || 5000;
+    const qualifiesForSitePettyException = total <= sitePettyLimit;
+    if(purchaseRequisitionId){
+      pr = DB.purchaseRequisitions.find(x=>x.id===purchaseRequisitionId);
+      if(!pr) return {ok:false, error:'Purchase Requisition not found.'};
+      if(pr.status!=='Approved') return {ok:false, error:`Cannot raise a PO against PR "${purchaseRequisitionId}" — status is "${pr.status}", not Approved.`};
+    } else if(!qualifiesForSitePettyException){
+      return {ok:false, error:`No Purchase Order without an approved Purchase Requisition reference (SOP §7), except the site-petty exception (≤ ₹${sitePettyLimit.toLocaleString('en-IN')}). This PO's ₹${total.toLocaleString('en-IN')} total exceeds that — supply an approved purchaseRequisitionId.`};
+    }
+  }
+  const po = { id:'PO-'+String(DB.purchaseOrders.length+1).padStart(4,'0'), poNo:null, projectId, materialRequestId:materialRequestId||null,
+    rfqId:rfqId||null, supplierComparisonId:supplierComparisonId||null, purchaseRequisitionId:purchaseRequisitionId||null, vendorId, lines, total,
+    deliveryLocation:deliveryLocation||'', expectedDate:expectedDate||null, paymentTerms:paymentTerms||'', terms:terms||'',
+    status:'Draft', createdBy:actor.id, createdAt:nowIso(), approvedBy:null, approvedAt:null,
+    qtyReceivedByLine:{}, qtyInvoicedByLine:{} };
+  DB.purchaseOrders.push(po); save();
+  if(pr){ pr.status='Converted'; pr.convertedToPoId=po.id; save(); }
+  logAudit({type:'PurchaseOrderCreated', poId:po.id, projectId, vendorId, total, purchaseRequisitionId:purchaseRequisitionId||null, userId:actor.id, role:actor.role});
+  return {ok:true, po};
+}
+function submitPurchaseOrder({id, actor}){
+  const po = DB.purchaseOrders.find(x=>x.id===id);
+  if(!po) return {ok:false, error:'PO not found.'};
+  if(po.status!=='Draft') return {ok:false, error:`Cannot submit — "${po.status}", not Draft.`};
+  const reqRole = requiredPOApprovalRole(po.total);
+  po.status = reqRole ? 'Submitted' : 'Approved';
+  if(!reqRole){ po.poNo = nextDocNumber('PO'); po.approvedBy='(auto — within no-approval threshold)'; po.approvedAt=nowIso(); createCommitmentFromPO(po); }
+  save();
+  logAudit({type:'PurchaseOrderSubmitted', poId:id, total:po.total, requiredApprovalRole:reqRole, userId:actor.id, role:actor.role});
+  return {ok:true, po};
+}
+function approvePurchaseOrder({id, actor}){
+  const po = DB.purchaseOrders.find(x=>x.id===id);
+  if(!po) return {ok:false, error:'PO not found.'};
+  if(po.status!=='Submitted') return {ok:false, error:`Cannot approve — "${po.status}", not Submitted.`};
+  const reqRole = requiredPOApprovalRole(po.total);
+  if(reqRole && actor.role!==reqRole && actor.role!=='Admin') return {ok:false, error:`This PO's ₹${po.total.toLocaleString('en-IN')} value requires approval by "${reqRole}" (per BOS §1.6 policy) — "${actor.role}" is not authorized.`};
+  if(po.createdBy===actor.id && !['CEO','Admin'].includes(actor.role)) return {ok:false, error:'Segregation of duties: PO creator cannot also be PO approver.'};
+  po.status='Approved'; po.approvedBy=actor.id; po.approvedAt=nowIso(); po.poNo = nextDocNumber('PO'); save();
+  createCommitmentFromPO(po);
+  logAudit({type:'PurchaseOrderApproved', poId:id, userId:actor.id, role:actor.role});
+  return {ok:true, po};
+}
+function rejectPurchaseOrder({id, reason, actor}){
+  const po = DB.purchaseOrders.find(x=>x.id===id);
+  if(!po) return {ok:false, error:'PO not found.'};
+  if(po.status!=='Submitted') return {ok:false, error:`Cannot reject — "${po.status}".`};
+  po.status='Cancelled'; po.rejectReason=reason||''; save();
+  return {ok:true, po};
+}
+// Phase 24 Part C — a real "cancel an ALREADY-APPROVED PO" capability, built specifically because
+// the Commitment lifecycle's own required test (§C7) needs it: a commitment created at approval
+// must have a real way to be released. rejectPurchaseOrder() above only ever applied to
+// 'Submitted' (pre-approval, no commitment exists yet) — this is a distinct, narrower capability,
+// not a general PO-editing feature. PO AMENDMENT (§C8, changing amounts on an approved PO) is
+// deliberately NOT built here — it is a materially different, larger capability with no existing
+// precedent in this codebase, and the brief explicitly says to document that as a gap rather than
+// build unrelated functionality.
+function cancelApprovedPurchaseOrder({id, reason, actor}){
+  const po = DB.purchaseOrders.find(x=>x.id===id);
+  if(!po) return {ok:false, error:'PO not found.'};
+  if(!['Approved','PartiallyReceived'].includes(po.status)) return {ok:false, error:`Cannot cancel — "${po.status}" (only an Approved or PartiallyReceived PO can be cancelled here).`};
+  if(!reason || !String(reason).trim()) return {ok:false, error:'A reason is required to cancel an approved PO.'};
+  po.status='Cancelled'; po.cancelReason=reason; po.cancelledBy=actor.id; po.cancelledAt=nowIso(); save();
+  const release = releaseCommitment(po.id, reason, actor);
+  logAudit({type:'PurchaseOrderCancelled', poId:id, reason, releasedCommitment: release.ok?release.releasedAmount:0, userId:actor.id, role:actor.role});
+  return {ok:true, po, commitmentReleased: release.ok?release.releasedAmount:0};
+}
+// ============================================================
+// Phase 24 Part C — Operational Commitment Engine. Deliberately NOT accounting postings: a
+// commitment never calls postJournalEntry() and never touches DB.journalEntries — it is a
+// separate, project-linked, auditable OPERATIONAL model that tracks "how much of an approved PO
+// has not yet become a real cost," exactly the distinction the brief itself draws (Part N):
+// financial events -> the one central engine; operational commitments -> this model. The GL
+// (actual cost) is unaffected by anything in this section — it only ever grows via the EXISTING
+// GRN-driven postJournalEntry() call in createGRN(), unchanged.
+// ============================================================
+function createCommitmentFromPO(po){
+  const c = { id:'COMMIT-'+String(DB.commitments.length+1).padStart(4,'0'), poId:po.id, projectId:po.projectId||null, vendorId:po.vendorId,
+    originalAmount:r2(po.total), consumedAmount:0, remainingAmount:r2(po.total), status:'Open',
+    sourceDocument:po.poNo||po.id, createdAt:nowIso(), lastUpdated:nowIso() };
+  DB.commitments.push(c); save();
+  logAudit({type:'CommitmentCreated', commitmentId:c.id, poId:po.id, projectId:po.projectId, amount:c.originalAmount});
+  return c;
+}
+function findOpenCommitmentForPO(poId){ return DB.commitments.find(c=>c.poId===poId && c.status==='Open'); }
+function reduceCommitment(poId, consumedDelta, reason){
+  const c = findOpenCommitmentForPO(poId);
+  if(!c) return null;
+  c.consumedAmount = r2(c.consumedAmount + consumedDelta);
+  c.remainingAmount = r2(Math.max(0, c.originalAmount - c.consumedAmount));
+  if(c.remainingAmount <= 0.01) c.status = 'FullyConsumed';
+  c.lastUpdated = nowIso();
+  save();
+  logAudit({type:'CommitmentReduced', commitmentId:c.id, poId, consumedDelta:r2(consumedDelta), remainingAmount:c.remainingAmount, reason:reason||''});
+  return c;
+}
+function releaseCommitment(poId, reason, actor){
+  const c = findOpenCommitmentForPO(poId);
+  if(!c) return {ok:false, error:'No open commitment found for this PO.'};
+  const released = c.remainingAmount;
+  c.remainingAmount = 0; c.status = 'Released'; c.releaseReason = reason||''; c.lastUpdated = nowIso();
+  save();
+  logAudit({type:'CommitmentReleased', commitmentId:c.id, poId, releasedAmount:released, reason:reason||'', userId:actor.id, role:actor.role});
+  return {ok:true, commitment:c, releasedAmount:released};
+}
+function projectCommitments(projectId){
+  const list = projectId ? DB.commitments.filter(c=>c.projectId===projectId) : DB.commitments;
+  return { commitments:list,
+    totalOriginal: r2(list.reduce((s,c)=>s+c.originalAmount,0)),
+    totalConsumed: r2(list.reduce((s,c)=>s+c.consumedAmount,0)),
+    totalRemaining: r2(list.filter(c=>c.status!=='Released').reduce((s,c)=>s+c.remainingAmount,0)) };
+}
+
+// ---------- Inventory ledger (real movement records — never just a "current stock" number) ----------
+function postInventoryMovement({type, materialId, qty, uom, warehouseId, projectId, sourceType, sourceId, valuationRate, actor, locationId, siteId}){
+  // Phase 28 — locationId is a purely optional, additive dimension (bin/shelf within a warehouse).
+  // Every pre-existing caller omits it and behaves byte-for-byte as before; getStockLevel() only
+  // filters on it when a caller explicitly asks, so warehouse-level stock totals are unaffected.
+  // Phase 33 — siteId is the same idea for the Finance SOP's site-level material subledger: a
+  // purely additive dimension used ONLY by the new 'SiteReceipt'/'SiteConsumption' movement types
+  // (issueToSite()/createMaterialIssue({siteId})). getStockLevel()'s reduce() recognizes neither
+  // type and falls through its `return s` default, so a site movement never affects warehouse
+  // stock regardless of what warehouseId it carries — verified safe, not assumed.
+  const mv = { id:'MV-'+String(DB.inventoryMovements.length+1).padStart(6,'0'), type, materialId, qty:+qty, uom:uom||'',
+    warehouseId, locationId:locationId||null, siteId:siteId||null, projectId:projectId||null, sourceType, sourceId, date:new Date().toISOString().slice(0,10),
+    userId:actor.id, role:actor.role, valuationRate:+valuationRate||0, valuationAmount:Math.round((+qty)*(+valuationRate||0)*100)/100, at:nowIso() };
+  DB.inventoryMovements.push(mv); save();
+  return mv;
+}
+function getSiteStockLevel(materialId, siteId){
+  return DB.inventoryMovements.filter(m=>m.materialId===materialId && m.siteId===siteId)
+    .reduce((s,m)=>{ if(m.type==='SiteReceipt') return s+m.qty; if(m.type==='SiteConsumption'||m.type==='SiteReturn') return s-m.qty; return s; }, 0);
+}
+function getSiteMovingAverageRate(materialId, siteId){
+  const moves = DB.inventoryMovements.filter(m=>m.materialId===materialId && m.siteId===siteId);
+  let qty=0, val=0;
+  for(const m of moves){
+    if(m.type==='SiteReceipt'){ qty+=m.qty; val+=m.valuationAmount; }
+    else if(m.type==='SiteConsumption'||m.type==='SiteReturn'){ const rate=qty>0?val/qty:0; qty-=m.qty; val-=m.qty*rate; }
+  }
+  if(qty<=0.0001) return 0;
+  return val/qty;
+}
+function getStockLevel(materialId, warehouseId, locationId){
+  // Phase 28 — locationId is an OPTIONAL third filter; every existing call site passes only the
+  // first two args, so `locationId` is undefined and this behaves exactly as before.
+  return DB.inventoryMovements.filter(m=>m.materialId===materialId && (!warehouseId || m.warehouseId===warehouseId) && (!locationId || m.locationId===locationId))
+    .reduce((s,m)=>{
+      if(m.type==='Receipt' || m.type==='TransferIn') return s+m.qty;
+      if(m.type==='Issue' || m.type==='TransferOut' || m.type==='Return') return s-m.qty;
+      if(m.type==='Adjustment') return s+m.qty; // qty can be negative for a downward adjustment
+      return s;
+    }, 0);
+}
+// DEFECT FOUND & FIXED (Phase 16 §13 Reconciliation Gate): the original formula averaged
+// "total value received all-time / total quantity received all-time," which conflates receipts
+// with the portion of them already consumed — it never nets out issues. This meant "current
+// inventory value" (stock × this rate) silently drifted from the ACTUAL GL Inventory (1200)
+// balance the instant an issue happened BETWEEN two receipts at different prices (proven with a
+// minimal repro: receive 100@₹100, issue 50, receive 100@₹200 → old formula reported ₹150/unit
+// ×150 units = ₹22,500, but the real GL balance was ₹25,000 — a genuine ₹2,500 miss in that one
+// case, ₹38,495.99 across the Phase 16 volume dataset). This is not a policy question — Moving
+// Average remains the approved valuation METHOD (POL-02); this only makes the existing formula
+// actually compute a correct moving average of what's currently on hand, by replaying every
+// movement (not just receipts) in the order they actually happened and maintaining a running
+// balance — issues/transfers-out/returns remove value at the average rate AS OF that point,
+// exactly like a real perpetual moving-average costing system.
+function getMovingAverageRate(materialId, warehouseId){
+  const moves = DB.inventoryMovements.filter(m=>m.materialId===materialId && m.warehouseId===warehouseId);
+  let qty = 0, val = 0;
+  for(const m of moves){
+    if(m.type==='Receipt' || m.type==='TransferIn'){ qty += m.qty; val += m.valuationAmount; }
+    else if(m.type==='Issue' || m.type==='TransferOut' || m.type==='Return'){
+      const rate = qty>0 ? val/qty : 0;
+      qty -= m.qty; val -= m.qty*rate;
+    } else if(m.type==='Adjustment'){
+      if(m.qty>0){ qty += m.qty; val += m.valuationAmount; }
+      else { const rate = qty>0 ? val/qty : 0; qty += m.qty; val += m.qty*rate; } // m.qty negative here
+    }
+  }
+  if(qty<=0.0001) return 0;
+  return val/qty;
+}
+
+function createGRN({poId, warehouseId, lines, receivedBy, actor, overrideReason}){
+  const po = DB.purchaseOrders.find(x=>x.id===poId);
+  if(!po) return {ok:false, error:'PO not found.'};
+  if(!['Approved','PartiallyReceived'].includes(po.status)) return {ok:false, error:`Cannot receive against a PO with status "${po.status}".`};
+  const errors = [];
+  (lines||[]).forEach((l,idx)=>{
+    const poLine = po.lines[idx];
+    if(!poLine) { errors.push(`Line ${idx}: no matching PO line.`); return; }
+    const alreadyReceived = po.qtyReceivedByLine[idx] || 0;
+    const tolerance = poLine.qty * (GRN_TOLERANCE_PCT/100);
+    if(alreadyReceived + (+l.qtyAccepted||0) > poLine.qty + tolerance + 0.001){
+      errors.push(`Line ${idx}: over-receipt — PO ordered ${poLine.qty}, already received ${alreadyReceived}, attempting ${l.qtyAccepted} (tolerance ${GRN_TOLERANCE_PCT}%, BUSINESS POLICY REQUIRED if this needs to change).`);
+    }
+  });
+  if(errors.length) return {ok:false, error:'GRN rejected: '+errors.join(' | ')};
+
+  // Phase 33 SOP §1/§8 — weighment/measurement variance gate. Purely additive optional per-line
+  // fields (weighmentQtyAtPurchase / weighmentQtyAtFactoryGate) — a line supplying neither behaves
+  // exactly as before this phase, which is every existing caller/test. When BOTH are supplied, a
+  // variance beyond the configured tolerance (DB.weighmentTolerancePct, SOP's own example: 1%)
+  // must be "investigated BEFORE payment release" — modeled as requiring an authorized
+  // overrideReason to accept the GRN at all, the same "block unless authorized" idiom already used
+  // by the BOM-quota and three-way-match checks elsewhere in this file, not a new one.
+  const weighmentIssues = [];
+  (lines||[]).forEach((l,idx)=>{
+    if(l.weighmentQtyAtPurchase!=null && l.weighmentQtyAtFactoryGate!=null){
+      const purchaseQty = +l.weighmentQtyAtPurchase, gateQty = +l.weighmentQtyAtFactoryGate;
+      if(purchaseQty>0){
+        const variancePct = Math.abs(purchaseQty-gateQty)/purchaseQty*100;
+        if(variancePct > (DB.weighmentTolerancePct!=null?DB.weighmentTolerancePct:1)) weighmentIssues.push({line:idx, purchaseQty, gateQty, variancePct:r2(variancePct)});
+      }
+    }
+  });
+  if(weighmentIssues.length && !overrideReason){
+    return {ok:false, error:`EXCEPTION — INVESTIGATION REQUIRED: weighment/measurement variance beyond tolerance (SOP §1/§8) on line(s) ${weighmentIssues.map(w=>w.line).join(', ')} — must be investigated BEFORE payment release. A FinanceManager/Purchase/CEO/Admin must record an authorized overrideReason to accept this GRN anyway.`, weighmentIssues};
+  }
+  if(weighmentIssues.length) logAudit({type:'GRNWeighmentVarianceOverridden', poId, weighmentIssues, overrideReason, userId:actor.id, role:actor.role});
+
+  const grn = { id:'GRN-'+String(DB.grns.length+1).padStart(4,'0'), grnNo:nextDocNumber('GRN'), poId, supplierId:po.vendorId, projectId:po.projectId, warehouseId,
+    lines: (lines||[]).map((l,idx)=>({...l, materialId:po.lines[idx]?.materialId, rate:po.lines[idx]?.rate})),
+    weighmentIssues,
+    receivedBy: receivedBy||actor.id, date:new Date().toISOString().slice(0,10), createdBy:actor.id, createdAt:nowIso(),
+    // Phase 27 — per-line "already invoiced" tracking, mirroring the PO's own qtyReceivedByLine/
+    // qtyInvoicedByLine pattern. Nothing wrote to a GRN-level equivalent before this phase because
+    // no PO-aware billing UI existed to need it — draftSupplierInvoiceFromPO() only ever validated
+    // an invoice against the GRN's raw accepted qty, never against what had already been billed
+    // against that same GRN line, so a second identical invoice against the same GRN passed the
+    // same three-way match the first one did. See draftSupplierInvoiceFromPO() below.
+    qtyInvoicedByLine:{} };
+  DB.grns.push(grn);
+
+  let totalAcceptedValue = 0;
+  grn.lines.forEach((l,idx)=>{
+    po.qtyReceivedByLine[idx] = (po.qtyReceivedByLine[idx]||0) + (+l.qtyAccepted||0);
+    if(+l.qtyAccepted>0){
+      // Phase 21 §7/§8 — UoM Conversion applied HERE, at the one point Purchase-UOM quantities
+      // enter inventory. Inventory itself (postInventoryMovement/getMovingAverageRate) is
+      // completely untouched — it still only ever sees a base-unit qty and a base-unit rate,
+      // exactly as before this phase. The accounting VALUE is mathematically preserved: PO qty
+      // (in Purchase UOM) x PO rate (Rs per Purchase UOM) === convertedQty (in Base UOM) x
+      // convertedRate (Rs per Base UOM), since convertedQty = qty*factor and convertedRate =
+      // rate/factor. A material with no configured conversion (factor 1, the default for every
+      // material created before this phase) behaves byte-for-byte as it always has.
+      const material = DB.materials.find(mt=>mt.id===l.materialId);
+      const factor = (material && material.purchaseConversionFactor) || 1;
+      const baseQty = r2((+l.qtyAccepted) * factor);
+      const baseRate = factor ? (+l.rate) / factor : (+l.rate);
+      const baseUom = (material && material.uom) || l.uom;
+      postInventoryMovement({type:'Receipt', materialId:l.materialId, qty:baseQty, uom:baseUom, warehouseId, projectId:po.projectId,
+        sourceType:'GRN', sourceId:grn.id, valuationRate:baseRate, actor, locationId:l.locationId||null});
+      totalAcceptedValue += (+l.qtyAccepted)*(+l.rate);
+    }
+  });
+  const fullyReceived = po.lines.every((pl,idx)=> (po.qtyReceivedByLine[idx]||0) >= pl.qty - 0.001);
+  po.status = fullyReceived ? 'FullyReceived' : 'PartiallyReceived';
+  save();
+
+  // GRN posting: Dr Inventory / Cr GR/IR Clearing — through the EXISTING engine, no new posting path.
+  let glResult = {ok:true};
+  if(totalAcceptedValue>0.01){
+    glResult = postJournalEntry({ date:grn.date, narration:`GRN ${grn.grnNo} against PO ${po.poNo}`, sourceType:'GRN', sourceId:grn.id,
+      voucherNo:grn.grnNo, party:po.vendorId, docCategory:'GRN', branchId:projectBranch(po.projectId),
+      lines:[ {account:'1200', debit:totalAcceptedValue, credit:0, vendorId:po.vendorId, projectId:po.projectId},
+        {account:'2050', debit:0, credit:totalAcceptedValue, vendorId:po.vendorId, projectId:po.projectId} ],
+      postedByUserId:actor.id, postedByRole:actor.role, overrideReason });
+  }
+  logAudit({type:'GRNCreated', grnId:grn.id, poId, totalAcceptedValue, userId:actor.id, role:actor.role});
+  // Phase 24 Part C4/C5/C6/C11 — Commitment is reduced by the VALUE actually received (at PO
+  // rate, the same basis the original commitment was created on), NEVER by touching the GL
+  // entry just posted above. This is the operational-commitment side effect, completely separate
+  // from the accounting side effect two lines above it — proving §C11's requirement directly:
+  // the ₹100,000 commitment does not become a ₹100,000 GL expense; only the ₹actually-received
+  // value ever reaches the GL, and the commitment separately shrinks by that same amount.
+  if(totalAcceptedValue>0.01) reduceCommitment(poId, totalAcceptedValue, `GRN ${grn.grnNo}`);
+  return {ok:true, grn, poStatus:po.status, glEntry: glResult.entry||null};
+}
+
+// ---------- Three-way match ----------
+function checkThreeWayMatch({poId, grnId, invoiceLines}){
+  const po = DB.purchaseOrders.find(x=>x.id===poId);
+  const grn = DB.grns.find(x=>x.id===grnId);
+  if(!po || !grn) return {matched:false, mismatches:['PO or GRN not found.']};
+  const mismatches = [];
+  invoiceLines.forEach((il,idx)=>{
+    const grnLine = grn.lines[idx];
+    const poLine = po.lines[idx];
+    if(!grnLine || !poLine){ mismatches.push(`Line ${idx}: no matching GRN/PO line.`); return; }
+    // Phase 27 — was `qty !== grnLine.qtyAccepted` (exact equality), which made PARTIAL billing
+    // impossible: any invoice for less than the full GRN qty was flagged as a "mismatch" requiring
+    // a FinanceManager/CEO/Admin exception, even though partial billing is completely legitimate
+    // (Part 11 of the Phase 27 brief). A genuine mismatch is invoicing MORE than the GRN ever
+    // accepted for this line; invoicing less (partial) is not a mismatch at all. Billing beyond
+    // what remains AFTER prior partial bills (i.e. duplicate/over-billing across multiple
+    // invoices against the same GRN) is a separate, non-overridable hard block already enforced
+    // by checkInvoiceableBalance() before this function is even reached — this function only
+    // judges whether THIS invoice's qty/rate look like a legitimate claim against the PO/GRN.
+    if((+il.qty) > (+grnLine.qtyAccepted) + 0.001) mismatches.push(`Line ${idx}: qty mismatch — invoice ${il.qty} exceeds GRN accepted ${grnLine.qtyAccepted}.`);
+    if(Math.abs((+il.rate) - (+poLine.rate)) > 0.01) mismatches.push(`Line ${idx}: rate mismatch — invoice ₹${il.rate} vs PO ₹${poLine.rate}.`);
+  });
+  return {matched: mismatches.length===0, mismatches};
+}
+// Extends (does not replace) draftSupplierInvoice — PO/GRN-linked invoices run 3-way match;
+// invoices with no poId (ad-hoc, e.g. Phase-5-style) are unaffected, exactly as before.
+// Phase 27 — the "already invoiced" guard. This is a SEPARATE check from checkThreeWayMatch()
+// (which validates a line's qty/rate against what the PO/GRN say for THAT bill in isolation) —
+// this one validates against what has ALREADY been billed against the same GRN line across ALL
+// prior bills, which is exactly the dimension the Phase 26 audit found missing: nothing tracked
+// "invoiced-to-date" per GRN line, so a second full bill against an already-fully-billed GRN line
+// passed the same three-way match the first one did (rate/qty vs the GRN's raw accepted qty never
+// changes). Not overridable by a three-way-match exception — an exception authorizes "this line
+// doesn't match the PO/GRN as expected," never "bill more than was ever received."
+function checkInvoiceableBalance({grn, invoiceLines}){
+  const errors = [];
+  (invoiceLines||[]).forEach((il,idx)=>{
+    const grnLine = grn.lines[idx];
+    if(!grnLine) return; // reported separately by checkThreeWayMatch
+    const alreadyInvoiced = grn.qtyInvoicedByLine?.[idx] || 0;
+    const balance = r2((+grnLine.qtyAccepted||0) - alreadyInvoiced);
+    if((+il.qty) > balance + 0.001){
+      errors.push(`Line ${idx}: invoice qty ${il.qty} exceeds the remaining invoiceable balance of ${balance} (GRN accepted ${grnLine.qtyAccepted}, already invoiced ${alreadyInvoiced}).`);
+    }
+  });
+  return {ok: errors.length===0, errors};
+}
+function draftSupplierInvoiceFromPO({poId, grnId, invoiceLines, taxCode, date, narration, authorizedException, exceptionReason, createdByUserId, createdByRole}){
+  const po = DB.purchaseOrders.find(x=>x.id===poId);
+  const grn = DB.grns.find(x=>x.id===grnId);
+  if(!po || !grn) return {ok:false, error:'PO or GRN not found.'};
+  if(grn.poId!==poId) return {ok:false, error:'That GRN does not belong to the selected PO.'};
+  if(!grn.qtyInvoicedByLine) grn.qtyInvoicedByLine = {}; // GRNs created before Phase 27 lack the field
+  const balanceCheck = checkInvoiceableBalance({grn, invoiceLines});
+  if(!balanceCheck.ok) return {ok:false, error:'Invoice rejected — already fully or partially billed: '+balanceCheck.errors.join(' | ')};
+  const match = checkThreeWayMatch({poId, grnId, invoiceLines});
+  if(!match.matched && !authorizedException){
+    return {ok:false, error:'Three-way match failed: '+match.mismatches.join(' | ')+' — a FinanceManager/CEO/Admin must record an authorized exception to proceed.', mismatches:match.mismatches};
+  }
+  if(!match.matched && authorizedException){
+    DB.threeWayMatchExceptions.push({ id:'3WM-'+String(DB.threeWayMatchExceptions.length+1).padStart(4,'0'), poId, grnId, mismatches:match.mismatches,
+      authorizedBy:createdByUserId, reason:exceptionReason||'', at:nowIso() });
+    logAudit({type:'ThreeWayMatchExceptionAuthorized', poId, grnId, mismatches:match.mismatches, userId:createdByUserId, role:createdByRole});
+  }
+  const base = invoiceLines.reduce((s,l)=>s+(+l.qty)*(+l.rate),0);
+  const tax = taxCode ? calcTax(taxCode, base) : null;
+  const lines = [ {account:'2050', debit:base, credit:0, vendorId:po.vendorId, projectId:po.projectId} ]; // clears GR/IR raised at GRN
+  if(tax && tax.taxAmount>0) lines.push({account:'1300', debit:tax.taxAmount, credit:0, vendorId:po.vendorId, projectId:po.projectId, taxCode});
+  lines.push({account:'2000', debit:0, credit:base+(tax?tax.taxAmount:0), vendorId:po.vendorId, projectId:po.projectId, taxCode:taxCode||null});
+  const draft = createDraft({date, narration:narration||`Supplier Invoice against ${po.poNo}/${grn.grnNo}`, docTypeCode:'BILL', sourceType:'Supplier Bill (3-way matched)',
+    docCategory:'SupplierInvoice', party:po.vendorId, lines, createdByUserId, createdByRole});
+  if(draft.ok){
+    draft.draft.poId=poId; draft.draft.grnId=grnId; draft.draft.invoiceLines=invoiceLines;
+    // Reserve the billed qty against the GRN/PO the moment the draft is created — not deferred to
+    // Post — matching the existing design precedent of Commitment being created at PO Approval
+    // (before GRN even exists), i.e. this engine already reserves against a document's business
+    // effect as soon as the document exists, not only once it reaches the GL. rejectDraft() /
+    // cancelDraft() / reverseEntry() release this reservation again — see releaseInvoiceReservation().
+    invoiceLines.forEach((il,idx)=>{
+      grn.qtyInvoicedByLine[idx] = r2((grn.qtyInvoicedByLine[idx]||0) + (+il.qty));
+      if(po.qtyInvoicedByLine) po.qtyInvoicedByLine[idx] = r2((po.qtyInvoicedByLine[idx]||0) + (+il.qty));
+    });
+    save();
+  }
+  return {ok:draft.ok, draft:draft.draft, matched:match.matched, mismatches:match.mismatches};
+}
+// Phase 27 — the release side of the reservation made above. Called from rejectDraft/cancelDraft
+// (a PO-aware bill that never reaches Post must not permanently block re-billing the same GRN
+// line) and from reverseEntry (a POSTED PO-aware bill that is later reversed must reopen the same
+// balance so it can be correctly rebilled) — same "additive hook, does not touch the accounting
+// entry itself" pattern already used in reverseEntry() for restoring a GRN-reversal's commitment.
+function releaseInvoiceReservation(draft){
+  if(!draft || !draft.grnId || !Array.isArray(draft.invoiceLines)) return;
+  const grn = DB.grns.find(g=>g.id===draft.grnId);
+  const po = DB.purchaseOrders.find(p=>p.id===draft.poId);
+  draft.invoiceLines.forEach((il,idx)=>{
+    if(grn && grn.qtyInvoicedByLine) grn.qtyInvoicedByLine[idx] = r2(Math.max(0, (grn.qtyInvoicedByLine[idx]||0) - (+il.qty)));
+    if(po && po.qtyInvoicedByLine) po.qtyInvoicedByLine[idx] = r2(Math.max(0, (po.qtyInvoicedByLine[idx]||0) - (+il.qty)));
+  });
+  save();
+}
+// Phase 27 — read-only projection for the new PO-aware Supplier Bill UI (Part 3 of the brief).
+// Lets the accountant pick a Supplier and immediately see every GRN line that still has an
+// invoiceable balance, with the exact fields the brief specifies (PO/GRN/Item/Qty/Received/
+// AlreadyInvoiced/Balance/Rate). Computed server-side, not left to the client to re-derive from
+// raw GRN/PO data, so the UI can never show a balance out of step with what the server will
+// actually accept.
+function invoiceableGRNsForVendor(vendorId){
+  const grns = DB.grns.filter(g=>g.supplierId===vendorId);
+  return grns.map(grn=>{
+    const po = DB.purchaseOrders.find(p=>p.id===grn.poId);
+    const lines = grn.lines.map((l,idx)=>{
+      const alreadyInvoiced = grn.qtyInvoicedByLine?.[idx] || 0;
+      const balance = r2((+l.qtyAccepted||0) - alreadyInvoiced);
+      const material = DB.materials.find(m=>m.id===l.materialId);
+      return { idx, materialId:l.materialId, description: material?material.description:l.materialId, uom: l.uom||(material?material.uom:''),
+        qtyAccepted:+l.qtyAccepted||0, rate:+l.rate||0, alreadyInvoiced, balance };
+    }).filter(l=>l.balance>0.01);
+    return { grnId:grn.id, grnNo:grn.grnNo, poId:grn.poId, poNo: po?po.poNo:null, projectId:grn.projectId, date:grn.date, lines };
+  }).filter(g=>g.lines.length>0);
+}
+
+function createPurchaseReturn({grnId, materialId, qty, reason, actor}){
+  const grn = DB.grns.find(x=>x.id===grnId);
+  if(!grn) return {ok:false, error:'GRN not found.'};
+  const line = grn.lines.find(l=>l.materialId===materialId);
+  if(!line) return {ok:false, error:'Material not found on this GRN.'};
+  const available = getStockLevel(materialId, grn.warehouseId);
+  if(+qty > available + 0.001) return {ok:false, error:`Cannot return ${qty} — only ${available} in stock (would create negative stock).`};
+  const ret = { id:'PRET-'+String(DB.purchaseReturns.length+1).padStart(4,'0'), retNo:nextDocNumber('PRET'), grnId, materialId, qty:+qty,
+    reason:reason||'', status:'Posted', createdBy:actor.id, createdAt:nowIso() };
+  DB.purchaseReturns.push(ret); save();
+  postInventoryMovement({type:'Return', materialId, qty, uom:line.uom, warehouseId:grn.warehouseId, projectId:grn.projectId, sourceType:'PurchaseReturn', sourceId:ret.id, valuationRate:line.rate, actor});
+  const value = (+qty)*(+line.rate);
+  const glResult = postJournalEntry({ date:new Date().toISOString().slice(0,10), narration:`Purchase Return ${ret.retNo} against GRN ${grn.grnNo}`,
+    sourceType:'PurchaseReturn', sourceId:ret.id, voucherNo:ret.retNo, party:grn.supplierId, docCategory:'PurchaseReturn',
+    lines:[ {account:'2050', debit:value, credit:0, vendorId:grn.supplierId, projectId:grn.projectId}, {account:'1200', debit:0, credit:value, vendorId:grn.supplierId, projectId:grn.projectId} ],
+    postedByUserId:actor.id, postedByRole:actor.role, overrideReason:reason });
+  logAudit({type:'PurchaseReturnCreated', returnId:ret.id, grnId, materialId, qty, userId:actor.id, role:actor.role});
+  return {ok:true, purchaseReturn:ret, glEntry:glResult.entry};
+}
+
+// ================== Phase 28 — Purchases Intelligence (all read-only, computed from existing
+// PO/GRN/Invoice/Payment data — no new posting, no new master, no new accounting surface) ==================
+function procurementIntelligence(){
+  const vendors = DB.vendors.filter(v=>v.active!==false);
+  const perVendor = vendors.map(v=>{
+    const pos = DB.purchaseOrders.filter(po=>po.vendorId===v.id && po.status!=='Draft' && po.status!=='Rejected');
+    const grns = DB.grns.filter(g=>g.supplierId===v.id);
+    let totalOrderedQty=0, totalAcceptedQty=0, totalRejectedQty=0, cycleDaysSum=0, cycleCount=0, onTimeCount=0, deliveryCount=0;
+    grns.forEach(g=>{
+      const po = DB.purchaseOrders.find(p=>p.id===g.poId);
+      g.lines.forEach(l=>{ totalAcceptedQty += (+l.qtyAccepted||0); totalRejectedQty += (+l.qtyRejected||0); });
+      if(po && po.approvedAt){ cycleDaysSum += Math.max(0, (new Date(g.date) - new Date(po.approvedAt)) / 86400000); cycleCount++; }
+      if(po && po.expectedDate){ deliveryCount++; if(new Date(g.date) <= new Date(po.expectedDate)) onTimeCount++; }
+    });
+    pos.forEach(po=>po.lines.forEach(l=>{ totalOrderedQty += (+l.qty||0); }));
+    const totalSpend = r2(pos.reduce((s,po)=>s+po.total,0));
+    const rejectionPct = (totalAcceptedQty+totalRejectedQty)>0 ? r2(100*totalRejectedQty/(totalAcceptedQty+totalRejectedQty)) : 0;
+    const onTimePct = deliveryCount>0 ? r2(100*onTimeCount/deliveryCount) : null;
+    const avgCycleDays = cycleCount>0 ? r2(cycleDaysSum/cycleCount) : null;
+    return { vendorId:v.id, name:v.name, totalPOs:pos.length, totalSpend, totalGRNs:grns.length, rejectionPct, onTimePct, avgCycleDays };
+  });
+  return { vendors: perVendor, totalSpend: r2(perVendor.reduce((s,v)=>s+v.totalSpend,0)) };
+}
+// A simple, disclosed composite score (0-100) — NOT a claimed industry-standard formula, just a
+// transparent, auditable blend of the three metrics procurementIntelligence() already computes.
+// Weighting (50% on-time, 30% rejection, 20% spend-scale) is a reasonable starting default, not an
+// approved Appletree policy — same "documented, not invented as fact" discipline as every other
+// unapproved default in this Lab (see maxFuturePostingDays).
+function vendorRating(){
+  const {vendors} = procurementIntelligence();
+  const maxSpend = Math.max(1, ...vendors.map(v=>v.totalSpend));
+  return vendors.map(v=>{
+    const onTimeScore = v.onTimePct===null ? null : v.onTimePct;
+    const qualityScore = 100 - v.rejectionPct;
+    const scaleScore = r2(100*v.totalSpend/maxSpend);
+    const parts = [onTimeScore!==null?{w:0.5,s:onTimeScore}:null, {w:0.3,s:qualityScore}, {w:0.2,s:scaleScore}].filter(Boolean);
+    const totalW = parts.reduce((s,p)=>s+p.w,0);
+    const rating = totalW>0 ? r2(parts.reduce((s,p)=>s+p.w*p.s,0)/totalW) : null;
+    return { ...v, rating, ratingNote:'Composite score (50% on-time delivery, 30% quality/rejection, 20% spend scale) — a disclosed default weighting, not an approved Appletree policy.' };
+  }).sort((a,b)=>(b.rating||0)-(a.rating||0));
+}
+function purchaseVendorReport(vendorId){
+  const pos = DB.purchaseOrders.filter(po=>!vendorId || po.vendorId===vendorId);
+  return pos.map(po=>{
+    const grns = DB.grns.filter(g=>g.poId===po.id);
+    const grnValue = r2(grns.reduce((s,g)=>s+g.lines.reduce((s2,l)=>s2+(+l.qtyAccepted||0)*(+l.rate||0),0),0));
+    const invoices = DB.jeDrafts.filter(d=>d.poId===po.id && d.postedEntryId);
+    const invoicedValue = r2(invoices.reduce((s,d)=>s+(d.lines.find(l=>l.account==='2050')?.debit||0),0));
+    const paidValue = r2(invoices.reduce((s,d)=>{
+      const cleared = DB.clearings.filter(c=>c.type==='AP' && c.invoiceEntryId===d.postedEntryId).reduce((s2,c)=>s2+c.amount,0);
+      return s+cleared;
+    },0));
+    return { poId:po.id, poNo:po.poNo, vendorId:po.vendorId, vendorName:(DB.vendors.find(v=>v.id===po.vendorId)||{}).name, projectId:po.projectId,
+      status:po.status, orderedValue:po.total, grnValue, invoicedValue, paidValue, outstandingValue:r2(invoicedValue-paidValue) };
+  });
+}
+
+// DEFECT FOUND & FIXED (Phase 14 Accountant UAT): a credit note could be posted against an
+// invoice that was ALREADY fully cleared, applying its full amount as a clearing regardless of
+// how much was actually still open — driving the invoice's open balance NEGATIVE (an "over-
+// cleared" invoice, an accounting-integrity violation no real system should ever allow).
+// `postCustomerReceipt()`/`postSupplierPayment()` already correctly cap against
+// `openItem.open` before calling `applyClearing()`; this function (and the two sibling
+// Customer Credit/Debit Note functions below) never had that same guard. Same root cause,
+// same fix, applied everywhere `applyClearing()` is invoked from a credit-note-style function.
+function createSupplierCreditNote({supplierInvoiceEntryId, amount, reason, actor}){
+  const inv = DB.journalEntries.find(e=>e.id===supplierInvoiceEntryId);
+  if(!inv || inv.docCategory!=='SupplierInvoice') return {ok:false, error:'Supplier invoice not found.'};
+  const apLine = inv.lines.find(l=>l.account==='2000');
+  if(!apLine) return {ok:false, error:'Invoice has no AP line.'};
+  const openItem = supplierOpenItems(apLine.vendorId).find(i=>i.entryId===supplierInvoiceEntryId);
+  if(!openItem || +amount > openItem.open + 0.01) return {ok:false, error:`Credit note amount ₹${(+amount).toLocaleString('en-IN')} exceeds the invoice's open balance of ₹${(openItem?openItem.open:0).toLocaleString('en-IN')} — cannot over-clear an invoice.`};
+  const cn = { id:'SCN-'+String(DB.supplierCreditNotes.length+1).padStart(4,'0'), cnNo:nextDocNumber('SCN'), supplierInvoiceEntryId, amount:+amount, reason:reason||'', createdBy:actor.id, createdAt:nowIso() };
+  DB.supplierCreditNotes.push(cn); save();
+  // AP adjustment: Dr AP (reduces what's owed) / Cr Material Cost (reduces the expense) — posted
+  // through the existing engine, then applied as a clearing against the original invoice so the
+  // open-item math (Phase 5) accounts for it correctly.
+  const result = postJournalEntry({ date:new Date().toISOString().slice(0,10), narration:`Supplier Credit Note ${cn.cnNo}`, sourceType:'Supplier Credit Note',
+    sourceId:cn.id, voucherNo:cn.cnNo, party:apLine.vendorId, docCategory:'SupplierInvoice',
+    lines:[ {account:'2000', debit:+amount, credit:0, vendorId:apLine.vendorId, projectId:apLine.projectId}, {account:'5000', debit:0, credit:+amount, vendorId:apLine.vendorId, projectId:apLine.projectId} ],
+    postedByUserId:actor.id, postedByRole:actor.role, overrideReason:reason });
+  if(!result.ok) return result;
+  const clr = applyClearing({type:'AP', invoiceEntryId:supplierInvoiceEntryId, paymentEntryId:result.entry.id, amount:+amount, actor});
+  logAudit({type:'SupplierCreditNoteCreated', creditNoteId:cn.id, amount, userId:actor.id, role:actor.role});
+  return {ok:true, creditNote:cn, entry:result.entry, clearing:clr};
+}
+// Phase 24 Part B — Supplier Debit Note (Phase 23 audit finding: Customer side has both Credit
+// and Debit Note; Supplier side only ever had Credit Note). A Debit Note issued BY THE BUYER
+// (Appletree) to a supplier records "we are debiting your account" in standard Indian
+// buyer-side accounting/GST usage — for every one of the six approved scenarios (short receipt,
+// damaged material, quality rejection, supplier overcharge, price dispute, purchase return), the
+// buyer-side effect is identical to a Credit Note's: it REDUCES what Appletree owes the supplier.
+// The accounting DIRECTION here is therefore deliberately mirrored from the already-proven
+// Supplier Credit Note above (Dr AP / Cr Material Cost) — not invented from scratch — because
+// that is the correct, existing, approved transaction architecture for a buyer-side AP reduction;
+// this is a genuinely separate DOCUMENT (own numbering series SDN, own reason taxonomy, own audit
+// type, own trace) satisfying the real gap (no such document existed at all), not a new
+// accounting treatment. Where a scenario might carry GST-specific documentation requirements
+// beyond what this Lab's tax engine already models, that is disclosed as BUSINESS POLICY /
+// GST-COMPLIANCE REQUIRED, not guessed.
+const SUPPLIER_DEBIT_NOTE_REASONS = ['Short Receipt','Damaged Material','Quality Rejection','Supplier Overcharge','Price Dispute','Purchase Return','Other'];
+function createSupplierDebitNote({supplierInvoiceEntryId, amount, reasonCategory, reasonDetail, projectId, actor}){
+  const inv = DB.journalEntries.find(e=>e.id===supplierInvoiceEntryId);
+  if(!inv || inv.docCategory!=='SupplierInvoice') return {ok:false, error:'Supplier invoice not found.'};
+  const apLine = inv.lines.find(l=>l.account==='2000');
+  if(!apLine) return {ok:false, error:'Invoice has no AP line.'};
+  if(!SUPPLIER_DEBIT_NOTE_REASONS.includes(reasonCategory)) return {ok:false, error:`Reason must be one of: ${SUPPLIER_DEBIT_NOTE_REASONS.join(', ')}.`};
+  if(reasonCategory==='Other' && (!reasonDetail || !String(reasonDetail).trim())) return {ok:false, error:'"Other" requires a mandatory written explanation — a reason category alone is not enough.'};
+  const openItem = supplierOpenItems(apLine.vendorId).find(i=>i.entryId===supplierInvoiceEntryId);
+  if(!openItem || +amount > openItem.open + 0.01) return {ok:false, error:`Debit note amount ₹${(+amount).toLocaleString('en-IN')} exceeds the invoice's open balance of ₹${(openItem?openItem.open:0).toLocaleString('en-IN')} — cannot over-clear an invoice.`};
+  const dn = { id:'SDN-'+String(DB.supplierDebitNotes.length+1).padStart(4,'0'), dnNo:nextDocNumber('SDN'), supplierInvoiceEntryId, vendorId:apLine.vendorId,
+    projectId: projectId||apLine.projectId, amount:+amount, reasonCategory, reasonDetail:reasonDetail||'', createdBy:actor.id, createdAt:nowIso() };
+  DB.supplierDebitNotes.push(dn); save();
+  const result = postJournalEntry({ date:new Date().toISOString().slice(0,10), narration:`Supplier Debit Note ${dn.dnNo} — ${reasonCategory}${reasonDetail?': '+reasonDetail:''}`, sourceType:'Supplier Debit Note',
+    sourceId:dn.id, voucherNo:dn.dnNo, party:apLine.vendorId, docCategory:'SupplierInvoice',
+    lines:[ {account:'2000', debit:+amount, credit:0, vendorId:apLine.vendorId, projectId:dn.projectId}, {account:'5000', debit:0, credit:+amount, vendorId:apLine.vendorId, projectId:dn.projectId} ],
+    postedByUserId:actor.id, postedByRole:actor.role, overrideReason:reasonDetail||reasonCategory });
+  if(!result.ok) return result;
+  const clr = applyClearing({type:'AP', invoiceEntryId:supplierInvoiceEntryId, paymentEntryId:result.entry.id, amount:+amount, actor});
+  logAudit({type:'SupplierDebitNoteCreated', debitNoteId:dn.id, vendorId:apLine.vendorId, reasonCategory, amount, userId:actor.id, role:actor.role});
+  return {ok:true, debitNote:dn, entry:result.entry, clearing:clr};
+}
+
+// Phase 30 (§ Material Issue / BOM / Material Request alignment) — mirrors the real offline
+// Appletree ERP's own established Material Issue policy: every issue is checked against the
+// project's BOM quota, and issuing beyond that quota does not silently proceed. The offline ERP's
+// exact mechanism (auto-create a separate CEO Approval Request instead of the direct issue) is a
+// distinct workflow object this Lab doesn't have; the FAITHFUL equivalent already established
+// elsewhere in THIS codebase is the override-reason + manager-tier pattern (see closed period
+// posting, Damage Reports, Inventory Adjustments) — an over-quota issue requires Admin/CEO/
+// FinanceManager authorization and a recorded reason, exactly like every other "this needs a
+// human override, not a silent block or a silent pass" control in this Lab. Nothing invented: the
+// BOM-derived quota itself reuses the EXACT SAME formula issueProductionMaterial() already applies
+// (bomLine.qty * plannedQty * (1+scrapPct/100)), summed across every Production Order this project
+// has raised against material-containing BOMs — a material with no BOM/Production Order at all
+// simply has no quota to check against (inBom:false), matching the offline ERP's own "not in BOM,
+// check with supervisor" (a warning, not a block).
+function materialBomQuota({projectId, materialId}){
+  const boms = DB.boms.filter(b=>b.projectId===projectId && b.status==='Approved');
+  let budgetQty = 0, inBom = false;
+  boms.forEach(bom=>{
+    bom.lines.forEach(line=>{
+      if(line.materialId!==materialId) return;
+      inBom = true;
+      DB.productionOrders.filter(p=>p.bomId===bom.id).forEach(po=>{
+        budgetQty += (+line.qty) * po.plannedQty * (1 + (+line.scrapPct||0)/100);
+      });
+    });
+  });
+  budgetQty = r2(budgetQty);
+  const usedQty = r2(DB.inventoryMovements.filter(m=>m.projectId===projectId && m.materialId===materialId)
+    .reduce((s,m)=>{
+      if(m.type==='Issue') return s+m.qty;
+      if(m.type==='Return') return s-m.qty; // a Purchase/Material Return against this project reduces usage
+      return s;
+    },0));
+  const remainingQty = r2(budgetQty - usedQty);
+  const pctUsed = budgetQty>0 ? r2(100*usedQty/budgetQty) : (inBom ? 0 : null);
+  return { projectId, materialId, inBom, budgetQty, usedQty, remainingQty, pctUsed };
+}
+// ---------- Material Issue — the ONLY event that hits Project Actual Cost (§21/§31) ----------
+function createMaterialIssue({projectId, materialId, qty, warehouseId, purpose, requestedBy, actor, sourceType, sourceId, overrideReason, locationId, materialRequirementId, siteId}){
+  const material = DB.materials.find(m=>m.id===materialId);
+  if(!material) return {ok:false, error:'Material not found.'};
+  // Phase 30 P29-2 FIX: there was no qty>0 guard here at all. A negative qty passed the
+  // "qty > available" check trivially (negative < any positive available) and posted as a real
+  // Issue movement — but getStockLevel() computes an Issue's effect as `stock - qty`, so a
+  // negative qty actually INCREASED recorded stock while being audited as a "Material Issue."
+  // Same discipline as createDamageReport()'s existing `if(!qty || +qty<=0)` guard — rejected
+  // before any inventory movement, GL posting, or project cost is touched. No partial transaction.
+  if(!qty || +qty<=0) return {ok:false, error:'Quantity must be positive.'};
+  const inactiveErr = assertMaterialSelectable(materialId); if(inactiveErr) return {ok:false, error:inactiveErr};
+  // Phase 33 — Site Consumption. When siteId is supplied, this issue consumes material already
+  // sitting at a SITE's own subledger (via issueToSite()'s SiteReceipt movement), not material
+  // still in a warehouse — so availability is checked against getSiteStockLevel(), and the ledger
+  // records a 'SiteConsumption' movement instead of 'Issue'. Every pre-Phase-33 caller omits
+  // siteId, so this branch never runs for any existing call site.
+  const available = siteId ? getSiteStockLevel(materialId, siteId) : getStockLevel(materialId, warehouseId);
+  if(+qty > available + 0.001) return {ok:false, error: siteId
+    ? `Cannot consume ${qty} ${material.uom} at site ${siteId} — only ${available} available there (not yet received from central store, or already consumed).`
+    : `Cannot issue ${qty} ${material.uom} — only ${available} available in ${warehouseId} (negative stock is blocked, not silently allowed).`};
+
+  // Material Requirement linkage — "material issue should be according to material request," per
+  // the real offline ERP's own established practice. Optional, not force-required (this Lab's
+  // architecture allows issues with no requirement behind them for good reason — e.g. Production
+  // Order material issue, which is BOM-driven, not requirement-driven) — but if one IS supplied it
+  // must genuinely be APPROVED, for THIS project and THIS material, and not already fulfilled.
+  let requirement = null;
+  if(materialRequirementId){
+    requirement = DB.materialRequirements.find(r=>r.id===materialRequirementId);
+    if(!requirement) return {ok:false, error:'Material Requirement not found.'};
+    if(requirement.projectId!==projectId) return {ok:false, error:'That Material Requirement belongs to a different project.'};
+    if(requirement.materialId!==materialId) return {ok:false, error:'That Material Requirement is for a different material.'};
+    if(requirement.status!=='APPROVED') return {ok:false, error:`Cannot issue against Material Requirement "${materialRequirementId}" — status is "${requirement.status}", not APPROVED.`};
+  }
+
+  // BOM quota check — the real offline ERP's own policy: over-quota does not silently proceed OR
+  // silently block; it requires management authorization. Only enforced when the material genuinely
+  // IS in the project's approved BOM (inBom:true) — a material with no BOM line simply has nothing
+  // to check against, matching the offline ERP's "not in BOM, check with supervisor" WARNING (not
+  // a hard block) for that case.
+  // NEVER enforced for sourceType:'ProductionOrder' — that qty IS the BOM quota itself
+  // (issueProductionMaterial() computes it directly from the same bomLine.qty*plannedQty*scrap
+  // formula materialBomQuota() sums), so gating it against its own source would be circular, and a
+  // harmless floating-point rounding difference between the two independent calculations could
+  // otherwise block a Production Order from ever issuing its own correctly-BOM-derived material.
+  const quota = materialBomQuota({projectId, materialId});
+  let quotaWarning = null;
+  if(quota.inBom && sourceType!=='ProductionOrder'){
+    const afterIssue = r2(quota.usedQty + (+qty));
+    if(afterIssue > quota.budgetQty + 0.001){
+      const isManagerTier = ['Admin','CEO','FinanceManager'].includes(actor.role);
+      if(!isManagerTier && !overrideReason){
+        return {ok:false, error:`Exceeds BOM quota for ${material.description} on ${projectId} — budgeted ${quota.budgetQty} ${material.uom}, already used ${quota.usedQty}, this issue would reach ${afterIssue}. Requires Admin/CEO/FinanceManager authorization with a reason (mirrors the real Appletree practice of routing an over-quota issue to management approval rather than issuing it directly).`,
+          bomQuota: quota};
+      }
+      logAudit({type:'MaterialIssueExceededBomQuota', projectId, materialId, budgetQty:quota.budgetQty, usedQty:quota.usedQty, requestedQty:+qty, overrideReason:overrideReason||'(manager-tier role, no separate reason required)', userId:actor.id, role:actor.role});
+    } else if(afterIssue > quota.budgetQty*0.8){
+      quotaWarning = `${material.description} is now at ${r2(100*afterIssue/quota.budgetQty)}% of its BOM quota for this project (${afterIssue} of ${quota.budgetQty} ${material.uom}).`;
+    }
+  }
+
+  const rate = siteId ? getSiteMovingAverageRate(materialId, siteId) : getMovingAverageRate(materialId, warehouseId);
+  const mv = postInventoryMovement({type: siteId?'SiteConsumption':'Issue', materialId, qty, uom:material.uom, warehouseId: siteId?null:warehouseId, siteId:siteId||null, projectId, sourceType:sourceType||'MaterialIssue', sourceId:sourceId||null, valuationRate:rate, actor, locationId:locationId||null});
+  const value = Math.round((+qty)*rate*100)/100;
+  let glResult = {ok:true};
+  if(value>0.01){
+    glResult = postJournalEntry({ date:new Date().toISOString().slice(0,10), narration:`Material Issue: ${material.description} × ${qty} ${material.uom} — ${purpose||''}`,
+      sourceType:'MaterialIssue', sourceId:mv.id, voucherNo:nextDocNumber('ISS'), docCategory:'MaterialIssue', branchId:projectBranch(projectId),
+      lines:[ {account:'5000', debit:value, credit:0, projectId}, {account:'1200', debit:0, credit:value, projectId} ],
+      postedByUserId:actor.id, postedByRole:actor.role, overrideReason });
+  }
+  if(requirement){ requirement.status='CONVERTED'; requirement.convertedBy=actor.id; requirement.convertedAt=nowIso(); requirement.issuedMovementId=mv.id; save(); }
+  logAudit({type:'MaterialIssue', movementId:mv.id, projectId, materialId, qty, value, materialRequirementId:materialRequirementId||null, userId:actor.id, role:actor.role});
+  return {ok:true, movement:mv, valuationRate:rate, value, glEntry: glResult.entry||null, bomQuota:quota, quotaWarning, fulfilledRequirement: requirement};
+}
+
+// ================== Phase 28 — Operations ==================
+// Labour & Wages — day-labour engaged directly on a project (distinct from Production Labour,
+// which is tied to a specific Production Order via postProductionLabourCost). Posts through the
+// SAME central engine to the SAME Labour Cost account (5100) already used by production labour —
+// one cost account, two legitimate sources, both fully traceable via docCategory.
+function recordLabourWages({projectId, workerName, role, days, ratePerDay, date, bankAccountId, actor}){
+  if(!projectId || !DB.projects.find(p=>p.id===projectId)) return {ok:false, error:'A valid project is required.'};
+  if(!workerName) return {ok:false, error:'Worker name is required.'};
+  const value = r2((+days||0)*(+ratePerDay||0));
+  if(value<=0) return {ok:false, error:'Days and rate per day must both be positive.'};
+  let bankGlAccount = '1000';
+  if(bankAccountId){
+    const acct = DB.bankAccounts.find(b=>b.id===bankAccountId);
+    if(!acct) return {ok:false, error:`Unknown bank/cash account "${bankAccountId}".`};
+    bankGlAccount = acct.glAccount;
+  }
+  const glResult = postJournalEntry({ date:date||new Date().toISOString().slice(0,10), narration:`Labour Wages — ${workerName} (${role||'Worker'}) x ${days} day(s)`,
+    sourceType:'LabourWages', voucherNo:nextDocNumber('LBR', date), docCategory:'LabourWages',
+    lines:[ {account:'5100', debit:value, credit:0, projectId}, {account:bankGlAccount, debit:0, credit:value, projectId} ],
+    postedByUserId:actor.id, postedByRole:actor.role });
+  if(!glResult.ok) return glResult;
+  const rec = { id:'LBR-'+String(DB.labourWages.length+1).padStart(4,'0'), projectId, workerName, role:role||'Worker', days:+days, ratePerDay:+ratePerDay, value,
+    date:date||new Date().toISOString().slice(0,10), glEntryId:glResult.entry.id, createdBy:actor.id, createdAt:nowIso() };
+  DB.labourWages.push(rec); save();
+  logAudit({type:'LabourWagesRecorded', labourId:rec.id, projectId, workerName, value, userId:actor.id, role:actor.role});
+  return {ok:true, labour:rec, glEntry:glResult.entry};
+}
+// Project Expenses — miscellaneous site/project costs (site consumables, travel, permits) that
+// are not Material Cost and not Labour Cost. Posts to the existing, previously-unused Site
+// Expense account (5200) — an account that already existed in the chart of accounts with nothing
+// ever posting to it.
+function recordProjectExpense({projectId, category, amount, description, date, bankAccountId, actor}){
+  if(!projectId || !DB.projects.find(p=>p.id===projectId)) return {ok:false, error:'A valid project is required.'};
+  const value = r2(+amount||0);
+  if(value<=0) return {ok:false, error:'Amount must be positive.'};
+  if(!category) return {ok:false, error:'A category is required.'};
+  let bankGlAccount = '1000';
+  if(bankAccountId){
+    const acct = DB.bankAccounts.find(b=>b.id===bankAccountId);
+    if(!acct) return {ok:false, error:`Unknown bank/cash account "${bankAccountId}".`};
+    bankGlAccount = acct.glAccount;
+  }
+  const glResult = postJournalEntry({ date:date||new Date().toISOString().slice(0,10), narration:`Project Expense — ${category}${description?': '+description:''}`,
+    sourceType:'ProjectExpense', voucherNo:nextDocNumber('PEXP', date), docCategory:'ProjectExpense',
+    lines:[ {account:'5200', debit:value, credit:0, projectId}, {account:bankGlAccount, debit:0, credit:value, projectId} ],
+    postedByUserId:actor.id, postedByRole:actor.role });
+  if(!glResult.ok) return glResult;
+  const rec = { id:'PEXP-'+String(DB.projectExpenses.length+1).padStart(4,'0'), projectId, category, amount:value, description:description||'',
+    date:date||new Date().toISOString().slice(0,10), glEntryId:glResult.entry.id, createdBy:actor.id, createdAt:nowIso() };
+  DB.projectExpenses.push(rec); save();
+  logAudit({type:'ProjectExpenseRecorded', expenseId:rec.id, projectId, category, value, userId:actor.id, role:actor.role});
+  return {ok:true, expense:rec, glEntry:glResult.entry};
+}
+// QC Dashboard — read-only aggregation over the EXISTING QC Checklist data (Phase 8). No new data.
+function qcDashboard(){
+  const byProject = {};
+  DB.qcChecklists.forEach(c=>{
+    if(!byProject[c.projectId]) byProject[c.projectId] = {projectId:c.projectId, total:0, passed:0, failed:0, pending:0};
+    const b = byProject[c.projectId]; b.total++;
+    if(c.result==='Pass') b.passed++; else if(c.result==='Fail') b.failed++; else b.pending++;
+  });
+  const rows = Object.values(byProject).map(b=>({...b, passRatePct: b.total>0 ? r2(100*b.passed/b.total) : null}));
+  const totals = rows.reduce((s,r)=>({total:s.total+r.total, passed:s.passed+r.passed, failed:s.failed+r.failed, pending:s.pending+r.pending}), {total:0,passed:0,failed:0,pending:0});
+  return { byProject: rows, totals: {...totals, passRatePct: totals.total>0 ? r2(100*totals.passed/totals.total) : null} };
+}
+// Project Timesheet — pure operational record-keeping (who worked on what, when, for how long).
+// Deliberately does NOT post to the GL on its own — Labour & Wages above is the accounting event;
+// a timesheet is a separate, informational record (matches the offline ERP's own separation of
+// "Project Timesheet" from "Labour & Wages" as two distinct sidebar items).
+function createTimesheetEntry({projectId, workerName, date, hours, task, actor}){
+  if(!projectId || !DB.projects.find(p=>p.id===projectId)) return {ok:false, error:'A valid project is required.'};
+  if(!workerName) return {ok:false, error:'Worker name is required.'};
+  if(!hours || +hours<=0 || +hours>24) return {ok:false, error:'Hours must be between 0 and 24.'};
+  const entry = { id:'TS-'+String(DB.timesheetEntries.length+1).padStart(5,'0'), projectId, workerName, date:date||new Date().toISOString().slice(0,10),
+    hours:+hours, task:task||'', createdBy:actor.id, createdAt:nowIso() };
+  DB.timesheetEntries.push(entry); save();
+  logAudit({type:'TimesheetEntryCreated', entryId:entry.id, projectId, workerName, hours:+hours, userId:actor.id, role:actor.role});
+  return {ok:true, entry};
+}
+// Tasks — a simple project task list. No accounting impact; pure operational tracking.
+const TASK_STATUSES = ['Open','InProgress','Done','Cancelled'];
+function createTask({projectId, title, assignedTo, dueDate, priority, actor}){
+  if(!projectId || !DB.projects.find(p=>p.id===projectId)) return {ok:false, error:'A valid project is required.'};
+  if(!title) return {ok:false, error:'A title is required.'};
+  const task = { id:'TASK-'+String(DB.tasks.length+1).padStart(5,'0'), projectId, title, assignedTo:assignedTo||null, dueDate:dueDate||null,
+    priority:priority||'Normal', status:'Open', createdBy:actor.id, createdAt:nowIso(), history:[{action:'Created', userId:actor.id, role:actor.role, at:nowIso()}] };
+  DB.tasks.push(task); save();
+  logAudit({type:'TaskCreated', taskId:task.id, projectId, title, userId:actor.id, role:actor.role});
+  return {ok:true, task};
+}
+function updateTaskStatus({id, status, actor}){
+  const task = DB.tasks.find(t=>t.id===id);
+  if(!task) return {ok:false, error:'Task not found.'};
+  if(!TASK_STATUSES.includes(status)) return {ok:false, error:`Status must be one of: ${TASK_STATUSES.join(', ')}.`};
+  task.status = status; task.history.push({action:'StatusChanged', status, userId:actor.id, role:actor.role, at:nowIso()}); save();
+  logAudit({type:'TaskStatusChanged', taskId:task.id, status, userId:actor.id, role:actor.role});
+  return {ok:true, task};
+}
+// Risk Register — project risk tracking with a computed severity, same "compute, don't hand-type"
+// discipline the Lab already applies elsewhere (e.g. commitment remaining amounts).
+function riskSeverity(likelihood, impact){
+  const score = (+likelihood||0)*(+impact||0);
+  if(score>=15) return 'Critical'; if(score>=9) return 'High'; if(score>=4) return 'Medium'; return 'Low';
+}
+function createRiskEntry({projectId, description, likelihood, impact, mitigation, owner, actor}){
+  if(!projectId || !DB.projects.find(p=>p.id===projectId)) return {ok:false, error:'A valid project is required.'};
+  if(!description) return {ok:false, error:'A description is required.'};
+  const lk = Math.min(5, Math.max(1, +likelihood||1)), im = Math.min(5, Math.max(1, +impact||1));
+  const risk = { id:'RISK-'+String(DB.riskRegister.length+1).padStart(4,'0'), projectId, description, likelihood:lk, impact:im,
+    severity: riskSeverity(lk,im), mitigation:mitigation||'', owner:owner||null, status:'Open', createdBy:actor.id, createdAt:nowIso() };
+  DB.riskRegister.push(risk); save();
+  logAudit({type:'RiskEntryCreated', riskId:risk.id, projectId, severity:risk.severity, userId:actor.id, role:actor.role});
+  return {ok:true, risk};
+}
+function closeRiskEntry({id, actor}){
+  const risk = DB.riskRegister.find(r=>r.id===id);
+  if(!risk) return {ok:false, error:'Risk entry not found.'};
+  risk.status = 'Closed'; risk.closedBy = actor.id; risk.closedAt = nowIso(); save();
+  logAudit({type:'RiskEntryClosed', riskId:risk.id, userId:actor.id, role:actor.role});
+  return {ok:true, risk};
+}
+// Weekly Scorecard — a POINT-IN-TIME snapshot, not a live-recomputed view. A scorecard's whole
+// purpose is comparing THIS week's frozen numbers against LAST week's frozen numbers — a live
+// query would just show "now" twice. Snapshot capture is an explicit, audited action (Admin/
+// FinanceManager/CEO), not automatic, so nobody's numbers get silently overwritten by activity
+// that happens after the week the snapshot was meant to represent.
+function captureWeeklySnapshot({actor}){
+  const projects = DB.projects.filter(p=>p.status==='ACTIVE' || p.status==='Won');
+  let totalRevenue=0, totalCost=0;
+  projects.forEach(p=>{ const pl = projectPL(p.id); totalRevenue += pl.revenue||0; totalCost += pl.cost||0; });
+  const {totalRemaining} = projectCommitments(null);
+  const arOpen = r2(DB.customers.reduce((s,c)=>s+customerOpenItems(c.id).reduce((s2,i)=>s2+i.open,0),0));
+  const apOpen = r2(DB.vendors.reduce((s,v)=>s+supplierOpenItems(v.id).reduce((s2,i)=>s2+i.open,0),0));
+  const snap = { id:'WSC-'+String(DB.weeklySnapshots.length+1).padStart(4,'0'), capturedAt:nowIso(), capturedBy:actor.id,
+    activeProjects:projects.length, totalRevenue:r2(totalRevenue), totalCost:r2(totalCost), totalProfit:r2(totalRevenue-totalCost),
+    marginPct: totalRevenue>0 ? r2(100*(totalRevenue-totalCost)/totalRevenue) : null, openCommitments:totalRemaining, arOpen, apOpen };
+  DB.weeklySnapshots.push(snap); save();
+  logAudit({type:'WeeklySnapshotCaptured', snapshotId:snap.id, userId:actor.id, role:actor.role});
+  return {ok:true, snapshot:snap};
+}
+
+// ---------- Committed / Received / Invoiced / Paid / Consumed — kept as 5 distinct numbers (§32) ----------
+function projectCostBreakdown(projectId){
+  const pos = DB.purchaseOrders.filter(p=>p.projectId===projectId && ['Approved','PartiallyReceived','FullyReceived'].includes(p.status));
+  const committed = pos.reduce((s,po)=>{
+    const orderedValue = po.total;
+    const invoicedQtyValue = po.lines.reduce((s2,l,idx)=>s2 + (po.qtyInvoicedByLine?.[idx]||0)*l.rate, 0);
+    return s + Math.max(orderedValue - invoicedQtyValue, 0); // remaining open commitment
+  }, 0);
+  const received = DB.grns.filter(g=>g.projectId===projectId).reduce((s,g)=>s+g.lines.reduce((s2,l)=>s2+(+l.qtyAccepted||0)*(+l.rate||0),0), 0);
+  // Phase 16 §13 — netted credit-debit: a reversed Supplier Invoice would otherwise still count
+  // as "invoiced" in the Committed/Received/Invoiced/Paid/Consumed breakdown forever.
+  const invoiced = DB.journalEntries.filter(je=>je.docCategory==='SupplierInvoice' && je.lines.some(l=>l.projectId===projectId))
+    .flatMap(je=>je.lines).filter(l=>l.projectId===projectId && l.account==='2000').reduce((s,l)=>s+l.credit-l.debit,0);
+  const paid = DB.clearings.filter(c=>c.type==='AP').filter(c=>{ const inv=DB.journalEntries.find(e=>e.id===c.invoiceEntryId); return inv && inv.lines.some(l=>l.projectId===projectId); }).reduce((s,c)=>s+c.amount,0);
+  // DEFECT FOUND & FIXED (Phase 16 §13 Reconciliation Gate): summed .debit only, never netting
+  // .credit — a reversed Material Issue (whose reversal entry carries the SAME docCategory,
+  // 'MaterialIssue', with debit/credit flipped) was silently still counted at its full original
+  // value. Net debit-minus-credit correctly cancels a reversal to zero, exactly as the underlying
+  // GL balance already does.
+  const consumed = DB.journalEntries.filter(je=>je.docCategory==='MaterialIssue' && je.lines.some(l=>l.projectId===projectId))
+    .flatMap(je=>je.lines).filter(l=>l.projectId===projectId && l.account==='5000').reduce((s,l)=>s+l.debit-l.credit,0);
+  return {projectId, committed, received, invoiced, paid, consumed};
+}
+
+// ---------- BOM (versioned, never overwritten) ----------
+function createBOM({projectId, description, lines, actor}){
+  const prior = DB.boms.filter(b=>b.projectId===projectId && b.description===description);
+  const bom = { id:'BOM-'+String(DB.boms.length+1).padStart(4,'0'), projectId, description, version:prior.length+1,
+    lines:lines||[], effectiveDate:new Date().toISOString().slice(0,10), status:'Draft', approvedBy:null, createdBy:actor.id, createdAt:nowIso() };
+  DB.boms.push(bom); save();
+  logAudit({type:'BOMCreated', bomId:bom.id, projectId, version:bom.version, userId:actor.id, role:actor.role});
+  return {ok:true, bom};
+}
+function approveBOM({id, actor}){
+  const b = DB.boms.find(x=>x.id===id);
+  if(!b) return {ok:false, error:'BOM not found.'};
+  if(b.status==='Approved') return {ok:false, error:'Already Approved — create a new version instead of overwriting.'};
+  b.status='Approved'; b.approvedBy=actor.id; save();
+  return {ok:true, bom:b};
+}
+
+// ---------- Production Order foundation (§28 — not the full factory ERP) ----------
+function createProductionOrder({projectId, bomId, plannedQty, actor}){
+  const bom = DB.boms.find(x=>x.id===bomId);
+  if(!bom || bom.status!=='Approved') return {ok:false, error:'BOM must exist and be Approved.'};
+  const po = { id:'PROD-'+String(DB.productionOrders.length+1).padStart(4,'0'), prodNo:nextDocNumber('PROD'), projectId, bomId,
+    plannedQty:+plannedQty, actualQty:0, status:'Released', materialIssues:[], labourCostEntries:[], createdBy:actor.id, createdAt:nowIso() };
+  DB.productionOrders.push(po); save();
+  logAudit({type:'ProductionOrderCreated', productionOrderId:po.id, projectId, bomId, plannedQty, userId:actor.id, role:actor.role});
+  return {ok:true, productionOrder:po};
+}
+function issueProductionMaterial({productionOrderId, warehouseId, actor}){
+  const prod = DB.productionOrders.find(x=>x.id===productionOrderId);
+  if(!prod) return {ok:false, error:'Production Order not found.'};
+  if(['Cancelled','Closed'].includes(prod.status)) return {ok:false, error:`Cannot issue material for a "${prod.status}" production order.`};
+  const bom = DB.boms.find(x=>x.id===prod.bomId);
+  const results = [];
+  for(const line of bom.lines){
+    const qty = (+line.qty) * prod.plannedQty * (1 + (+line.scrapPct||0)/100);
+    const r = createMaterialIssue({projectId:prod.projectId, materialId:line.materialId, qty, warehouseId, purpose:`Production Order ${prod.prodNo}`, actor, sourceType:'ProductionOrder', sourceId:prod.id});
+    if(!r.ok) return r; // stop on first failure (e.g. insufficient stock) — do not partially consume silently
+    results.push(r);
+    prod.materialIssues.push(r.movement.id);
+  }
+  if(prod.status==='Released') prod.status='InProgress';
+  save();
+  return {ok:true, issues:results};
+}
+function holdProductionOrder({id, reason, actor}){
+  const prod = DB.productionOrders.find(x=>x.id===id);
+  if(!prod) return {ok:false, error:'Production Order not found.'};
+  if(['Completed','Closed','Cancelled'].includes(prod.status)) return {ok:false, error:`Cannot hold a "${prod.status}" production order.`};
+  prod.status='OnHold'; prod.holdReason=reason||''; save();
+  return {ok:true, productionOrder:prod};
+}
+function resumeProductionOrder({id, actor}){
+  const prod = DB.productionOrders.find(x=>x.id===id);
+  if(!prod) return {ok:false, error:'Production Order not found.'};
+  if(prod.status!=='OnHold') return {ok:false, error:`Cannot resume — "${prod.status}", not OnHold.`};
+  prod.status = prod.materialIssues.length ? 'InProgress' : 'Released'; save();
+  return {ok:true, productionOrder:prod};
+}
+function cancelProductionOrder({id, reason, actor}){
+  const prod = DB.productionOrders.find(x=>x.id===id);
+  if(!prod) return {ok:false, error:'Production Order not found.'};
+  if(['Completed','Closed'].includes(prod.status)) return {ok:false, error:`Cannot cancel a "${prod.status}" production order — a completed order must be closed, not cancelled.`};
+  prod.status='Cancelled'; prod.cancelReason=reason||''; save();
+  logAudit({type:'ProductionOrderCancelled', productionOrderId:id, reason, userId:actor.id, role:actor.role});
+  return {ok:true, productionOrder:prod};
+}
+function closeProductionOrder({id, actor}){
+  const prod = DB.productionOrders.find(x=>x.id===id);
+  if(!prod) return {ok:false, error:'Production Order not found.'};
+  if(!['Completed','PartiallyCompleted'].includes(prod.status)) return {ok:false, error:`Cannot close — "${prod.status}" must be Completed or PartiallyCompleted first.`};
+  prod.status='Closed'; save();
+  return {ok:true, productionOrder:prod};
+}
+function postProductionLabourCost({productionOrderId, amount, actor, overrideReason}){
+  const prod = DB.productionOrders.find(x=>x.id===productionOrderId);
+  if(!prod) return {ok:false, error:'Production Order not found.'};
+  // Phase 15 §2 — tagged with CC-FACTORY so it's now distinguishable from Installation labour
+  // (CC-INSTALLATION), both of which previously shared account 5100 with no distinguishing tag.
+  const result = postJournalEntry({ date:new Date().toISOString().slice(0,10), narration:`Production labour — ${prod.prodNo}`, sourceType:'ProductionLabour', sourceId:prod.id,
+    voucherNo:nextDocNumber('JE'), docCategory:'ProductionLabour', branchId:projectBranch(prod.projectId),
+    lines:[ {account:'5100', debit:+amount, credit:0, projectId:prod.projectId, costCentreId:'CC-FACTORY'}, {account:'1000', debit:0, credit:+amount, projectId:prod.projectId, costCentreId:'CC-FACTORY'} ],
+    postedByUserId:actor.id, postedByRole:actor.role, overrideReason });
+  if(!result.ok) return result;
+  prod.labourCostEntries.push(result.entry.id); save();
+  return {ok:true, entry:result.entry};
+}
+function completeProductionOrder({id, actualQty, rejectedQty, actor}){
+  const prod = DB.productionOrders.find(x=>x.id===id);
+  if(!prod) return {ok:false, error:'Production Order not found.'};
+  if(['Cancelled','Closed'].includes(prod.status)) return {ok:false, error:`Cannot complete a "${prod.status}" production order.`};
+  prod.actualQty = +actualQty; prod.rejectedQty = +rejectedQty||0; prod.acceptedQty = (+actualQty) - (+rejectedQty||0);
+  prod.completionDate = new Date().toISOString().slice(0,10); prod.completedBy = actor.id;
+  prod.status = (+actualQty >= prod.plannedQty - 0.001) ? 'Completed' : 'PartiallyCompleted';
+  save();
+  logAudit({type:'ProductionOrderCompleted', productionOrderId:id, actualQty, rejectedQty, status:prod.status, userId:actor.id, role:actor.role});
+  // Finished-goods inventory/accounting is deliberately NOT posted here — §9 explicitly says
+  // not to invent that accounting. Production Output is tracked operationally only this phase.
+  return {ok:true, productionOrder:prod};
+}
+
+// ================== Phase 28 — Factory / MES ==================
+// Machines — a simple equipment master. No accounting impact; used for Job Card assignment and
+// utilization reporting only.
+const MACHINE_STATUSES = ['Available','InUse','Maintenance','Down'];
+function createMachine({name, type, actor}){
+  if(!name) return {ok:false, error:'Machine name is required.'};
+  const m = { id:'MCH-'+String(DB.machines.length+1).padStart(3,'0'), name, type:type||'General', status:'Available', createdBy:actor.id, createdAt:nowIso() };
+  DB.machines.push(m); save();
+  logAudit({type:'MachineCreated', machineId:m.id, name, userId:actor.id, role:actor.role});
+  return {ok:true, machine:m};
+}
+function setMachineStatus({id, status, actor}){
+  const m = DB.machines.find(x=>x.id===id);
+  if(!m) return {ok:false, error:'Machine not found.'};
+  if(!MACHINE_STATUSES.includes(status)) return {ok:false, error:`Status must be one of: ${MACHINE_STATUSES.join(', ')}.`};
+  m.status = status; save();
+  logAudit({type:'MachineStatusChanged', machineId:m.id, status, userId:actor.id, role:actor.role});
+  return {ok:true, machine:m};
+}
+// Job Cards — the shop-floor execution unit UNDER a Production Order (an operation performed by a
+// worker, optionally on a machine, with a planned date and actual start/end). Purely operational
+// — it does not post to the GL itself; the Production Order's own existing material-issue/labour-
+// cost mechanisms remain the only cost-bearing events, exactly as before this phase.
+const JOB_CARD_STATUSES = ['Planned','InProgress','Completed','Cancelled'];
+function createJobCard({productionOrderId, operation, machineId, assignedWorker, plannedDate, actor}){
+  const prod = DB.productionOrders.find(x=>x.id===productionOrderId);
+  if(!prod) return {ok:false, error:'Production Order not found.'};
+  if(!operation) return {ok:false, error:'An operation name is required.'};
+  if(machineId && !DB.machines.find(m=>m.id===machineId)) return {ok:false, error:'Unknown machine.'};
+  const jc = { id:'JC-'+String(DB.jobCards.length+1).padStart(4,'0'), jcNo:nextDocNumber('JC'), productionOrderId, projectId:prod.projectId, operation,
+    machineId:machineId||null, assignedWorker:assignedWorker||null, plannedDate:plannedDate||null, status:'Planned',
+    actualStart:null, actualEnd:null, createdBy:actor.id, createdAt:nowIso() };
+  DB.jobCards.push(jc); save();
+  logAudit({type:'JobCardCreated', jobCardId:jc.id, productionOrderId, operation, userId:actor.id, role:actor.role});
+  return {ok:true, jobCard:jc};
+}
+function startJobCard({id, actor}){
+  const jc = DB.jobCards.find(x=>x.id===id);
+  if(!jc) return {ok:false, error:'Job Card not found.'};
+  if(jc.status!=='Planned') return {ok:false, error:`Cannot start — Job Card is "${jc.status}", not Planned.`};
+  jc.status='InProgress'; jc.actualStart=nowIso();
+  if(jc.machineId){ const m = DB.machines.find(x=>x.id===jc.machineId); if(m && m.status==='Available') m.status='InUse'; }
+  save();
+  logAudit({type:'JobCardStarted', jobCardId:jc.id, userId:actor.id, role:actor.role});
+  return {ok:true, jobCard:jc};
+}
+function completeJobCard({id, actor}){
+  const jc = DB.jobCards.find(x=>x.id===id);
+  if(!jc) return {ok:false, error:'Job Card not found.'};
+  if(jc.status!=='InProgress') return {ok:false, error:`Cannot complete — Job Card is "${jc.status}", not InProgress.`};
+  jc.status='Completed'; jc.actualEnd=nowIso();
+  if(jc.machineId){ const m = DB.machines.find(x=>x.id===jc.machineId); if(m && m.status==='InUse') m.status='Available'; }
+  save();
+  logAudit({type:'JobCardCompleted', jobCardId:jc.id, userId:actor.id, role:actor.role});
+  return {ok:true, jobCard:jc};
+}
+// Production Schedule — a planned-date view over Production Orders + their Job Cards. Read-only.
+function productionSchedule(){
+  return DB.productionOrders.filter(p=>!['Cancelled','Closed'].includes(p.status)).map(p=>({
+    productionOrderId:p.id, prodNo:p.prodNo, projectId:p.projectId, status:p.status, plannedQty:p.plannedQty,
+    jobCards: DB.jobCards.filter(j=>j.productionOrderId===p.id).map(j=>({id:j.id, jcNo:j.jcNo, operation:j.operation, plannedDate:j.plannedDate, status:j.status, assignedWorker:j.assignedWorker, machineId:j.machineId}))
+  }));
+}
+// Factory Dashboard — read-only aggregation over existing Production Orders + new Machines/Job Cards.
+function factoryDashboard(){
+  const byStatus = {};
+  DB.productionOrders.forEach(p=>{ byStatus[p.status] = (byStatus[p.status]||0)+1; });
+  const jcByStatus = {};
+  DB.jobCards.forEach(j=>{ jcByStatus[j.status] = (jcByStatus[j.status]||0)+1; });
+  const machineUtilPct = DB.machines.length ? r2(100*DB.machines.filter(m=>m.status==='InUse').length/DB.machines.length) : null;
+  return { productionOrdersByStatus:byStatus, jobCardsByStatus:jcByStatus, totalMachines:DB.machines.length, machineUtilPct, activeMachines:DB.machines.filter(m=>m.status!=='Down') };
+}
+// Job Analysis — planned vs actual duration per completed Job Card. Read-only.
+function jobAnalysis(){
+  return DB.jobCards.filter(j=>j.actualStart && j.actualEnd).map(j=>{
+    const durationHrs = r2((new Date(j.actualEnd)-new Date(j.actualStart))/3600000);
+    return { jobCardId:j.id, jcNo:j.jcNo, productionOrderId:j.productionOrderId, operation:j.operation, plannedDate:j.plannedDate, durationHrs, assignedWorker:j.assignedWorker };
+  });
+}
+// Job Cost Sheet — actual cost of a Production Order, derived ENTIRELY from the data the order
+// already tracks on itself (materialIssues[]/labourCostEntries[] — see createProductionOrder/
+// issueProductionMaterial/postProductionLabourCost above). No new cost source, no re-derivation.
+function jobCostSheet(productionOrderId){
+  const prod = DB.productionOrders.find(p=>p.id===productionOrderId);
+  if(!prod) return {ok:false, error:'Production Order not found.'};
+  const materialCost = r2(prod.materialIssues.reduce((s,mvId)=>{ const mv = DB.inventoryMovements.find(m=>m.id===mvId); return s+(mv?mv.valuationAmount:0); },0));
+  const labourCost = r2(prod.labourCostEntries.reduce((s,jeId)=>{ const je = DB.journalEntries.find(e=>e.id===jeId); const line = je?je.lines.find(l=>l.account==='5100'):null; return s+(line?line.debit:0); },0));
+  const bom = DB.boms.find(b=>b.id===prod.bomId);
+  const plannedMaterialCost = bom ? r2(bom.lines.reduce((s,l)=>{ const mat = DB.materials.find(m=>m.id===l.materialId); return s+((+l.qty)*prod.plannedQty*(1+(+l.scrapPct||0)/100))*(mat?mat.standardCost:0); },0)) : null;
+  return { ok:true, productionOrderId, prodNo:prod.prodNo, materialCost, labourCost, totalActualCost:r2(materialCost+labourCost), plannedMaterialCost, plannedQty:prod.plannedQty, actualQty:prod.actualQty||0 };
+}
+// Product Costing — a STANDARD cost estimate for a BOM (material at standard cost + labour/
+// overhead estimated as a disclosed default percentage of material cost, NOT an approved
+// Appletree overhead-allocation policy — same "documented, not invented as fact" discipline as
+// maxFuturePostingDays and vendorRating's weighting).
+const PRODUCT_COSTING_LABOUR_OVERHEAD_PCT = 15; // disclosed default, not an approved policy
+function productCosting(bomId){
+  const bom = DB.boms.find(b=>b.id===bomId);
+  if(!bom) return {ok:false, error:'BOM not found.'};
+  const materialCost = r2(bom.lines.reduce((s,l)=>{ const mat = DB.materials.find(m=>m.id===l.materialId); return s+((+l.qty)*(1+(+l.scrapPct||0)/100))*(mat?mat.standardCost:0); },0));
+  const labourOverhead = r2(materialCost*PRODUCT_COSTING_LABOUR_OVERHEAD_PCT/100);
+  return { ok:true, bomId, description:bom.description, materialCost, labourOverheadPct:PRODUCT_COSTING_LABOUR_OVERHEAD_PCT, labourOverhead, standardUnitCost:r2(materialCost+labourOverhead),
+    note:`Labour/overhead is a disclosed ${PRODUCT_COSTING_LABOUR_OVERHEAD_PCT}% default, not an approved Appletree costing policy.` };
+}
+// Labour Performance — cost/hours per worker, combining Labour & Wages (project) + Timesheet
+// hours where the same worker/project/date is recorded on both. Read-only.
+function labourPerformance(){
+  const byWorker = {};
+  DB.labourWages.forEach(l=>{ if(!byWorker[l.workerName]) byWorker[l.workerName]={workerName:l.workerName, totalCost:0, totalDays:0, totalHours:0}; byWorker[l.workerName].totalCost+=l.value; byWorker[l.workerName].totalDays+=l.days; });
+  DB.timesheetEntries.forEach(t=>{ if(!byWorker[t.workerName]) byWorker[t.workerName]={workerName:t.workerName, totalCost:0, totalDays:0, totalHours:0}; byWorker[t.workerName].totalHours+=t.hours; });
+  return Object.values(byWorker).map(w=>({...w, costPerHour: w.totalHours>0 ? r2(w.totalCost/w.totalHours) : null}));
+}
+
+// ============================================================
+// Phase 8 — Manufacturing → Dispatch → Delivery → Installation → QC → Snag → Handover → Billing → AR
+// ============================================================
+// §18/§21 discipline, enforced in code not just prose: NOTHING in this section posts to the
+// GL except the customer invoice/receipt path, which reuses the EXISTING Phase 5/6B AR engine
+// unchanged (createDraft → ... → postJournalEntry, draftCustomerInvoice). Dispatch, Delivery,
+// Installation, QC, Snag, Handover are commercial/operational documents only.
+
+// ---------- Dispatch ----------
+function createDispatch({projectId, customerId, productionOrderId, items, vehicle, transporter, dispatchDate, destination, notes, actor}){
+  if(!projectId || !Array.isArray(items) || !items.length) return {ok:false, error:'Project and at least one item are required.'};
+  const dsp = { id:'DSP-'+String(DB.dispatches.length+1).padStart(4,'0'), dspNo:null, projectId, customerId:customerId||null, productionOrderId:productionOrderId||null,
+    items, vehicle:vehicle||'', transporter:transporter||'', dispatchDate:dispatchDate||null, destination:destination||'', notes:notes||'',
+    status:'Draft', createdBy:actor.id, createdAt:nowIso(), approvedBy:null };
+  DB.dispatches.push(dsp); save();
+  logAudit({type:'DispatchCreated', dispatchId:dsp.id, projectId, userId:actor.id, role:actor.role});
+  return {ok:true, dispatch:dsp};
+}
+function dispatchReadinessCheck(dsp){
+  const reasons = [];
+  if(dsp.productionOrderId){
+    const prod = DB.productionOrders.find(p=>p.id===dsp.productionOrderId);
+    if(!prod) reasons.push('Linked production order not found.');
+    else if(!['Completed','PartiallyCompleted'].includes(prod.status)) reasons.push(`Linked production order is "${prod.status}", not yet Completed/PartiallyCompleted.`);
+  }
+  if(!dsp.customerId) reasons.push('Customer/site information is missing.');
+  return {ready: reasons.length===0, reasons};
+}
+function markDispatchReady({id, actor}){
+  const dsp = DB.dispatches.find(x=>x.id===id);
+  if(!dsp) return {ok:false, error:'Dispatch not found.'};
+  if(dsp.status!=='Draft') return {ok:false, error:`Cannot mark ready — "${dsp.status}", not Draft.`};
+  const check = dispatchReadinessCheck(dsp);
+  if(!check.ready) return {ok:false, error:'Dispatch prerequisites not met: '+check.reasons.join(' | ')};
+  dsp.status='Ready'; save();
+  return {ok:true, dispatch:dsp};
+}
+function approveDispatch({id, actor}){
+  const dsp = DB.dispatches.find(x=>x.id===id);
+  if(!dsp) return {ok:false, error:'Dispatch not found.'};
+  if(dsp.status!=='Ready') return {ok:false, error:`Cannot approve — "${dsp.status}", not Ready.`};
+  if(dsp.createdBy===actor.id && !['CEO','Admin'].includes(actor.role)) return {ok:false, error:'Segregation of duties: dispatch creator cannot approve.'};
+  dsp.status='Approved'; dsp.approvedBy=actor.id; dsp.dspNo=nextDocNumber('DSP'); save();
+  logAudit({type:'DispatchApproved', dispatchId:id, userId:actor.id, role:actor.role});
+  return {ok:true, dispatch:dsp};
+}
+function markDispatched({id, actor}){
+  const dsp = DB.dispatches.find(x=>x.id===id);
+  if(!dsp) return {ok:false, error:'Dispatch not found.'};
+  if(dsp.status!=='Approved') return {ok:false, error:`Cannot dispatch — "${dsp.status}", not Approved.`};
+  dsp.status='Dispatched'; save();
+  return {ok:true, dispatch:dsp};
+}
+
+// ---------- Delivery Confirmation ----------
+// Phase 9 §18/§40 fix: the original version compared THIS call's quantity alone against
+// the dispatch total (never summing PRIOR partial deliveries), and flipped dsp.status to
+// 'Delivered' after the very first delivery record regardless of type — which silently
+// blocked any second partial delivery against the same dispatch (the status guard below
+// required 'Dispatched'). Net effect: a dispatch could only ever receive ONE delivery
+// confirmation, full or partial, and multi-partial over-delivery was never checked.
+// Root-caused via the Phase 9 UI Acceptance Test's required Partial→Partial→Partial→Final
+// sequence. Fixed by tracking cumulative delivered qty across ALL prior delivery records
+// for this dispatch, and only marking the dispatch 'Delivered' once that cumulative total
+// reaches the dispatched qty.
+function createDelivery({dispatchId, deliveredItems, receivedBy, evidenceRef, remarks, actor}){
+  const dsp = DB.dispatches.find(x=>x.id===dispatchId);
+  if(!dsp) return {ok:false, error:'Dispatch not found.'};
+  if(dsp.status==='Delivered') return {ok:false, error:'This dispatch has already been fully delivered — no further delivery can be recorded against it.'};
+  if(dsp.status!=='Dispatched') return {ok:false, error:`Cannot confirm delivery — dispatch is "${dsp.status}", not Dispatched.`};
+  if(!Array.isArray(deliveredItems) || !deliveredItems.length) return {ok:false, error:'At least one delivered item is required.'};
+  const totalDispatched = dsp.items.reduce((s,i)=>s+(+i.qty||0),0);
+  const priorDeliveries = DB.deliveries.filter(d=>d.dispatchId===dispatchId);
+  const priorDeliveredQty = priorDeliveries.reduce((s,d)=>s+d.deliveredItems.reduce((s2,i)=>s2+(+i.qty||0),0),0);
+  if(priorDeliveredQty >= totalDispatched - 0.001) return {ok:false, error:'This dispatch has already been fully delivered — no further delivery can be recorded against it.'};
+  const thisQty = deliveredItems.reduce((s,i)=>s+(+i.qty||0),0);
+  if(thisQty <= 0) return {ok:false, error:'Delivered quantity must be greater than zero.'};
+  const remainingBefore = totalDispatched - priorDeliveredQty;
+  if(thisQty > remainingBefore + 0.001) return {ok:false, error:`Cannot deliver ${thisQty} — only ${r2(remainingBefore)} remains undelivered on this dispatch.`};
+  const cumulativeAfter = priorDeliveredQty + thisQty;
+  const type = cumulativeAfter >= totalDispatched - 0.001 ? 'Full' : 'Partial';
+  const seq = priorDeliveries.length + 1;
+  const dlv = { id:'DLV-'+String(DB.deliveries.length+1).padStart(4,'0'), dlvNo:nextDocNumber('DLV'), dispatchId, projectId:dsp.projectId, customerId:dsp.customerId,
+    seq, deliveredItems, thisQty:r2(thisQty), cumulativeDeliveredQty:r2(cumulativeAfter), remainingQty:r2(totalDispatched-cumulativeAfter), type,
+    date:new Date().toISOString().slice(0,10), receivedBy:receivedBy||'', evidenceRef:evidenceRef||'', remarks:remarks||'', createdBy:actor.id, createdAt:nowIso() };
+  DB.deliveries.push(dlv);
+  dsp.status = (type==='Full') ? 'Delivered' : 'Dispatched'; // stays 'Dispatched' — i.e. still open for further partials — until cumulative delivery is complete
+  save();
+  logAudit({type:'DeliveryConfirmed', deliveryId:dlv.id, dispatchId, deliveryType:type, seq, cumulativeDeliveredQty:dlv.cumulativeDeliveredQty, userId:actor.id, role:actor.role});
+  return {ok:true, delivery:dlv};
+}
+
+// ---------- Installation ----------
+function createInstallation({projectId, site, team, startDate, scope, actor}){
+  const inst = { id:'INST-'+String(DB.installations.length+1).padStart(4,'0'), instNo:nextDocNumber('INST'), projectId, site:site||'', team:team||[],
+    startDate:startDate||null, completionDate:null, scope:scope||'', progressPct:0, remarks:'', issues:[], status:'Planned', labourEntryIds:[], createdBy:actor.id, createdAt:nowIso() };
+  DB.installations.push(inst); save();
+  logAudit({type:'InstallationCreated', installationId:inst.id, projectId, userId:actor.id, role:actor.role});
+  return {ok:true, installation:inst};
+}
+// Phase 15 §2 — Installation Cost. Installation had ZERO cost-posting mechanism before this
+// phase (pure progress tracking: progressPct/status/team, no GL linkage at all) — not merely a
+// missing tag on an existing posting. Reuses the existing account 5100 (Labour Cost, same account
+// Production/Service labour already use) and the existing Cost Centre dimension (adds one new
+// row, CC-INSTALLATION, to the already-established 3-row master) rather than inventing a new
+// account or a new dimension type.
+function postInstallationLabourCost({installationId, amount, actor, overrideReason}){
+  const inst = DB.installations.find(x=>x.id===installationId);
+  if(!inst) return {ok:false, error:'Installation not found.'};
+  if(!(+amount>0)) return {ok:false, error:'Amount must be positive.'};
+  const result = postJournalEntry({ date:new Date().toISOString().slice(0,10), narration:`Installation labour — ${inst.instNo}`, sourceType:'InstallationLabour', sourceId:inst.id,
+    voucherNo:nextDocNumber('JE'), docCategory:'InstallationLabour', branchId:projectBranch(inst.projectId),
+    lines:[ {account:'5100', debit:+amount, credit:0, projectId:inst.projectId, costCentreId:'CC-INSTALLATION'}, {account:'1000', debit:0, credit:+amount, projectId:inst.projectId, costCentreId:'CC-INSTALLATION'} ],
+    postedByUserId:actor.id, postedByRole:actor.role, overrideReason });
+  if(!result.ok) return result;
+  inst.labourEntryIds.push(result.entry.id); save();
+  logAudit({type:'InstallationLabourPosted', installationId:inst.id, amount:+amount, userId:actor.id, role:actor.role});
+  return {ok:true, entry:result.entry};
+}
+function updateInstallationProgress({id, progressPct, remarks, status, actor}){
+  const inst = DB.installations.find(x=>x.id===id);
+  if(!inst) return {ok:false, error:'Installation not found.'};
+  if(inst.status==='Completed') return {ok:false, error:'Installation already Completed — cannot modify.'};
+  if(progressPct!==undefined) inst.progressPct = Math.max(0, Math.min(100, +progressPct));
+  if(remarks) inst.remarks = remarks;
+  if(status){
+    if(!INSTALLATION_STATUSES.includes(status)) return {ok:false, error:`Invalid status "${status}".`};
+    inst.status = status;
+    if(status==='Completed'){ inst.completionDate = new Date().toISOString().slice(0,10); inst.progressPct=100; }
+  }
+  save();
+  return {ok:true, installation:inst};
+}
+
+// ---------- QC Checklist ----------
+function createQCChecklist({projectId, installationId, items, inspector, actor}){
+  const qc = { id:'QCK-'+String(DB.qcChecklists.length+1).padStart(4,'0'), qckNo:nextDocNumber('QCK'), projectId, installationId:installationId||null,
+    items: (items||[]).map(i=>({...i, passFail:i.passFail||'Pending'})), inspector:inspector||actor.id, date:new Date().toISOString().slice(0,10),
+    status:'Pending', createdBy:actor.id, createdAt:nowIso() };
+  DB.qcChecklists.push(qc); save();
+  return {ok:true, qc};
+}
+function submitQCResult({id, items, actor}){
+  const qc = DB.qcChecklists.find(x=>x.id===id);
+  if(!qc) return {ok:false, error:'QC checklist not found.'};
+  qc.items = items;
+  const allPass = items.every(i=>i.passFail==='Pass');
+  const anyFail = items.some(i=>i.passFail==='Fail' && i.critical);
+  qc.status = items.some(i=>i.passFail==='Pending') ? 'InProgress' : (allPass ? 'Passed' : 'Failed');
+  save();
+  logAudit({type:'QCResultSubmitted', qcId:id, status:qc.status, userId:actor.id, role:actor.role});
+  return {ok:true, qc};
+}
+
+// ---------- Snag Management ----------
+function createSnag({projectId, site, description, severity, actor}){
+  if(!SNAG_SEVERITIES.includes(severity)) return {ok:false, error:`Severity must be one of ${SNAG_SEVERITIES.join('/')}.`};
+  const snag = { id:'SNG-'+String(DB.snags.length+1).padStart(4,'0'), sngNo:nextDocNumber('SNG'), projectId, site:site||'', description, severity,
+    assignedTo:null, dueDate:null, status:'Open', resolution:null, verifiedBy:null, verifiedDate:null, createdBy:actor.id, createdAt:nowIso() };
+  DB.snags.push(snag); save();
+  logAudit({type:'SnagCreated', snagId:snag.id, projectId, severity, userId:actor.id, role:actor.role});
+  return {ok:true, snag};
+}
+function assignSnag({id, assignedTo, dueDate, actor}){
+  const snag = DB.snags.find(x=>x.id===id);
+  if(!snag) return {ok:false, error:'Snag not found.'};
+  if(snag.status!=='Open') return {ok:false, error:`Cannot assign — "${snag.status}", not Open.`};
+  snag.assignedTo=assignedTo; snag.dueDate=dueDate||null; snag.status='Assigned'; save();
+  return {ok:true, snag};
+}
+function resolveSnag({id, resolution, actor}){
+  const snag = DB.snags.find(x=>x.id===id);
+  if(!snag) return {ok:false, error:'Snag not found.'};
+  if(!['Assigned','InProgress'].includes(snag.status)) return {ok:false, error:`Cannot resolve — "${snag.status}".`};
+  snag.resolution=resolution; snag.status='Resolved'; save();
+  return {ok:true, snag};
+}
+function verifySnag({id, actor}){
+  const snag = DB.snags.find(x=>x.id===id);
+  if(!snag) return {ok:false, error:'Snag not found.'};
+  if(snag.status!=='Resolved') return {ok:false, error:`Cannot verify — "${snag.status}", not Resolved.`};
+  // The person who resolved it should not be the same one verifying it — a real QC control.
+  if(snag.assignedTo===actor.id && !['CEO','Admin'].includes(actor.role)) return {ok:false, error:'The assignee who resolved this snag cannot also verify it.'};
+  snag.verifiedBy=actor.id; snag.verifiedDate=new Date().toISOString().slice(0,10); snag.status='Verified'; save();
+  return {ok:true, snag};
+}
+function closeSnag({id, actor}){
+  const snag = DB.snags.find(x=>x.id===id);
+  if(!snag) return {ok:false, error:'Snag not found.'};
+  if(snag.status!=='Verified') return {ok:false, error:`Cannot close — "${snag.status}", not Verified.`};
+  snag.status='Closed'; save();
+  return {ok:true, snag};
+}
+
+// ---------- Handover — gated server-side, never a bare status flip (§17) ----------
+function handoverReadinessCheck(projectId){
+  const reasons = [];
+  const installs = DB.installations.filter(i=>i.projectId===projectId);
+  if(!installs.length || !installs.every(i=>i.status==='Completed')) reasons.push('Installation not marked Completed.');
+  // DEFECT FOUND & FIXED (Phase 8 live testing): this used to be `qcs.length && qcs.some(Failed)`
+  // — fail-OPEN when no QC checklist existed at all, meaning handover could succeed WITHOUT QC
+  // ever having been run. Fixed to fail-CLOSED: at least one QC checklist must exist and ALL
+  // must be Passed. "No QC record" is not the same as "QC passed."
+  const qcs = DB.qcChecklists.filter(q=>q.projectId===projectId);
+  if(!qcs.length) reasons.push('No QC checklist has been run for this project.');
+  else if(!qcs.every(q=>q.status==='Passed')) reasons.push('A QC checklist is not yet Passed (Pending/InProgress/Failed).');
+  const openCriticalSnags = DB.snags.filter(s=>s.projectId===projectId && s.severity==='Critical' && s.status!=='Closed');
+  if(openCriticalSnags.length) reasons.push(`${openCriticalSnags.length} Critical snag(s) not yet Closed.`);
+  return {ready: reasons.length===0, reasons};
+}
+function createHandover({projectId, customerAcknowledgement, evidenceRef, remarks, actor}){
+  const check = handoverReadinessCheck(projectId);
+  if(!check.ready) return {ok:false, error:'Handover prerequisites not met: '+check.reasons.join(' | '), reasons:check.reasons};
+  const ho = { id:'HO-'+String(DB.handovers.length+1).padStart(4,'0'), hoNo:nextDocNumber('HO'), projectId, date:new Date().toISOString().slice(0,10),
+    responsibleUser:actor.id, customerAcknowledgement:customerAcknowledgement||'', evidenceRef:evidenceRef||'', remarks:remarks||'',
+    evidenceMethod:'MANUAL_ACKNOWLEDGEMENT — E-SIGNATURE INTEGRATION PENDING', createdAt:nowIso() };
+  DB.handovers.push(ho); save();
+  logAudit({type:'HandoverCompleted', handoverId:ho.id, projectId, userId:actor.id, role:actor.role});
+  return {ok:true, handover:ho};
+}
+
+// ---------- Billing Milestones — do NOT auto-invoice on execution events (§18/§21) ----------
+function createBillingMilestone({projectId, milestoneType, amount, triggerNote, actor}){
+  if(!MILESTONE_TYPES.includes(milestoneType)) return {ok:false, error:`Milestone type must be one of ${MILESTONE_TYPES.join('/')}.`};
+  const bm = { id:'BM-'+String(DB.billingMilestones.length+1).padStart(4,'0'), projectId, milestoneType, amount:+amount, triggerNote:triggerNote||'',
+    status:'Pending', invoiceEntryId:null, createdBy:actor.id, createdAt:nowIso() };
+  DB.billingMilestones.push(bm); save();
+  return {ok:true, milestone:bm};
+}
+// A milestone becoming "Ready" is a manual/reviewed action (an authorized user confirms the
+// underlying execution event happened) — never automatic just because a dispatch/installation/
+// handover record exists. This is the concrete implementation of §18's explicit instruction.
+function markMilestoneReady({id, actor}){
+  const bm = DB.billingMilestones.find(x=>x.id===id);
+  if(!bm) return {ok:false, error:'Milestone not found.'};
+  if(bm.status!=='Pending') return {ok:false, error:`Cannot mark ready — "${bm.status}", not Pending.`};
+  bm.status='Ready'; bm.readyConfirmedBy=actor.id; save();
+  return {ok:true, milestone:bm};
+}
+// Extends (does not replace) draftCustomerInvoice — adds an optional billingMilestoneId link.
+function draftCustomerInvoiceFromMilestone({milestoneId, customerId, projectId, taxCode, date, createdByUserId, createdByRole}){
+  const bm = DB.billingMilestones.find(x=>x.id===milestoneId);
+  if(!bm) return {ok:false, error:'Billing milestone not found.'};
+  if(bm.status!=='Ready') return {ok:false, error:`Cannot invoice — milestone is "${bm.status}", not Ready.`};
+  const r = draftCustomerInvoice({customerId, projectId:projectId||bm.projectId, baseAmount:bm.amount, taxCode, date, narration:`Invoice for ${bm.milestoneType} milestone`, createdByUserId, createdByRole});
+  if(r.ok){ bm.status='Invoiced'; bm.draftId=r.draft.id; r.draft.billingMilestoneId=milestoneId; save(); }
+  return r;
+}
+
+// ---------- Project Closure Readiness — a real gate, not a UI status flip (§28) ----------
+function projectClosureReadiness(projectId){
+  const conditions = {};
+  const prods = DB.productionOrders.filter(p=>p.projectId===projectId);
+  // Deliberately fail-OPEN (unlike installationComplete/qcPassed above): not every project has
+  // an in-house manufacturing component (e.g. pure trading/subcontracted work), so "zero
+  // production orders" legitimately means "not applicable" here, not "skipped."
+  conditions.productionComplete = !prods.length || prods.every(p=>['Completed','Closed','Cancelled'].includes(p.status));
+  const installs = DB.installations.filter(i=>i.projectId===projectId);
+  // Same fail-open defect as handoverReadinessCheck, fixed the same way: Installation and QC
+  // are mandatory execution steps in this Lab's modeled chain (§3) — "no record" must NOT
+  // count as "complete/passed." Production is left fail-open (§7 note below) because not
+  // every project necessarily has an in-house manufacturing component — a deliberate,
+  // disclosed asymmetry, not an oversight.
+  conditions.installationComplete = installs.length>0 && installs.every(i=>i.status==='Completed');
+  const qcs = DB.qcChecklists.filter(q=>q.projectId===projectId);
+  conditions.qcPassed = qcs.length>0 && qcs.every(q=>q.status==='Passed');
+  const criticalSnags = DB.snags.filter(s=>s.projectId===projectId && s.severity==='Critical');
+  conditions.criticalSnagsClosed = criticalSnags.every(s=>s.status==='Closed');
+  conditions.handoverComplete = DB.handovers.some(h=>h.projectId===projectId);
+  const milestones = DB.billingMilestones.filter(m=>m.projectId===projectId);
+  conditions.billingComplete = !milestones.length || milestones.every(m=>m.status==='Invoiced');
+  const openItems = customerOpenItems(DB.projects.find(p=>p.id===projectId)?.customerId).filter(i=>i.projectId===projectId && i.open>0.01);
+  conditions.receivablesCleared = openItems.length===0;
+  const allReady = Object.values(conditions).every(Boolean);
+  return {projectId, conditions, allReady};
+}
+function closeProject({projectId, actor, override, overrideReason}){
+  const p = DB.projects.find(x=>x.id===projectId);
+  if(!p) return {ok:false, error:'Project not found.'};
+  const readiness = projectClosureReadiness(projectId);
+  if(!readiness.allReady && !override) return {ok:false, error:'Project is not ready to close.', readiness};
+  if(!readiness.allReady && override){
+    if(!['CEO','Admin'].includes(actor.role)) return {ok:false, error:'Only CEO/Admin may override closure readiness.'};
+    logAudit({type:'ProjectClosureOverride', projectId, unmetConditions: Object.entries(readiness.conditions).filter(([k,v])=>!v).map(([k])=>k), reason:overrideReason||'', userId:actor.id, role:actor.role});
+  }
+  p.status='CLOSED'; save();
+  logAudit({type:'ProjectClosed', projectId, override:!!override, userId:actor.id, role:actor.role});
+  return {ok:true, project:p, readiness};
+}
+
+// ============================================================
+// Phase 10 — After-Sales: Warranty → Complaint → Ticket → Visit → Diagnosis →
+// Material/Labour → Chargeable Billing / AMC → CAPA
+// ============================================================
+// §3/§18/§19/§31-33 discipline, enforced in code: NO second accounting engine, NO second
+// inventory engine, NO new GL accounts. Chargeable service and AMC billing events reuse
+// draftCustomerInvoice() completely UNMODIFIED (so AR open-items/ageing/receipt/clearing all
+// keep working with zero changes), tagged afterward with a traceability field on the draft
+// object — the exact pattern Phase 7's draftSupplierInvoiceFromPO already established for
+// poId/grnId. Warranty material issue reuses createMaterialIssue() completely UNMODIFIED
+// (same account 5000, same engine) — its sourceType/sourceId pass-through (already a Phase 7
+// parameter) is used to tag the inventory movement 'ServiceVisit', which is how "Warranty
+// Cost" is computed for reporting (§34/§35): a read-only rollup over already-existing,
+// unmodified collections, not a new posting path. Service labour has no equivalent movement
+// collection to derive from, so it gets its own thin posting function — same shape as the
+// existing postProductionLabourCost(), same existing accounts (5100/1000), tagged with its own
+// docCategory ('ServiceLabour') purely for reporting separation, exactly how 'ProductionLabour'
+// already coexists with plain 'MaterialIssue' postings on the same accounts.
+
+const WARRANTY_STATUSES_MANUAL = ['VOID','CANCELLED']; // time-computed statuses (NOT_STARTED/ACTIVE/EXPIRED) are derived, never stored
+const COMPLAINT_STATUSES = ['NEW','TRIAGED','ASSIGNED','IN_PROGRESS','WAITING_CUSTOMER','WAITING_PARTS','RESOLVED','CLOSED','REJECTED'];
+const TICKET_CLASSIFICATIONS = ['Warranty','Chargeable','AMC','Courtesy','RequiresInvestigation'];
+const TICKET_STATUSES = ['NEW','ASSIGNED','IN_PROGRESS','WAITING_PARTS','RESOLVED','CLOSED','REJECTED'];
+const VISIT_STATUSES = ['PLANNED','ASSIGNED','IN_PROGRESS','COMPLETED','CANCELLED'];
+const AMC_STATUSES = ['DRAFT','ACTIVE','EXPIRED','CANCELLED','RENEWED'];
+const CAPA_STATUSES = ['OPEN','ANALYSIS','ACTION','VERIFICATION','EFFECTIVENESS','CLOSED'];
+const CAPA_TRIGGERS = ['RepeatedFailure','SystemicIssue','QualityTrend','MajorComplaint','ManagementDecision','SafetyQualityEvent'];
+
+// ---------- Warranty ----------
+// §5: duration is NEVER defaulted — an explicit BUSINESS POLICY REQUIRED error is returned if
+// the caller doesn't supply durationMonths, rather than assuming 1yr/2yr/etc.
+function createWarranty({customerId, projectId, handoverId, product, warrantyType, coverage, exclusions, terms, durationMonths, startDate, actor}){
+  if(!customerId || !projectId) return {ok:false, error:'Customer and project are required.'};
+  if(!durationMonths || +durationMonths<=0) return {ok:false, error:'BUSINESS POLICY REQUIRED: warranty duration (in months) must be explicitly specified — Appletree\'s actual warranty period policy is not documented in this Lab, so it cannot be assumed.'};
+  const ho = handoverId ? DB.handovers.find(h=>h.id===handoverId) : null;
+  const start = startDate || (ho ? ho.date : new Date().toISOString().slice(0,10));
+  const end = new Date(start); end.setMonth(end.getMonth() + (+durationMonths));
+  const war = { id:'WAR-'+String(DB.warranties.length+1).padStart(4,'0'), warNo:nextDocNumber('WAR'), customerId, projectId, handoverId:handoverId||null,
+    product:product||'', warrantyType:warrantyType||'Standard', coverage:coverage||'', exclusions:exclusions||'', terms:terms||'',
+    durationMonths:+durationMonths, startDate:start, endDate:end.toISOString().slice(0,10), manualStatus:null,
+    createdBy:actor.id, createdAt:nowIso() };
+  DB.warranties.push(war); save();
+  logAudit({type:'WarrantyCreated', warrantyId:war.id, customerId, projectId, durationMonths:+durationMonths, userId:actor.id, role:actor.role});
+  return {ok:true, warranty:war};
+}
+function warrantyEffectiveStatus(war, asOfDate){
+  if(war.manualStatus) return war.manualStatus; // VOID/CANCELLED always win
+  const asOf = asOfDate || new Date().toISOString().slice(0,10);
+  if(asOf < war.startDate) return 'NOT_STARTED';
+  if(asOf > war.endDate) return 'EXPIRED';
+  return 'ACTIVE';
+}
+function voidWarranty({id, reason, actor}){
+  const war = DB.warranties.find(w=>w.id===id);
+  if(!war) return {ok:false, error:'Warranty not found.'};
+  if(!['Admin','CEO','FinanceManager'].includes(actor.role)) return {ok:false, error:'Only Admin/CEO/FinanceManager may void a warranty.'};
+  war.manualStatus='VOID'; war.voidReason=reason||''; save();
+  logAudit({type:'WarrantyVoided', warrantyId:id, reason, userId:actor.id, role:actor.role});
+  return {ok:true, warranty:war};
+}
+function cancelWarranty({id, reason, actor}){
+  const war = DB.warranties.find(w=>w.id===id);
+  if(!war) return {ok:false, error:'Warranty not found.'};
+  if(!['Admin','CEO','FinanceManager'].includes(actor.role)) return {ok:false, error:'Only Admin/CEO/FinanceManager may cancel a warranty.'};
+  war.manualStatus='CANCELLED'; war.cancelReason=reason||''; save();
+  logAudit({type:'WarrantyCancelled', warrantyId:id, reason, userId:actor.id, role:actor.role});
+  return {ok:true, warranty:war};
+}
+// §6: eligibility is computed server-side, authoritative, never left to the browser.
+function warrantyEligibility({warrantyId, claimDate, claimType, actor}){
+  const war = DB.warranties.find(w=>w.id===warrantyId);
+  if(!war) return {result:'NOT_ELIGIBLE', reasons:['No warranty record found for this claim.']};
+  const asOf = claimDate || new Date().toISOString().slice(0,10);
+  const status = warrantyEffectiveStatus(war, asOf);
+  const reasons = [];
+  if(status==='VOID') reasons.push('Warranty has been voided.');
+  if(status==='CANCELLED') reasons.push('Warranty has been cancelled.');
+  if(status==='NOT_STARTED') reasons.push(`Claim date ${asOf} is before warranty start ${war.startDate}.`);
+  if(status==='EXPIRED') reasons.push(`Claim date ${asOf} is after warranty end ${war.endDate}.`);
+  if(reasons.length) return {result:'NOT_ELIGIBLE', reasons, warrantyStatus:status};
+  // Exclusion text is free-form and cannot be reliably auto-parsed — a textual match against
+  // claimType routes to REQUIRES_REVIEW rather than a false-confidence auto-deny/auto-approve.
+  if(claimType && war.exclusions && war.exclusions.toLowerCase().includes(String(claimType).toLowerCase())){
+    return {result:'REQUIRES_REVIEW', reasons:[`Claim type "${claimType}" appears in this warranty's exclusions text — requires manual review, not an automated decision.`], warrantyStatus:status};
+  }
+  return {result:'ELIGIBLE', reasons:['Warranty is ACTIVE and claim date falls within coverage.'], warrantyStatus:status};
+}
+
+// ---------- Complaint / Service Request ----------
+function createComplaint({customerId, projectId, warrantyId, site, product, reportedBy, contact, description, priority, severity, evidenceRef, actor}){
+  if(!customerId || !description) return {ok:false, error:'Customer and description are required.'};
+  const cmp = { id:'CMP-'+String(DB.complaints.length+1).padStart(4,'0'), cmpNo:nextDocNumber('CMP'), customerId, projectId:projectId||null, warrantyId:warrantyId||null,
+    site:site||'', product:product||'', reportedBy:reportedBy||'', contact:contact||'', description, priority:priority||'Normal', severity:severity||'Minor',
+    evidenceRef:evidenceRef||'', status:'NEW', classification:null, createdBy:actor.id, createdAt:nowIso() };
+  DB.complaints.push(cmp); save();
+  logAudit({type:'ComplaintCreated', complaintId:cmp.id, customerId, projectId, severity:cmp.severity, userId:actor.id, role:actor.role});
+  return {ok:true, complaint:cmp};
+}
+// §9/§10: triage classification is a distinct, auditable decision — never assumed as Warranty.
+function triageComplaint({id, classification, notes, actor}){
+  const cmp = DB.complaints.find(c=>c.id===id);
+  if(!cmp) return {ok:false, error:'Complaint not found.'};
+  if(!TICKET_CLASSIFICATIONS.includes(classification)) return {ok:false, error:`Classification must be one of ${TICKET_CLASSIFICATIONS.join('/')}.`};
+  if(!['NEW','TRIAGED'].includes(cmp.status)) return {ok:false, error:`Cannot triage — "${cmp.status}", not NEW/TRIAGED.`};
+  cmp.classification = classification; cmp.triageNotes = notes||''; cmp.status='TRIAGED'; cmp.triagedBy=actor.id; save();
+  logAudit({type:'ComplaintTriaged', complaintId:id, classification, userId:actor.id, role:actor.role});
+  return {ok:true, complaint:cmp};
+}
+function changeComplaintStatus({id, newStatus, reason, actor}){
+  const cmp = DB.complaints.find(c=>c.id===id);
+  if(!cmp) return {ok:false, error:'Complaint not found.'};
+  if(!COMPLAINT_STATUSES.includes(newStatus)) return {ok:false, error:`Status must be one of ${COMPLAINT_STATUSES.join('/')}.`};
+  cmp.status = newStatus; if(reason) cmp.statusReason = reason; save();
+  logAudit({type:'ComplaintStatusChanged', complaintId:id, newStatus, userId:actor.id, role:actor.role});
+  return {ok:true, complaint:cmp};
+}
+
+// ---------- Service Ticket ----------
+function createServiceTicket({complaintId, customerId, projectId, warrantyId, amcId, issue, priority, severity, dueDate, actor}){
+  const complaint = complaintId ? DB.complaints.find(c=>c.id===complaintId) : null;
+  if(complaintId && !complaint) return {ok:false, error:'Source complaint not found.'};
+  const tkt = { id:'TKT-'+String(DB.serviceTickets.length+1).padStart(4,'0'), tktNo:nextDocNumber('TKT'), complaintId:complaintId||null,
+    customerId: customerId || complaint?.customerId, projectId: projectId || complaint?.projectId || null, warrantyId: warrantyId || complaint?.warrantyId || null, amcId:amcId||null,
+    issue: issue || complaint?.description || '', priority: priority || complaint?.priority || 'Normal', severity: severity || complaint?.severity || 'Minor',
+    classification: complaint?.classification || null, assignedTo:null, dueDate:dueDate||null, status:'NEW', escalations:[],
+    createdBy:actor.id, createdAt:nowIso() };
+  if(!tkt.customerId) return {ok:false, error:'Customer is required (directly or via a source complaint).'};
+  DB.serviceTickets.push(tkt); save();
+  if(complaint){ complaint.status='ASSIGNED'==complaint.status?complaint.status:'ASSIGNED'; save(); }
+  logAudit({type:'ServiceTicketCreated', ticketId:tkt.id, complaintId, customerId:tkt.customerId, userId:actor.id, role:actor.role});
+  return {ok:true, ticket:tkt};
+}
+function assignServiceTicket({id, assignedTo, dueDate, actor}){
+  const tkt = DB.serviceTickets.find(t=>t.id===id);
+  if(!tkt) return {ok:false, error:'Ticket not found.'};
+  if(!assignedTo) return {ok:false, error:'assignedTo is required.'};
+  tkt.assignedTo = assignedTo; if(dueDate) tkt.dueDate = dueDate; tkt.status='ASSIGNED';
+  // POL-08: assignment is treated as the "first response" SLA checkpoint — the first
+  // acknowledgement that someone is acting on the ticket. Only the FIRST assignment counts;
+  // reassigning later never resets an already-recorded response time.
+  if(!tkt.firstRespondedAt) tkt.firstRespondedAt = nowIso();
+  save();
+  logAudit({type:'ServiceTicketAssigned', ticketId:id, assignedTo, userId:actor.id, role:actor.role});
+  return {ok:true, ticket:tkt};
+}
+function escalateServiceTicket({id, escalateTo, reason, actor}){
+  const tkt = DB.serviceTickets.find(t=>t.id===id);
+  if(!tkt) return {ok:false, error:'Ticket not found.'};
+  if(!escalateTo || !reason) return {ok:false, error:'escalateTo and reason are required.'};
+  tkt.escalations.push({escalateTo, reason, by:actor.id, at:nowIso()}); save();
+  logAudit({type:'ServiceTicketEscalated', ticketId:id, escalateTo, reason, userId:actor.id, role:actor.role});
+  return {ok:true, ticket:tkt};
+}
+function setTicketClassification({id, classification, actor}){
+  const tkt = DB.serviceTickets.find(t=>t.id===id);
+  if(!tkt) return {ok:false, error:'Ticket not found.'};
+  if(!TICKET_CLASSIFICATIONS.includes(classification)) return {ok:false, error:`Classification must be one of ${TICKET_CLASSIFICATIONS.join('/')}.`};
+  tkt.classification = classification; save();
+  logAudit({type:'ServiceTicketClassified', ticketId:id, classification, userId:actor.id, role:actor.role});
+  return {ok:true, ticket:tkt};
+}
+
+// ---------- Service Visit (+ Diagnosis) ----------
+function createServiceVisit({ticketId, site, technician, visitDate, actor}){
+  const tkt = DB.serviceTickets.find(t=>t.id===ticketId);
+  if(!tkt) return {ok:false, error:'Service ticket not found.'};
+  const vis = { id:'VIS-'+String(DB.serviceVisits.length+1).padStart(4,'0'), visNo:nextDocNumber('VIS'), ticketId, customerId:tkt.customerId, projectId:tkt.projectId,
+    site:site||'', technician:technician||actor.id, visitDate:visitDate||new Date().toISOString().slice(0,10), startTime:null, endTime:null,
+    diagnosis:null, rootCause:null, recommendedAction:null, partsRequired:'', labourRequired:'', warrantyDecision:null, chargeableDecision:null,
+    workPerformed:'', materialIssueIds:[], labourEntryIds:[], remarks:'', customerAcknowledgement:'', evidenceRef:'',
+    status:'PLANNED', createdBy:actor.id, createdAt:nowIso() };
+  DB.serviceVisits.push(vis); save();
+  if(tkt.status==='ASSIGNED') { tkt.status='IN_PROGRESS'; save(); }
+  logAudit({type:'ServiceVisitCreated', visitId:vis.id, ticketId, userId:actor.id, role:actor.role});
+  return {ok:true, visit:vis};
+}
+function startServiceVisit({id, actor}){
+  const vis = DB.serviceVisits.find(v=>v.id===id);
+  if(!vis) return {ok:false, error:'Service visit not found.'};
+  if(!['PLANNED','ASSIGNED'].includes(vis.status)) return {ok:false, error:`Cannot start — "${vis.status}".`};
+  vis.status='IN_PROGRESS'; vis.startTime=nowIso(); save();
+  return {ok:true, visit:vis};
+}
+// §13: diagnosis captures the WARRANTY/CHARGEABLE DECISION explicitly — never auto-assumed.
+// §13 also forbids posting anything financial directly from diagnosis — this function only
+// records facts; material/labour/billing are separate, deliberate actions (below).
+function recordDiagnosis({id, problem, rootCause, diagnosis, recommendedAction, partsRequired, labourRequired, warrantyDecision, chargeableDecision, estimatedAmount, disputed, actor}){
+  const vis = DB.serviceVisits.find(v=>v.id===id);
+  if(!vis) return {ok:false, error:'Service visit not found.'};
+  if(vis.status==='COMPLETED') return {ok:false, error:'Visit already Completed — diagnosis is locked.'};
+  if(warrantyDecision!==undefined && chargeableDecision!==undefined && warrantyDecision && chargeableDecision){
+    return {ok:false, error:'A visit cannot be classified as BOTH warranty and chargeable — they must not be financially mixed (§10).'};
+  }
+  Object.assign(vis, {problem:problem||vis.problem, rootCause:rootCause||vis.rootCause, diagnosis:diagnosis||vis.diagnosis,
+    recommendedAction:recommendedAction||vis.recommendedAction, partsRequired:partsRequired||vis.partsRequired, labourRequired:labourRequired||vis.labourRequired,
+    warrantyDecision: warrantyDecision!==undefined?!!warrantyDecision:vis.warrantyDecision, chargeableDecision: chargeableDecision!==undefined?!!chargeableDecision:vis.chargeableDecision,
+    estimatedAmount: estimatedAmount!==undefined?+estimatedAmount:vis.estimatedAmount, disputed: disputed!==undefined?!!disputed:vis.disputed});
+  // POL-07 (approved threshold ₹10,000): a diagnosis above the threshold, OR flagged disputed
+  // (regardless of amount), requires independent manager approval before it is final.
+  vis.diagnosedBy = actor.id;
+  vis.diagnosisApprovalStatus = diagnosisRequiresApproval({estimatedAmount:vis.estimatedAmount, disputed:vis.disputed}) ? 'PendingApproval' : 'NotRequired';
+  save();
+  logAudit({type:'DiagnosisRecorded', visitId:id, warrantyDecision:vis.warrantyDecision, chargeableDecision:vis.chargeableDecision, estimatedAmount:vis.estimatedAmount, disputed:vis.disputed, approvalStatus:vis.diagnosisApprovalStatus, userId:actor.id, role:actor.role});
+  return {ok:true, visit:vis};
+}
+function completeServiceVisit({id, workPerformed, remarks, customerAcknowledgement, evidenceRef, actor}){
+  const vis = DB.serviceVisits.find(v=>v.id===id);
+  if(!vis) return {ok:false, error:'Service visit not found.'};
+  if(vis.status==='COMPLETED') return {ok:false, error:'Already Completed.'};
+  if(vis.status==='CANCELLED') return {ok:false, error:'Cannot complete a Cancelled visit.'};
+  // POL-07: cannot complete/close out a visit whose diagnosis still needs manager approval —
+  // the technician's classification is not yet final.
+  if(vis.diagnosisApprovalStatus==='PendingApproval') return {ok:false, error:`This visit's diagnosis (₹${vis.estimatedAmount||0}${vis.disputed?', disputed':''}) requires manager approval before the visit can be completed — a technician cannot self-finalize a case above the ₹${DB.policyConfig.warrantyApprovalThreshold} threshold or a disputed case.`};
+  vis.workPerformed = workPerformed||vis.workPerformed; vis.remarks = remarks||vis.remarks;
+  vis.customerAcknowledgement = customerAcknowledgement||'';
+  vis.evidenceRef = evidenceRef||'';
+  vis.evidenceMethod = 'MANUAL_ACKNOWLEDGEMENT — E-SIGNATURE INTEGRATION PENDING';
+  vis.status='COMPLETED'; vis.endTime=nowIso(); save();
+  logAudit({type:'ServiceVisitCompleted', visitId:id, userId:actor.id, role:actor.role});
+  return {ok:true, visit:vis};
+}
+function cancelServiceVisit({id, reason, actor}){
+  const vis = DB.serviceVisits.find(v=>v.id===id);
+  if(!vis) return {ok:false, error:'Service visit not found.'};
+  if(vis.status==='COMPLETED') return {ok:false, error:'Cannot cancel a Completed visit.'};
+  vis.status='CANCELLED'; vis.cancelReason=reason||''; save();
+  return {ok:true, visit:vis};
+}
+
+// ---------- Service Material / Labour (reuses the existing engines, unmodified) ----------
+// §14/§15: routes through the EXISTING createMaterialIssue() with zero modification — same
+// account (5000), same inventory engine. sourceType/sourceId (already a Phase 7 parameter of
+// createMaterialIssue) tags the movement 'ServiceVisit' for cost traceability/rollup (§17).
+function issueServiceMaterial({visitId, materialId, qty, warehouseId, actor}){
+  const vis = DB.serviceVisits.find(v=>v.id===visitId);
+  if(!vis) return {ok:false, error:'Service visit not found.'};
+  if(!vis.projectId) return {ok:false, error:'This service visit has no linked project — material issue requires a project for cost attribution.'};
+  const r = createMaterialIssue({projectId:vis.projectId, materialId, qty, warehouseId, purpose:`Service Visit ${vis.visNo||vis.id}`, actor, sourceType:'ServiceVisit', sourceId:visitId});
+  if(!r.ok) return r;
+  vis.materialIssueIds.push(r.movement.id); save();
+  return r;
+}
+// §16/§17: existing engine's own posting mechanism (postJournalEntry) is reused directly — same
+// existing accounts (5100 Labour Cost / 1000 Bank) as postProductionLabourCost already uses.
+// docCategory 'ServiceLabour' is a NEW document-type TAG (not a new account) purely so this
+// figure can be rolled up separately in reporting — the identical technique 'ProductionLabour'
+// already uses alongside plain 'MaterialIssue' postings on the very same accounts.
+function postServiceLabourCost({visitId, technicianId, hours, rate, amount, actor, overrideReason}){
+  const vis = DB.serviceVisits.find(v=>v.id===visitId);
+  if(!vis) return {ok:false, error:'Service visit not found.'};
+  const value = amount!==undefined ? +amount : (+hours||0)*(+rate||0);
+  if(!(value>0)) return {ok:false, error:'A positive labour amount (or hours × rate) is required.'};
+  const result = postJournalEntry({ date:new Date().toISOString().slice(0,10), narration:`Service labour — ${vis.visNo||vis.id}`, sourceType:'ServiceVisit', sourceId:vis.id,
+    voucherNo:nextDocNumber('JE'), docCategory:'ServiceLabour',
+    lines:[ {account:'5100', debit:value, credit:0, projectId:vis.projectId||null, customerId:vis.customerId}, {account:'1000', debit:0, credit:value, projectId:vis.projectId||null} ],
+    postedByUserId:actor.id, postedByRole:actor.role, overrideReason });
+  if(!result.ok) return result;
+  vis.labourEntryIds.push(result.entry.id); save();
+  logAudit({type:'ServiceLabourPosted', visitId, amount:value, userId:actor.id, role:actor.role});
+  return {ok:true, entry:result.entry};
+}
+// §17: full cost traceability — Ticket -> Visit -> Material -> Labour, computed on demand from
+// already-existing, already-correct collections (no shadow "final cost" number typed in).
+function serviceTicketCostBreakdown(ticketId){
+  const visits = DB.serviceVisits.filter(v=>v.ticketId===ticketId);
+  let materialCost = 0, labourCost = 0;
+  visits.forEach(v=>{
+    v.materialIssueIds.forEach(mvId=>{ const mv = DB.inventoryMovements.find(m=>m.id===mvId); if(mv) materialCost += mv.valuationAmount; });
+    v.labourEntryIds.forEach(entryId=>{ const je = DB.journalEntries.find(e=>e.id===entryId); if(je) je.lines.forEach(l=>{ if(l.account==='5100') labourCost += l.debit; }); });
+  });
+  return {ticketId, visitCount:visits.length, materialCost: Math.round(materialCost*100)/100, labourCost: Math.round(labourCost*100)/100, totalCost: Math.round((materialCost+labourCost)*100)/100};
+}
+
+// ---------- Chargeable Service Billing (reuses draftCustomerInvoice unmodified — §18) ----------
+function draftServiceInvoice({ticketId, customerId, projectId, baseAmount, taxCode, date, createdByUserId, createdByRole}){
+  const tkt = DB.serviceTickets.find(t=>t.id===ticketId);
+  if(!tkt) return {ok:false, error:'Service ticket not found.'};
+  if(tkt.classification!=='Chargeable') return {ok:false, error:`Cannot bill — ticket is classified "${tkt.classification||'(unclassified)'}", not Chargeable. Warranty work must not create customer AR (§19).`};
+  const r = draftCustomerInvoice({customerId: customerId||tkt.customerId, projectId: projectId||tkt.projectId, baseAmount, taxCode, date, narration:`Chargeable Service — Ticket ${tkt.tktNo||tkt.id}`, createdByUserId, createdByRole});
+  if(r.ok){ r.draft.serviceTicketId = ticketId; save(); }
+  return r;
+}
+
+// ---------- AMC ----------
+// §20: dates/value/terms are operator-supplied, never invented; no default price/frequency.
+function createAMCContract({customerId, projectId, site, coveredSystems, startDate, endDate, contractValue, billingTerms, serviceFrequencyMonths, coverage, exclusions, sla, actor}){
+  if(!customerId || !startDate || !endDate) return {ok:false, error:'Customer, start date and end date are required.'};
+  if(!(+contractValue>0)) return {ok:false, error:'BUSINESS POLICY REQUIRED: AMC contract value must be explicitly specified — no default AMC price exists in this Lab.'};
+  if(!serviceFrequencyMonths || +serviceFrequencyMonths<=0) return {ok:false, error:'BUSINESS POLICY REQUIRED: AMC service frequency (months between visits) must be explicitly specified.'};
+  const amc = { id:'AMC-'+String(DB.amcContracts.length+1).padStart(4,'0'), amcNo:nextDocNumber('AMC'), customerId, projectId:projectId||null, site:site||'',
+    coveredSystems:coveredSystems||'', startDate, endDate, contractValue:+contractValue, billingTerms:billingTerms||'', serviceFrequencyMonths:+serviceFrequencyMonths,
+    coverage:coverage||'', exclusions:exclusions||'', sla:sla||'', status:'DRAFT', createdBy:actor.id, createdAt:nowIso() };
+  DB.amcContracts.push(amc); save();
+  logAudit({type:'AMCContractCreated', amcId:amc.id, customerId, contractValue:amc.contractValue, userId:actor.id, role:actor.role});
+  return {ok:true, amc};
+}
+function activateAMCContract({id, actor}){
+  const amc = DB.amcContracts.find(a=>a.id===id);
+  if(!amc) return {ok:false, error:'AMC contract not found.'};
+  if(amc.status!=='DRAFT') return {ok:false, error:`Cannot activate — "${amc.status}", not DRAFT.`};
+  if(!['Admin','CEO','FinanceManager'].includes(actor.role)) return {ok:false, error:'Only Admin/CEO/FinanceManager may activate an AMC contract.'};
+  amc.status='ACTIVE'; amc.activatedBy=actor.id; save();
+  logAudit({type:'AMCContractActivated', amcId:id, userId:actor.id, role:actor.role});
+  return {ok:true, amc};
+}
+function cancelAMCContract({id, reason, actor}){
+  const amc = DB.amcContracts.find(a=>a.id===id);
+  if(!amc) return {ok:false, error:'AMC contract not found.'};
+  if(['CANCELLED','EXPIRED'].includes(amc.status)) return {ok:false, error:`Already "${amc.status}".`};
+  if(!['Admin','CEO','FinanceManager'].includes(actor.role)) return {ok:false, error:'Only Admin/CEO/FinanceManager may cancel an AMC contract.'};
+  amc.status='CANCELLED'; amc.cancelReason=reason||''; save();
+  logAudit({type:'AMCContractCancelled', amcId:id, reason, userId:actor.id, role:actor.role});
+  // §18: cancellation NEVER auto-posts a refund/write-off — no such policy has been approved.
+  // The remaining deferred balance (money billed for service that will now never be delivered)
+  // is surfaced honestly so a human decides, rather than the system silently doing nothing OR
+  // silently inventing a refund/write-off entry.
+  const sched = amcRevenueSchedule(id);
+  const disclosure = sched.deferredBalance>0.005 ? `BUSINESS POLICY REQUIRED: ₹${sched.deferredBalance} remains deferred (billed but not yet recognized as revenue) as of cancellation — no refund/write-off policy is approved, so no accounting entry has been posted for this balance. A human must decide whether to refund the customer, write off the balance, or recognize it immediately, and that decision has not been made here.` : null;
+  return {ok:true, amc, deferredBalanceAtCancellation: sched.deferredBalance, disclosure};
+}
+// §22: renewal is never automatic — a new, explicit, linked contract record is created.
+function renewAMCContract({id, startDate, endDate, contractValue, actor}){
+  const old = DB.amcContracts.find(a=>a.id===id);
+  if(!old) return {ok:false, error:'AMC contract not found.'};
+  if(!['ACTIVE','EXPIRED'].includes(old.status)) return {ok:false, error:`Cannot renew — "${old.status}".`};
+  const r = createAMCContract({customerId:old.customerId, projectId:old.projectId, site:old.site, coveredSystems:old.coveredSystems,
+    startDate: startDate||old.endDate, endDate, contractValue: contractValue||old.contractValue, billingTerms:old.billingTerms,
+    serviceFrequencyMonths:old.serviceFrequencyMonths, coverage:old.coverage, exclusions:old.exclusions, sla:old.sla, actor});
+  if(!r.ok) return r;
+  old.status='RENEWED'; old.renewedIntoId=r.amc.id; save();
+  r.amc.renewedFromId=old.id; save();
+  logAudit({type:'AMCContractRenewed', oldAmcId:id, newAmcId:r.amc.id, userId:actor.id, role:actor.role});
+  return {ok:true, amc:r.amc, previous:old};
+}
+// §21: AMC schedule creates planned service obligations — operational only, no accounting.
+function createAMCScheduleEntry({amcId, plannedDate, actor}){
+  const amc = DB.amcContracts.find(a=>a.id===amcId);
+  if(!amc) return {ok:false, error:'AMC contract not found.'};
+  if(amc.status!=='ACTIVE') return {ok:false, error:`Cannot schedule a visit — AMC is "${amc.status}", not ACTIVE.`};
+  const sch = { id:'AMCSCH-'+String(DB.amcSchedules.length+1).padStart(4,'0'), amcId, plannedDate, status:'Planned', ticketId:null, createdBy:actor.id, createdAt:nowIso() };
+  DB.amcSchedules.push(sch); save();
+  return {ok:true, schedule:sch};
+}
+function linkAMCScheduleToTicket({scheduleId, ticketId, actor}){
+  const sch = DB.amcSchedules.find(s=>s.id===scheduleId);
+  if(!sch) return {ok:false, error:'AMC schedule entry not found.'};
+  const tkt = DB.serviceTickets.find(t=>t.id===ticketId);
+  if(!tkt) return {ok:false, error:'Service ticket not found.'};
+  sch.ticketId = ticketId; sch.status='Ticketed'; save();
+  return {ok:true, schedule:sch};
+}
+// §21: billing event reuses draftCustomerInvoice() unmodified — no deferred-revenue/contract-
+// liability accounting is invented (§33 explicitly forbids it without approved policy); this is
+// a plain, immediate invoice per billing event, tagged for traceability only.
+// Phase 13 POL-05 (approved: Option B, deferred/monthly recognition). §16 required inspecting
+// the existing Chart of Accounts before inventing anything: account 2100 "Customer Advance
+// Liability" is exactly the right existing account — a Liability representing money the company
+// owes future goods/service for — so it is REUSED here, not a new account. docCategory stays
+// 'CustomerInvoice' so the AR engine (open items, ageing, receipt, clearing — all completely
+// unmodified) keeps working; only the CREDIT side (2100 instead of 4000) differs from a normal
+// invoice, achieving deferral without a second invoice/AR mechanism.
+function draftAMCBillingInvoice({amcId, baseAmount, taxCode, date, createdByUserId, createdByRole}){
+  const amc = DB.amcContracts.find(a=>a.id===amcId);
+  if(!amc) return {ok:false, error:'AMC contract not found.'};
+  if(amc.status!=='ACTIVE') return {ok:false, error:`Cannot bill — AMC is "${amc.status}", not ACTIVE.`};
+  if(!amc.projectId) return {ok:false, error:'AMC contract has no linked project — billing requires one for AR/project attribution.'};
+  const base = baseAmount!==undefined ? +baseAmount : amc.contractValue;
+  if(!(base>0)) return {ok:false, error:'A positive billing amount is required.'};
+  const tax = taxCode ? calcTax(taxCode, base) : null;
+  const lines = [ {account:AR_ACCOUNT, debit: r2(base+(tax?tax.taxAmount:0)), credit:0, customerId:amc.customerId, projectId:amc.projectId, taxCode:taxCode||null},
+    {account:'2100', debit:0, credit:r2(base), customerId:amc.customerId, projectId:amc.projectId} ];
+  if(tax && tax.taxAmount>0) lines.push({account:'2200', debit:0, credit:r2(tax.taxAmount), customerId:amc.customerId, projectId:amc.projectId, taxCode});
+  const r = createDraft({date, narration:`AMC Billing (Deferred Revenue) — ${amc.amcNo||amc.id}`, docTypeCode:'INV', sourceType:'AMC Billing', docCategory:'CustomerInvoice', party:amc.customerId, lines, createdByUserId, createdByRole});
+  if(r.ok){ r.draft.amcContractId = amcId; save(); }
+  return r;
+}
+function monthsBetweenInclusive(start, end){
+  return Math.max(1, (end.getFullYear()-start.getFullYear())*12 + (end.getMonth()-start.getMonth()) + 1);
+}
+// Ledger-sourced (not a cached total) — recomputed from actual posted entries every time, so it
+// can never silently drift from what was really posted.
+// Phase 16 §13 — DEFECT FOUND & FIXED: unlike `amcRecognizedTotal()` immediately below (which
+// already correctly excludes reversed entries), this one summed a billed entry's credit even
+// after it had been reversed. Same fix — skip an entry once `reversedByEntryId` is set.
+function amcBilledTotal(amcId){
+  return r2(DB.jeDrafts.filter(d=>d.status==='Posted' && d.amcContractId===amcId)
+    .reduce((s,d)=>{ const je=DB.journalEntries.find(e=>e.id===d.postedEntryId); if(!je || je.reversedByEntryId) return s; return s + je.lines.filter(l=>l.account==='2100').reduce((s2,l)=>s2+l.credit,0); }, 0));
+}
+function amcRecognizedTotal(amcId){
+  return r2(DB.journalEntries.filter(je=>je.docCategory==='AMCRevenueRecognition' && je.sourceType==='AMC Revenue Recognition' && je.sourceId===amcId && !je.reversalOfId && !je.reversedByEntryId)
+    .flatMap(je=>je.lines).filter(l=>l.account==='4000').reduce((s,l)=>s+l.credit,0));
+}
+// §14/§21 — the authoritative distinction management now requires: Contract Value, Billed,
+// Recognized (Posted Revenue), and Deferred Balance are FOUR separate numbers, never conflated.
+function amcRevenueSchedule(amcId){
+  const amc = DB.amcContracts.find(a=>a.id===amcId);
+  if(!amc) return null;
+  const totalMonths = monthsBetweenInclusive(new Date(amc.startDate), new Date(amc.endDate));
+  const billed = amcBilledTotal(amcId);
+  const recognized = amcRecognizedTotal(amcId);
+  return { amcId, contractValue: amc.contractValue, totalMonths, monthlyAmount: r2(amc.contractValue/totalMonths),
+    billed, recognized, deferredBalance: r2(billed-recognized), recognizedPeriods: amc.recognizedPeriods||[] };
+}
+// §17: monthly recognition, capped so recognized NEVER exceeds what was actually billed/deferred
+// (never fabricates revenue for an unbilled period) and never exceeds the contract value overall;
+// the final recognizable period absorbs any rounding remainder so the totals land exactly, not
+// approximately, on the contract value once fully billed and fully recognized.
+function recognizeAMCRevenue({amcId, periodDate, actor, overrideReason}){
+  const amc = DB.amcContracts.find(a=>a.id===amcId);
+  if(!amc) return {ok:false, error:'AMC contract not found.'};
+  const period = (periodDate||new Date().toISOString().slice(0,10)).slice(0,7); // YYYY-MM
+  if(!amc.recognizedPeriods) amc.recognizedPeriods = [];
+  if(amc.recognizedPeriods.includes(period)) return {ok:false, error:`Period ${period} has already been recognized for this AMC contract — no double recognition.`};
+  const sched = amcRevenueSchedule(amcId);
+  if(sched.deferredBalance<=0.005) return {ok:false, error:'Nothing to recognize — deferred balance is zero (either not yet billed, or already fully recognized).'};
+  const remainingPeriods = sched.totalMonths - sched.recognizedPeriods.length;
+  const isFinalRecognizablePeriod = remainingPeriods<=1 || sched.deferredBalance <= sched.monthlyAmount + 0.01;
+  const amount = isFinalRecognizablePeriod ? sched.deferredBalance : Math.min(sched.monthlyAmount, sched.deferredBalance);
+  const _rDate = periodDate||new Date().toISOString().slice(0,10);
+  const result = postJournalEntry({ date:_rDate, narration:`AMC Revenue Recognition — ${period} — ${amc.amcNo||amc.id}`,
+    sourceType:'AMC Revenue Recognition', sourceId:amcId, voucherNo:nextDocNumber('JE', _rDate), docCategory:'AMCRevenueRecognition',
+    lines:[ {account:'2100', debit:r2(amount), credit:0, projectId:amc.projectId, customerId:amc.customerId}, {account:'4000', debit:0, credit:r2(amount), projectId:amc.projectId, customerId:amc.customerId} ],
+    postedByUserId:actor.id, postedByRole:actor.role, overrideReason });
+  if(!result.ok) return result;
+  amc.recognizedPeriods.push(period); save();
+  logAudit({type:'AMCRevenueRecognized', amcId, period, amount:r2(amount), userId:actor.id, role:actor.role});
+  return {ok:true, entry:result.entry, period, amount:r2(amount), schedule:amcRevenueSchedule(amcId)};
+}
+
+// ---------- CAPA ----------
+// §26: CAPA is a deliberate escalation, never auto-created for every complaint — the trigger
+// reason is a required, explicit field, not inferred.
+function createCAPACase({trigger, sourceComplaintId, sourceTicketId, problem, actor}){
+  if(!CAPA_TRIGGERS.includes(trigger)) return {ok:false, error:`Trigger must be one of ${CAPA_TRIGGERS.join('/')} — CAPA is not created automatically for every complaint.`};
+  if(!problem) return {ok:false, error:'Problem statement is required.'};
+  const capa = { id:'CAPA-'+String(DB.capaCases.length+1).padStart(4,'0'), capaNo:nextDocNumber('CAPA'), trigger, sourceComplaintId:sourceComplaintId||null, sourceTicketId:sourceTicketId||null,
+    problem, rootCause:null, correction:null, correctiveAction:null, preventiveAction:null, owner:null, dueDate:null,
+    evidence:null, verification:null, verifiedBy:null, effectivenessCheck:null, effectivenessCheckedBy:null, effectivenessResult:null,
+    status:'OPEN', createdBy:actor.id, createdAt:nowIso() };
+  DB.capaCases.push(capa); save();
+  logAudit({type:'CAPACreated', capaId:capa.id, trigger, userId:actor.id, role:actor.role});
+  return {ok:true, capa};
+}
+function recordCAPAAnalysis({id, rootCause, actor}){
+  const capa = DB.capaCases.find(c=>c.id===id);
+  if(!capa) return {ok:false, error:'CAPA case not found.'};
+  if(!['OPEN','ANALYSIS'].includes(capa.status)) return {ok:false, error:`Cannot record analysis — "${capa.status}".`};
+  capa.rootCause = rootCause; capa.status='ANALYSIS'; save();
+  return {ok:true, capa};
+}
+function recordCAPAAction({id, correction, correctiveAction, preventiveAction, owner, dueDate, actor}){
+  const capa = DB.capaCases.find(c=>c.id===id);
+  if(!capa) return {ok:false, error:'CAPA case not found.'};
+  if(!capa.rootCause) return {ok:false, error:'Root cause must be recorded before actions can be defined.'};
+  if(!owner || !dueDate) return {ok:false, error:'Owner and due date are required.'};
+  Object.assign(capa, {correction:correction||capa.correction, correctiveAction, preventiveAction, owner, dueDate, status:'ACTION'}); save();
+  logAudit({type:'CAPAActionDefined', capaId:id, owner, dueDate, userId:actor.id, role:actor.role});
+  return {ok:true, capa};
+}
+function recordCAPAVerification({id, evidence, actor}){
+  const capa = DB.capaCases.find(c=>c.id===id);
+  if(!capa) return {ok:false, error:'CAPA case not found.'};
+  if(capa.status!=='ACTION') return {ok:false, error:`Cannot verify — "${capa.status}", not ACTION.`};
+  // §27: the person who owns/implements the action should not be the sole verifier — a real SoD
+  // control, same shape as the existing snag resolve/verify separation.
+  if(capa.owner===actor.id && !['CEO','Admin'].includes(actor.role)) return {ok:false, error:'Segregation of duties: the CAPA owner who implemented the action cannot also verify it.'};
+  capa.evidence = evidence; capa.verifiedBy = actor.id; capa.status='VERIFICATION'; save();
+  logAudit({type:'CAPAVerified', capaId:id, userId:actor.id, role:actor.role});
+  return {ok:true, capa};
+}
+// §28: effectiveness is a SEPARATE, explicit check — "action done" != "action proven effective".
+function recordCAPAEffectivenessCheck({id, effectivenessCheck, effectivenessResult, actor}){
+  const capa = DB.capaCases.find(c=>c.id===id);
+  if(!capa) return {ok:false, error:'CAPA case not found.'};
+  if(capa.status!=='VERIFICATION') return {ok:false, error:`Cannot record effectiveness — "${capa.status}", not VERIFICATION.`};
+  if(capa.verifiedBy===actor.id && !['CEO','Admin'].includes(actor.role)) return {ok:false, error:'Segregation of duties: the person who verified completion cannot also confirm effectiveness.'};
+  if(!['Effective','NotEffective'].includes(effectivenessResult)) return {ok:false, error:'effectivenessResult must be Effective or NotEffective.'};
+  capa.effectivenessCheck = effectivenessCheck; capa.effectivenessResult = effectivenessResult; capa.effectivenessCheckedBy = actor.id; capa.status='EFFECTIVENESS'; save();
+  logAudit({type:'CAPAEffectivenessChecked', capaId:id, effectivenessResult, userId:actor.id, role:actor.role});
+  return {ok:true, capa};
+}
+function closeCAPACase({id, actor}){
+  const capa = DB.capaCases.find(c=>c.id===id);
+  if(!capa) return {ok:false, error:'CAPA case not found.'};
+  if(capa.status!=='EFFECTIVENESS') return {ok:false, error:`Cannot close — "${capa.status}", not EFFECTIVENESS.`};
+  if(capa.effectivenessResult!=='Effective') return {ok:false, error:`Cannot close — effectiveness check result was "${capa.effectivenessResult}", not Effective. A CAPA whose action did not prove effective must be reopened/re-actioned, not closed.`};
+  capa.status='CLOSED'; capa.closedBy=actor.id; save();
+  logAudit({type:'CAPAClosed', capaId:id, userId:actor.id, role:actor.role});
+  return {ok:true, capa};
+}
+
+// ---------- Service Closure (§29) — a real gate, not a UI status flip ----------
+function serviceTicketClosureReadiness(ticketId){
+  const tkt = DB.serviceTickets.find(t=>t.id===ticketId);
+  if(!tkt) return {ready:false, reasons:['Ticket not found.']};
+  const reasons = [];
+  const visits = DB.serviceVisits.filter(v=>v.ticketId===ticketId);
+  if(!visits.length) reasons.push('No service visit has been recorded.');
+  else if(!visits.some(v=>v.status==='COMPLETED')) reasons.push('No service visit is marked Completed.');
+  const completed = visits.find(v=>v.status==='COMPLETED');
+  if(completed && !completed.customerAcknowledgement) reasons.push('Completed visit has no customer acknowledgement recorded.');
+  if(completed && !completed.diagnosis) reasons.push('Completed visit has no diagnosis recorded.');
+  if(tkt.classification==='Chargeable'){
+    const hasInvoice = DB.jeDrafts.some(d=>d.serviceTicketId===ticketId);
+    if(!hasInvoice) reasons.push('Ticket is Chargeable but no service invoice has been drafted.');
+  }
+  return {ready: reasons.length===0, reasons};
+}
+function closeServiceTicket({id, actor}){
+  const tkt = DB.serviceTickets.find(t=>t.id===id);
+  if(!tkt) return {ok:false, error:'Ticket not found.'};
+  if(tkt.status==='CLOSED') return {ok:false, error:'Ticket is already Closed.'};
+  const readiness = serviceTicketClosureReadiness(id);
+  if(!readiness.ready) return {ok:false, error:'Ticket prerequisites not met: '+readiness.reasons.join(' | '), reasons:readiness.reasons};
+  tkt.status='CLOSED'; tkt.closedAt = nowIso(); save();
+  const sla = ticketSlaStatus(id);
+  logAudit({type:'ServiceTicketClosed', ticketId:id, userId:actor.id, role:actor.role, responseSla: sla?.response.status, visitSla: sla?.visit.status});
+  return {ok:true, ticket:tkt, sla};
+}
+
+// ============================================================
+// Phase 13 — Approved Policy Implementation
+// ============================================================
+
+// ---------- POL-06: Service Labour Rate Card (configuration structure only — §10/§19) ----------
+function setServiceLabourRate({technicianLevel, skill, location, normalHourRate, overtimeRate, emergencyRate, weekendHolidayRate, travelRate, sacCode, actor}){
+  if(!technicianLevel) return {ok:false, error:'technicianLevel is required.'};
+  const key = `${technicianLevel}|${skill||''}|${location||''}`;
+  let rate = DB.serviceLabourRates.find(r=>r.key===key);
+  // Phase 19 §4 — SAC (Services Accounting Code) is OPTIONAL, attached at the rate-card level
+  // since that's the closest thing this Lab has to a "service item" master. Never invented — an
+  // empty/omitted sacCode stays null, exactly like every other optional tax-classification field.
+  const fields = {normalHourRate:+normalHourRate||0, overtimeRate:+overtimeRate||0, emergencyRate:+emergencyRate||0, weekendHolidayRate:+weekendHolidayRate||0, travelRate:+travelRate||0, sacCode: sacCode!==undefined ? (sacCode||null) : (rate?rate.sacCode:null)};
+  if(rate){ Object.assign(rate, fields); rate.updatedBy=actor.id; rate.updatedAt=nowIso(); }
+  else { rate = { id:'RATE-'+String(DB.serviceLabourRates.length+1).padStart(4,'0'), key, technicianLevel, skill:skill||'', location:location||'', ...fields, configuredBy:actor.id, configuredAt:nowIso() }; DB.serviceLabourRates.push(rate); }
+  save();
+  logAudit({type:'ServiceLabourRateConfigured', rateId:rate.id, technicianLevel, skill, location, userId:actor.id, role:actor.role});
+  return {ok:true, rate};
+}
+function getServiceLabourRate({technicianLevel, skill, location}){
+  const key = `${technicianLevel}|${skill||''}|${location||''}`;
+  const rate = DB.serviceLabourRates.find(r=>r.key===key);
+  return rate ? {configured:true, rate} : {configured:false, status:'NOT_CONFIGURED'};
+}
+
+// ---------- POL-07: Warranty/Chargeable Diagnosis Approval (approved threshold: ₹10,000) ----------
+// DB-backed and admin-editable (§14's Policy Configuration Screen), unlike GRN tolerance above —
+// management explicitly described this as a value they may revise, not a hard-coded constant.
+function diagnosisRequiresApproval({estimatedAmount, disputed}){
+  if(disputed) return true; // any disputed case requires manager review regardless of amount
+  return (+estimatedAmount||0) > DB.policyConfig.warrantyApprovalThreshold;
+}
+function setPolicyConfig({key, value, actor}){
+  const editable = new Set(['warrantyApprovalThreshold','slaResponseHours','slaVisitHours','slaWarningThresholdHours']);
+  if(!editable.has(key)) return {ok:false, error:`"${key}" is not an admin-editable policy value (some policies — e.g. GRN tolerance, inventory valuation method, AMC recognition method, role model — are fixed, tested architectural decisions, not runtime toggles).`};
+  const old = DB.policyConfig[key];
+  DB.policyConfig[key] = value===null ? null : +value;
+  DB.policyConfig.history = DB.policyConfig.history||[];
+  DB.policyConfig.history.push({key, oldValue:old, newValue:DB.policyConfig[key], changedBy:actor.id, changedByRole:actor.role, at:nowIso()});
+  save();
+  logAudit({type:'PolicyConfigChanged', key, oldValue:old, newValue:DB.policyConfig[key], userId:actor.id, role:actor.role});
+  return {ok:true, policyConfig:DB.policyConfig};
+}
+function approveDiagnosis({visitId, decision, reason, actor}){
+  const vis = DB.serviceVisits.find(v=>v.id===visitId);
+  if(!vis) return {ok:false, error:'Service visit not found.'};
+  if(vis.diagnosisApprovalStatus!=='PendingApproval') return {ok:false, error:`No diagnosis approval is pending for this visit (status: "${vis.diagnosisApprovalStatus||'NotRequired'}").`};
+  // SoD: the technician who recorded the diagnosis cannot approve their own high-value/disputed
+  // classification — mirrors the existing Snag/CAPA independent-verification pattern exactly.
+  if(vis.diagnosedBy===actor.id && !['CEO','Admin'].includes(actor.role)) return {ok:false, error:'Segregation of duties: the technician who recorded this diagnosis cannot approve it themselves.'};
+  if(!['Approved','Rejected'].includes(decision)) return {ok:false, error:'decision must be Approved or Rejected.'};
+  vis.diagnosisApprovalStatus = decision==='Approved' ? 'Approved' : 'Rejected';
+  vis.diagnosisApprovedBy = actor.id; vis.diagnosisApprovalReason = reason||''; vis.diagnosisApprovalAt = nowIso();
+  save();
+  logAudit({type:'DiagnosisApprovalDecision', visitId, decision, technicianId:vis.diagnosedBy, estimatedAmount:vis.estimatedAmount, disputed:!!vis.disputed, reason:reason||'', userId:actor.id, role:actor.role});
+  return {ok:true, visit:vis};
+}
+
+// ---------- POL-08: Service SLA — CORRECTED per management's follow-up (two independent clocks,
+// both measured from the same SLA Start = ticket creation; Resolution explicitly NOT approved
+// yet and must never be fabricated). Approved: Response = 4h, Site Visit = 72h. Warning
+// thresholds are NOT approved either — WARNING is only ever emitted if one is later configured;
+// until then only ACTIVE/BREACHED/MET are shown, never a guessed warning window (§ "do not
+// invent the warning percentage/time"). No endpoint anywhere accepts a caller-supplied SLA due
+// date or SLA status — both are always purely computed from `tkt.createdAt`/event timestamps,
+// never stored/settable, which is what makes "modify SLA via direct API" structurally impossible
+// rather than merely permission-denied.
+// DB-backed and admin-editable, defaulting to the approved values (Response=4h, Visit=72h);
+// slaWarningThresholdHours stays null (no warning policy approved) until explicitly configured.
+function slaClockStatus(startDate, targetHours, actualDate, now){
+  const start = new Date(startDate);
+  const due = new Date(start.getTime() + targetHours*3600000);
+  if(actualDate){
+    const actual = new Date(actualDate);
+    return { due: due.toISOString(), actual: actualDate, status: actual<=due ? 'MET' : 'BREACHED' };
+  }
+  const warningHours = DB.policyConfig.slaWarningThresholdHours;
+  let status = 'ACTIVE';
+  if(now>due) status = 'BREACHED';
+  else if(warningHours!=null && now >= new Date(due.getTime()-warningHours*3600000)) status = 'WARNING';
+  return { due: due.toISOString(), actual: null, status };
+}
+function ticketSlaStatus(ticketId){
+  const tkt = DB.serviceTickets.find(t=>t.id===ticketId);
+  if(!tkt) return null;
+  const now = new Date();
+  const responseHours = DB.policyConfig.slaResponseHours, visitHours = DB.policyConfig.slaVisitHours;
+  const firstVisit = DB.serviceVisits.filter(v=>v.ticketId===ticketId && v.startTime).sort((a,b)=>new Date(a.startTime)-new Date(b.startTime))[0];
+  const response = slaClockStatus(tkt.createdAt, responseHours, tkt.firstRespondedAt||null, now);
+  const visit = slaClockStatus(tkt.createdAt, visitHours, firstVisit?firstVisit.startTime:null, now);
+  return {
+    slaStart: tkt.createdAt,
+    response: { ...response, status: 'SLA_RESPONSE_'+response.status, targetHours: responseHours },
+    visit: { ...visit, status: 'SLA_VISIT_'+visit.status, targetHours: visitHours },
+    resolution: { configured:false, status:'RESOLUTION SLA — NOT CONFIGURED' }
+  };
+}
+function rejectServiceTicket({id, reason, actor}){
+  const tkt = DB.serviceTickets.find(t=>t.id===id);
+  if(!tkt) return {ok:false, error:'Ticket not found.'};
+  if(['CLOSED','REJECTED'].includes(tkt.status)) return {ok:false, error:`Ticket is already "${tkt.status}".`};
+  tkt.status='REJECTED'; tkt.rejectReason=reason||''; save();
+  return {ok:true, ticket:tkt};
+}
+
+// ---------- Repeat Complaint Detection (§25) — read-only pattern surfacing, no new records ----------
+function repeatComplaintHistory({customerId, projectId, product}){
+  const complaints = DB.complaints.filter(c=> (customerId && c.customerId===customerId) || (projectId && c.projectId===projectId) || (product && c.product===product));
+  const tickets = DB.serviceTickets.filter(t=> complaints.some(c=>c.id===t.complaintId) || (customerId && t.customerId===customerId) || (projectId && t.projectId===projectId));
+  const visits = DB.serviceVisits.filter(v=>tickets.some(t=>t.id===v.ticketId));
+  return {isRepeat: complaints.length>1, complaintCount:complaints.length, complaints, tickets, visits};
+}
+
+// ---------- Customer 360 aggregation (§4) — read-only composition, no duplicated customer data ----------
+function customerAfterSalesSummary(customerId){
+  return {
+    customerId,
+    warranties: DB.warranties.filter(w=>w.customerId===customerId).map(w=>({...w, effectiveStatus:warrantyEffectiveStatus(w)})),
+    complaints: DB.complaints.filter(c=>c.customerId===customerId),
+    tickets: DB.serviceTickets.filter(t=>t.customerId===customerId),
+    visits: DB.serviceVisits.filter(v=>v.customerId===customerId),
+    amcContracts: DB.amcContracts.filter(a=>a.customerId===customerId),
+    outstandingAR: Math.round(customerOpenItems(customerId).reduce((s,i)=>s+i.open,0)*100)/100
+  };
+}
+
+// ============================================================
+// Phase 11 — Financial Integration, Management Control, Project/Customer Profitability
+// ============================================================
+// §3/§4/§6 discipline: NO second accounting engine, NO change to projectPL()'s existing code or
+// output (it is byte-for-byte unchanged and is repurposed, unmodified, as the "Lifecycle P&L" —
+// it was ALREADY summing every Income/Expense-account line tagged with a project, which already
+// includes after-sales postings like ServiceLabour and chargeable-service/AMC customer invoices,
+// since Phase 10 deliberately reused the same accounts/docCategories for AR compatibility). What
+// Phase 11 adds is a NEW "Core" (original-project-only) computation that SUBTRACTS the
+// after-sales-tagged amounts back out, and a NEW after-sales rollup — both are read-only
+// aggregations over already-existing, already-correct collections, exactly like
+// projectCostBreakdown() and serviceTicketCostBreakdown() before them.
+
+// §12/§13/§14: computed ONLY from actual posted transactions — never a manually editable field,
+// never counted from a draft/quote/visit before it is genuinely posted.
+function afterSalesFinancials(projectId){
+  const tickets = DB.serviceTickets.filter(t=>t.projectId===projectId);
+  const warrantyTicketIds = new Set(tickets.filter(t=>t.classification==='Warranty').map(t=>t.id));
+  const chargeableTicketIds = new Set(tickets.filter(t=>t.classification==='Chargeable').map(t=>t.id));
+  const visits = DB.serviceVisits.filter(v=>v.projectId===projectId);
+
+  let warrantyMaterial=0, warrantyLabour=0, chargeableMaterial=0, chargeableLabour=0;
+  visits.forEach(v=>{
+    const matCost = v.materialIssueIds.reduce((s,id)=>{ const mv=DB.inventoryMovements.find(m=>m.id===id); return s+(mv?mv.valuationAmount:0); },0);
+    // DEFECT FOUND & FIXED (Phase 16 §13): `labourEntryIds` stores the ORIGINAL entry's ID only —
+    // a reversal creates a NEW entry the visit record never learns about, so a reversed service
+    // labour posting used to still count at full value forever. Skip an entry that has been
+    // reversed (`reversedByEntryId` is set on the original when `reverseEntry()` runs).
+    const labCost = v.labourEntryIds.reduce((s,id)=>{ const je=DB.journalEntries.find(e=>e.id===id); if(!je || je.reversedByEntryId) return s; return s + je.lines.filter(l=>l.account==='5100').reduce((s2,l)=>s2+l.debit,0); },0);
+    if(warrantyTicketIds.has(v.ticketId)){ warrantyMaterial+=matCost; warrantyLabour+=labCost; }
+    if(chargeableTicketIds.has(v.ticketId)){ chargeableMaterial+=matCost; chargeableLabour+=labCost; }
+  });
+
+  // §13: Chargeable Service Revenue comes ONLY from POSTED customer invoices (draft.status==='Posted'),
+  // identified via the serviceTicketId tag draftServiceInvoice() attaches — never from draft/ticket/visit amounts.
+  // Phase 16 §13 DEFECT FOUND & FIXED: skip an entry once reversed (same class as amcBilledTotal above).
+  const chargeableRevenue = DB.jeDrafts.filter(d=>d.status==='Posted' && d.serviceTicketId && chargeableTicketIds.has(d.serviceTicketId))
+    .reduce((s,d)=>{ const je=DB.journalEntries.find(e=>e.id===d.postedEntryId); if(!je || je.reversedByEntryId) return s; return s + je.lines.filter(l=>l.account==='4000').reduce((s2,l)=>s2+l.credit,0); },0);
+
+  // §14: AMC Revenue comes ONLY from POSTED AMC invoices, never merely the contract value.
+  // Phase 13 POL-05: AMC billing now credits Deferred Revenue (2100), not Revenue (4000)
+  // directly — "Billed" and "Revenue" (recognized) are now genuinely different numbers, per
+  // approved policy. Contract Value ≠ Billed ≠ Posted Revenue ≠ Collected, never conflated.
+  const amcContractsForProject = DB.amcContracts.filter(a=>a.projectId===projectId);
+  const amcContractValue = amcContractsForProject.reduce((s,a)=>s+a.contractValue,0);
+  const amcBilled = amcContractsForProject.reduce((s,a)=>s+amcBilledTotal(a.id),0);
+  const amcRevenue = amcContractsForProject.reduce((s,a)=>s+amcRecognizedTotal(a.id),0);
+  const amcDeferredBalance = r2(amcBilled-amcRevenue);
+
+  return {
+    warrantyMaterialCost: r2(warrantyMaterial), warrantyLabourCost: r2(warrantyLabour), warrantyCost: r2(warrantyMaterial+warrantyLabour),
+    chargeableServiceMaterialCost: r2(chargeableMaterial), chargeableServiceLabourCost: r2(chargeableLabour), chargeableServiceCost: r2(chargeableMaterial+chargeableLabour),
+    chargeableServiceRevenue: r2(chargeableRevenue),
+    amcContractValue: r2(amcContractValue), amcBilled: r2(amcBilled), amcRevenue: r2(amcRevenue), amcDeferredBalance
+  };
+}
+// §6A: the "Core" project P&L — original project only, after-sales amounts subtracted back out
+// of the SAME source lines projectPL() already sums, so Core + After-Sales == projectPL()'s
+// existing (now relabeled "Lifecycle") total, by construction — never two independently-computed
+// numbers that could silently drift apart.
+function coreProjectPL(projectId){
+  const lifecycle = projectPL(projectId);
+  const as = afterSalesFinancials(projectId);
+  const coreRevenue = r2(lifecycle.revenue - as.chargeableServiceRevenue - as.amcRevenue);
+  const coreCost = r2(lifecycle.cost - as.warrantyCost - as.chargeableServiceCost);
+  const coreProfit = r2(coreRevenue - coreCost);
+  return { revenue: coreRevenue, cost: coreCost, profit: coreProfit, marginPct: coreRevenue>0 ? r2(coreProfit/coreRevenue*100) : null };
+}
+// §4/§5 — the authoritative Project Financial 360: every figure kept SEPARATE, never merged,
+// each traceable to the read-only aggregation function that computed it (§28 traceability).
+function projectFinancial360(projectId){
+  const p = DB.projects.find(x=>x.id===projectId);
+  if(!p) return {ok:false, error:'Project not found.'};
+  const quotation = p.quotationId ? DB.quotations.find(q=>q.id===p.quotationId) : null;
+  const changeRequests = DB.changeRequests.filter(c=>c.projectId===projectId);
+  const approvedChanges = changeRequests.filter(c=>c.status==='Approved');
+  const approvedChangeRevenue = r2(approvedChanges.reduce((s,c)=>s+c.revenueImpact,0));
+  // Phase 14 §30/§48 Coverage Audit finding: `costImpact` has been captured on every Change
+  // Request since Phase 6B but was never surfaced here — a real, cheap gap to close (existing
+  // data, not invented). Maps to §30's "Other Approved Cost."
+  const approvedChangeCost = r2(approvedChanges.reduce((s,c)=>s+(c.costImpact||0),0));
+  const baseline = [...DB.standardCostBaselines.filter(b=>b.projectId===projectId)].sort((a,b)=>b.version-a.version)[0] || null;
+  const costBreakdown = projectCostBreakdown(projectId); // committed/received/invoiced/paid/consumed — unchanged, Phase 7
+  const invMovements = DB.inventoryMovements.filter(m=>m.projectId===projectId);
+  const received = invMovements.filter(m=>m.type==='Receipt').reduce((s,m)=>s+m.valuationAmount,0);
+  const issued = invMovements.filter(m=>m.type==='Issue').reduce((s,m)=>s+m.valuationAmount,0);
+  // DEFECT FOUND & FIXED (Phase 16 §13 Reconciliation Gate): all three sums below used to total
+  // .debit only, never netting .credit — a reversed Material Issue or Labour Cost entry (whose
+  // reversal carries the same account with debit/credit flipped) was silently still counted at
+  // its full original value, forever, in every project's Actual Cost / Financial 360 / P&L. Found
+  // via a direct reversal test on a brand-new Installation Cost posting, then confirmed to be a
+  // genuine PRE-EXISTING defect (reproduced identically on materialCost, unrelated to Phase 15/16
+  // — see the Phase 16 report for the isolated repro). Fixed by netting debit-minus-credit
+  // everywhere a project's actual cost is summed from GL lines, so a reversal now correctly zeros
+  // itself out, exactly as the real GL balance already does.
+  const materialCost = allLines().filter(l=>l.projectId===projectId).filter(l=>l.account==='5000').reduce((s,l)=>s+l.debit-l.credit,0);
+  const labourCostAll = allLines().filter(l=>l.projectId===projectId).filter(l=>l.account==='5100').reduce((s,l)=>s+l.debit-l.credit,0);
+  // Phase 15 §2 — real Installation Cost, sourced from CC-INSTALLATION-tagged 5100 lines
+  // (posted via `postInstallationLabourCost()`). Subtracted from manufacturing.labourCost below
+  // so the total (materialCost+labourCostAll, i.e. `cost.actual`) never changes — installation
+  // cost is a re-labeled SLICE of the existing total, not an additional, double-counted figure.
+  const installationCost = allLines().filter(l=>l.projectId===projectId && l.account==='5100' && l.costCentreId==='CC-INSTALLATION').reduce((s,l)=>s+l.debit-l.credit,0);
+  const as = afterSalesFinancials(projectId);
+  const lifecycle = projectPL(projectId);
+  const core = coreProjectPL(projectId);
+  const custOpen = customerOpenItems(p.customerId).filter(i=>i.projectId===projectId);
+  const invoicedRevenue = custOpen.reduce((s,i)=>s+i.original,0);
+  const collected = custOpen.reduce((s,i)=>s+(i.original-i.open),0);
+  const outstanding = custOpen.reduce((s,i)=>s+i.open,0);
+  return { ok:true, projectId,
+    contract: { contractRevenue: quotation ? quotation.finalPrice : (p.approvedRevenue||null), approvedChangeRevenue, currentContractValue: r2((quotation?quotation.finalPrice:(p.approvedRevenue||0)) + approvedChangeRevenue) },
+    // Phase 30 P29-1 FIX: `actual` used to be a locally-recomputed r2(materialCost+labourCostAll)
+    // — a SECOND, competing cost formula that only ever looked at accounts 5000/5100 by name, so
+    // it silently excluded Project Expense (5200, added in Phase 28) and any future Expense-type
+    // account. `coreProjectPL().cost` (computed above as `core`) is the SAME authoritative,
+    // already-tested calculation the top-of-screen summary and Profitability section both use —
+    // it sums every Expense-type GL account generically (materialCost+labourCostAll+projectExpense
+    // +...), already nets debit-credit (so reversals/credit notes are handled), and already
+    // excludes after-sales cost correctly. There is now exactly ONE Project Actual Cost formula;
+    // this field is a direct reference to it, not a recomputation.
+    cost: { standardCost: baseline ? baseline.totalStandardCost : null, committed: costBreakdown.committed, received: costBreakdown.received, actual: core.cost, forecast: r2(costBreakdown.committed + core.cost) },
+    // Phase 13 POL-11 (approved): PO Gross/Outstanding separately surfaced alongside the
+    // EXISTING committed-cost logic (costBreakdown.committed), which is unchanged and unreplaced.
+    procurement: { poGrossValue: r2(DB.purchaseOrders.filter(po=>po.projectId===projectId && po.status!=='Cancelled').reduce((s,po)=>s+po.total,0)),
+      poInvoicedValue: costBreakdown.invoiced, poPaidValue: costBreakdown.paid,
+      poOutstanding: r2(DB.purchaseOrders.filter(po=>po.projectId===projectId && po.status!=='Cancelled').reduce((s,po)=>s+po.total,0) - costBreakdown.invoiced),
+      grnValue: costBreakdown.received, committedCost: costBreakdown.committed },
+    // Phase 24 Part C10 — the REAL Commitment Engine (createCommitmentFromPO/reduceCommitment/
+    // releaseCommitment), a proper lifecycle object, not a re-derived PO sum. `procurement.
+    // committedCost` above is left unchanged/unreplaced (Phase 13 POL-11's own instruction, still
+    // honored — nothing existing is removed), but THIS field is the one with a real create/
+    // reduce/release audit trail behind it. Deliberately no "Budget" field — no budget model
+    // exists in this Lab, and the brief explicitly says not to invent one.
+    commitment: projectCommitments(projectId),
+    inventory: { received: r2(received), issued: r2(issued), remaining: r2(received-issued) },
+    manufacturing: { materialCost: r2(materialCost - as.warrantyMaterialCost - as.chargeableServiceMaterialCost), labourCost: r2(labourCostAll - as.warrantyLabourCost - as.chargeableServiceLabourCost - installationCost) },
+    // §30 "Execution" — Phase 15 §2: Installation Cost is now REAL (see postInstallationLabourCost
+    // above), sourced from CC-INSTALLATION-tagged lines, never a fabricated split.
+    execution: { installationCost: r2(installationCost), approvedOtherCost: approvedChangeCost },
+    revenue: { customerInvoice: r2(invoicedRevenue), postedRevenue: lifecycle.revenue, ar: r2(outstanding), collected: r2(collected), outstanding: r2(outstanding) },
+    afterSales: as,
+    profitability: { originalProjectMargin: core, currentProjectMargin: { revenue: r2(core.revenue+approvedChangeRevenue), cost: core.cost, profit: r2(core.revenue+approvedChangeRevenue-core.cost) },
+      lifecycleMargin: lifecycle, afterSalesImpact: r2(as.chargeableServiceRevenue - as.chargeableServiceCost - as.warrantyCost + as.amcRevenue) }
+  };
+}
+// §7 — Customer Profitability: composes existing per-project figures across every project this
+// customer has, plus the existing customerOpenItems()/after-sales summary — no new engine.
+function customerProfitability(customerId){
+  const projects = DB.projects.filter(p=>p.customerId===customerId);
+  const rows = projects.map(p=>{
+    const f = projectFinancial360(p.id);
+    if(!f.ok) return null;
+    return { projectId:p.id, projectName:p.name, revenue:f.revenue.postedRevenue, cost:f.profitability.lifecycleMargin.cost,
+      warrantyCost:f.afterSales.warrantyCost, chargeableServiceRevenue:f.afterSales.chargeableServiceRevenue, chargeableServiceCost:f.afterSales.chargeableServiceCost,
+      amcRevenue:f.afterSales.amcRevenue, ar:f.revenue.outstanding };
+  }).filter(Boolean);
+  const totalOpen = r2(customerOpenItems(customerId).reduce((s,i)=>s+i.open,0));
+  return { customerId, projects: rows,
+    totals: { revenue: r2(rows.reduce((s,r)=>s+r.revenue,0)), cost: r2(rows.reduce((s,r)=>s+r.cost,0)), warrantyCost: r2(rows.reduce((s,r)=>s+r.warrantyCost,0)),
+      chargeableServiceRevenue: r2(rows.reduce((s,r)=>s+r.chargeableServiceRevenue,0)), amcRevenue: r2(rows.reduce((s,r)=>s+r.amcRevenue,0)), outstandingAR: totalOpen } };
+}
+
+// ================== Phase 30 — Company-Wide Financial Statements ==================
+// All three reports below derive EXCLUSIVELY from allLines() (the same flattened view of the
+// single central journal every other report already uses) — no second calculation engine, no
+// re-derivation of a number a different way. This is the direct fix for Phase 29's finding that
+// no company-wide Balance Sheet or P&L existed anywhere in the Lab.
+
+// Balance Sheet — classification is by the account's OWN configured `type` (Asset/Liability/
+// Income/Expense — the only types this Lab's Chart of Accounts has ever used; there is no
+// separate Equity type, and none is invented here). Current vs Non-current Asset is the one place
+// a judgment call is unavoidable — Fixed Assets (1400) and Accumulated Depreciation (1450) are the
+// only two accounts anywhere in the CoA that are unambiguously non-current; every other Asset
+// account is Current. Equity = Retained Earnings (cumulative Income − Expense since inception),
+// since no Capital/Contributed-Equity account has ever been configured for Appletree — disclosed,
+// not invented. This identity is guaranteed to balance by the same double-entry invariant
+// postJournalEntry() already enforces on every single posting (see the function's own comment for
+// the algebra): Assets_net = Liabilities_net + (Income_net − Expense_net).
+const BALANCE_SHEET_NON_CURRENT_ASSET_IDS = new Set(['1400','1450']);
+function companyBalanceSheet(asOfDate){
+  let lines = allLines();
+  if(asOfDate) lines = lines.filter(l=>l.date<=asOfDate);
+  const bal = {};
+  lines.forEach(l=>{ bal[l.account] = bal[l.account] || {debit:0, credit:0}; bal[l.account].debit += l.debit; bal[l.account].credit += l.credit; });
+  const KNOWN_TYPES = ['Asset','Liability','Income','Expense'];
+  const rows = DB.accounts.map(a=>{
+    const b = bal[a.id] || {debit:0, credit:0};
+    return { accountId:a.id, name:a.name, type:a.type, net: r2(b.debit - b.credit) };
+  }).filter(r=>Math.abs(r.net)>0.001);
+  const unmappedAccounts = rows.filter(r=>!KNOWN_TYPES.includes(r.type));
+  const currentAssets = rows.filter(r=>r.type==='Asset' && !BALANCE_SHEET_NON_CURRENT_ASSET_IDS.has(r.accountId));
+  const nonCurrentAssets = rows.filter(r=>r.type==='Asset' && BALANCE_SHEET_NON_CURRENT_ASSET_IDS.has(r.accountId));
+  const liabilityRows = rows.filter(r=>r.type==='Liability').map(r=>({...r, net:r2(-r.net)})); // credit-normal: flip sign to a natural positive balance
+  const totalCurrentAssets = r2(currentAssets.reduce((s,r)=>s+r.net,0));
+  const totalNonCurrentAssets = r2(nonCurrentAssets.reduce((s,r)=>s+r.net,0));
+  const totalAssets = r2(totalCurrentAssets + totalNonCurrentAssets);
+  const totalLiabilities = r2(liabilityRows.reduce((s,r)=>s+r.net,0));
+  const totalIncome = r2(rows.filter(r=>r.type==='Income').reduce((s,r)=>s-r.net,0));
+  const totalExpense = r2(rows.filter(r=>r.type==='Expense').reduce((s,r)=>s+r.net,0));
+  const retainedEarnings = r2(totalIncome - totalExpense);
+  const totalLiabilitiesAndEquity = r2(totalLiabilities + retainedEarnings);
+  return {
+    asOfDate: asOfDate || null,
+    assets: { current: currentAssets, nonCurrent: nonCurrentAssets, totalCurrent: totalCurrentAssets, totalNonCurrent: totalNonCurrentAssets, total: totalAssets },
+    liabilities: { rows: liabilityRows, total: totalLiabilities },
+    equity: { retainedEarnings, total: retainedEarnings,
+      note: 'No Capital/Contributed-Equity account is configured for Appletree — Equity here is entirely Retained Earnings (cumulative Income minus Expense since inception). BUSINESS POLICY REQUIRED if a real opening capital balance should be recorded separately.' },
+    totalLiabilitiesAndEquity,
+    difference: r2(totalAssets - totalLiabilitiesAndEquity),
+    balanced: Math.abs(totalAssets - totalLiabilitiesAndEquity) < 0.01,
+    unmappedAccounts
+  };
+}
+
+// Company Profit & Loss — sums every Income/Expense-type account company-wide, over an optional
+// date range. Same generic-by-type approach projectPL() already uses per-project; this is the
+// identical technique applied without a projectId filter.
+function companyProfitAndLoss({fromDate, toDate}){
+  let lines = allLines();
+  if(fromDate) lines = lines.filter(l=>l.date>=fromDate);
+  if(toDate) lines = lines.filter(l=>l.date<=toDate);
+  const bal = {};
+  lines.forEach(l=>{
+    const acct = DB.accounts.find(a=>a.id===l.account); if(!acct) return;
+    if(acct.type!=='Income' && acct.type!=='Expense') return;
+    bal[l.account] = bal[l.account] || {name:acct.name, type:acct.type, debit:0, credit:0};
+    bal[l.account].debit += l.debit; bal[l.account].credit += l.credit;
+  });
+  const incomeAccounts = Object.entries(bal).filter(([,a])=>a.type==='Income').map(([id,a])=>({accountId:id, name:a.name, amount:r2(a.credit-a.debit)})).filter(a=>Math.abs(a.amount)>0.001);
+  const expenseAccounts = Object.entries(bal).filter(([,a])=>a.type==='Expense').map(([id,a])=>({accountId:id, name:a.name, amount:r2(a.debit-a.credit)})).filter(a=>Math.abs(a.amount)>0.001);
+  const totalRevenue = r2(incomeAccounts.reduce((s,a)=>s+a.amount,0));
+  const materialCostAccount = expenseAccounts.find(a=>a.accountId==='5000');
+  const materialCost = materialCostAccount ? materialCostAccount.amount : 0;
+  const totalExpense = r2(expenseAccounts.reduce((s,a)=>s+a.amount,0));
+  const grossProfit = r2(totalRevenue - materialCost);
+  const netProfit = r2(totalRevenue - totalExpense);
+  return { fromDate: fromDate||null, toDate: toDate||null, incomeAccounts, expenseAccounts,
+    totalRevenue, materialCost, grossProfit, totalExpense, netProfit,
+    marginPct: totalRevenue>0 ? r2(netProfit/totalRevenue*100) : null };
+}
+
+// General Ledger — an accountant-friendly filtered/running-balance view over the SAME central
+// journal (allLines()). Not a second ledger: every row here is a direct read of a real posted
+// line, sorted chronologically, with a running balance computed on the fly.
+function generalLedger({account, fromDate, toDate, projectId, costCentreId, party, docCategory}){
+  let lines = allLines();
+  if(account) lines = lines.filter(l=>l.account===account);
+  if(fromDate) lines = lines.filter(l=>l.date>=fromDate);
+  if(toDate) lines = lines.filter(l=>l.date<=toDate);
+  if(projectId) lines = lines.filter(l=>l.projectId===projectId);
+  if(costCentreId) lines = lines.filter(l=>l.costCentreId===costCentreId);
+  if(party) lines = lines.filter(l=>l.customerId===party || l.vendorId===party);
+  if(docCategory) lines = lines.filter(l=>l.docCategory===docCategory);
+  lines = [...lines].sort((a,b)=> (a.date<b.date?-1:a.date>b.date?1:0) || a.entryId.localeCompare(b.entryId));
+  let balance = 0;
+  const rows = lines.map(l=>{
+    balance = r2(balance + l.debit - l.credit);
+    return { date:l.date, voucherNo:l.voucherNo, docCategory:l.docCategory, entryId:l.entryId, narration:l.narration,
+      party: l.customerId || l.vendorId || l.party || null, debit:l.debit, credit:l.credit, runningBalance:balance,
+      projectId:l.projectId, costCentreId:l.costCentreId, reversed: !!l.reversedByEntryId, isReversal: !!l.reversalOfId };
+  });
+  return { rows, openingBalance:0, closingBalance: r2(balance),
+    totalDebit: r2(rows.reduce((s,r)=>s+r.debit,0)), totalCredit: r2(rows.reduce((s,r)=>s+r.credit,0)) };
+}
+
+// Customer Ledger — the customer's AR subledger: every AR-control-account (1100) line tagged with
+// this customerId, chronologically, with a running balance. Guaranteed to reconcile with
+// customerOpenItems()/the AR control account, since both read the exact same underlying lines —
+// just organized differently (per-invoice vs. chronological).
+function customerLedger(customerId){
+  const gl = generalLedger({account: AR_ACCOUNT, party: customerId});
+  const openItems = customerOpenItems(customerId);
+  const subledgerTotal = r2(openItems.reduce((s,i)=>s+i.open,0));
+  return { customerId, ...gl, subledgerTotal, controlAccountBalance: gl.closingBalance,
+    reconciles: Math.abs(subledgerTotal - gl.closingBalance) < 0.01 };
+}
+// Supplier Ledger — the mirror of Customer Ledger, against the AP control account (2000).
+function supplierLedger(vendorId){
+  const gl = generalLedger({account: AP_ACCOUNT, party: vendorId});
+  const openItems = supplierOpenItems(vendorId);
+  const subledgerTotal = r2(openItems.reduce((s,i)=>s+i.open,0));
+  return { vendorId, ...gl, subledgerTotal, controlAccountBalance: r2(-gl.closingBalance),
+    reconciles: Math.abs(subledgerTotal - r2(-gl.closingBalance)) < 0.01 };
+}
+
+// §8/§9 — a genuine company-wide aggregate (real transactions summed directly, not per-project
+// financial-360 calls looped N times, and NOT a fabricated/estimated figure) for the Management
+// and Finance dashboards. Only sums what's actually posted — same posted-only discipline as
+// afterSalesFinancials().
+function companyAfterSalesSummary(){
+  let warrantyCost=0, chargeableRevenue=0, amcRevenue=0;
+  const warrantyTicketIds = new Set(DB.serviceTickets.filter(t=>t.classification==='Warranty').map(t=>t.id));
+  const chargeableTicketIds = new Set(DB.serviceTickets.filter(t=>t.classification==='Chargeable').map(t=>t.id));
+  DB.serviceVisits.forEach(v=>{
+    if(!warrantyTicketIds.has(v.ticketId)) return;
+    warrantyCost += v.materialIssueIds.reduce((s,id)=>{ const mv=DB.inventoryMovements.find(m=>m.id===id); return s+(mv?mv.valuationAmount:0); },0);
+    // Phase 16 §13 — same reversal-visibility fix as afterSalesFinancials() above.
+    warrantyCost += v.labourEntryIds.reduce((s,id)=>{ const je=DB.journalEntries.find(e=>e.id===id); if(!je || je.reversedByEntryId) return s; return s + je.lines.filter(l=>l.account==='5100').reduce((s2,l)=>s2+l.debit,0); },0);
+  });
+  // Phase 16 §13 — same reversal-visibility fix as amcBilledTotal/afterSalesFinancials above.
+  DB.jeDrafts.filter(d=>d.status==='Posted' && d.serviceTicketId && chargeableTicketIds.has(d.serviceTicketId)).forEach(d=>{
+    const je = DB.journalEntries.find(e=>e.id===d.postedEntryId); if(je && !je.reversedByEntryId) chargeableRevenue += je.lines.filter(l=>l.account==='4000').reduce((s,l)=>s+l.credit,0);
+  });
+  // Phase 13 POL-05: AMC "revenue" is now the RECOGNIZED total (ledger-sourced from
+  // AMCRevenueRecognition entries), not the billed amount — billed/recognized are different
+  // numbers under deferred recognition.
+  let amcBilled=0, amcDeferred=0;
+  DB.amcContracts.forEach(a=>{ const sched = amcRevenueSchedule(a.id); amcRevenue += sched.recognized; amcBilled += sched.billed; amcDeferred += sched.deferredBalance; });
+  return { totalWarrantyCost: r2(warrantyCost), totalChargeableServiceRevenue: r2(chargeableRevenue), totalAMCRevenue: r2(amcRevenue), totalAMCBilled: r2(amcBilled), totalAMCDeferredBalance: r2(amcDeferred) };
+}
+
+// ---------- POL-10: Company-Wide Project Profitability (approved) — computed live, never a
+// manually maintained total; Core and Lifecycle margin kept explicitly separate throughout. ----------
+function companyProjectProfitability({dateFrom, dateTo, projectId, customerId, projectManagerId, status}){
+  let projects = DB.projects;
+  if(projectId) projects = projects.filter(p=>p.id===projectId);
+  if(customerId) projects = projects.filter(p=>p.customerId===customerId);
+  if(projectManagerId) projects = projects.filter(p=>p.projectManagerId===projectManagerId);
+  if(status) projects = projects.filter(p=>p.status===status);
+  if(dateFrom) projects = projects.filter(p=>!p.createdAt || p.createdAt.slice(0,10)>=dateFrom);
+  if(dateTo) projects = projects.filter(p=>!p.createdAt || p.createdAt.slice(0,10)<=dateTo);
+  const rows = projects.map(p=>{
+    const f = projectFinancial360(p.id);
+    if(!f.ok) return null;
+    return { projectId:p.id, projectName:p.name, status:p.status, projectManagerId:p.projectManagerId, customerId:p.customerId,
+      coreRevenue:f.profitability.originalProjectMargin.revenue, coreCost:f.profitability.originalProjectMargin.cost, coreMargin:f.profitability.originalProjectMargin.profit,
+      lifecycleRevenue:f.profitability.lifecycleMargin.revenue, lifecycleCost:f.profitability.lifecycleMargin.cost, lifecycleMargin:f.profitability.lifecycleMargin.profit,
+      committed:f.cost.committed, actualCost:f.cost.actual, warrantyCost:f.afterSales.warrantyCost,
+      chargeableServiceRevenue:f.afterSales.chargeableServiceRevenue, chargeableServiceCost:f.afterSales.chargeableServiceCost, amcRevenue:f.afterSales.amcRevenue };
+  }).filter(Boolean);
+  const sum = key => r2(rows.reduce((s,r)=>s+(r[key]||0),0));
+  return { projects: rows, totals: {
+    totalProjectRevenue: sum('coreRevenue'), totalProjectActualCost: sum('actualCost'), totalProjectCommitment: sum('committed'), totalProjectMargin: sum('coreMargin'),
+    totalWarrantyCost: sum('warrantyCost'), totalChargeableServiceRevenue: sum('chargeableServiceRevenue'), totalChargeableServiceCost: sum('chargeableServiceCost'), totalAMCRevenue: sum('amcRevenue'),
+    lifecycleRevenue: sum('lifecycleRevenue'), lifecycleCost: sum('lifecycleCost'), lifecycleMargin: sum('lifecycleMargin')
+  } };
+}
+
+// ---------- POL-12: Real export payloads (CSV) — reuses existing, already-gated data functions
+// only; no new data computation, purely serialization. Every call is audited by the API layer
+// with user/date/time/report/filters/record-count/type (server.js). ----------
+function csvEscape(v){ const s = v===undefined||v===null?'':String(v); return /[",\n\r]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
+function toCsv(rows, columns){
+  const header = columns.map(c=>csvEscape(c[0])).join(',');
+  const lines = rows.map(r=>columns.map(c=>csvEscape(typeof c[1]==='function'?c[1](r):r[c[1]])).join(','));
+  return [header, ...lines].join('\r\n');
+}
+function generateExport(report, filters, actor){
+  filters = filters||{};
+  let csv, count;
+  if(report==='gl'){
+    const rows = allLines();
+    csv = toCsv(rows, [['Entry ID','entryId'],['Voucher','voucherNo'],['Date','date'],['Account','account'],['Debit','debit'],['Credit','credit'],['Project','projectId'],['Customer','customerId'],['Vendor','vendorId'],['Narration','narration']]);
+    count = rows.length;
+  } else if(report==='ar'){
+    const rows = customerAgeing(filters.asOf);
+    csv = toCsv(rows.map(r=>({customer:r.customer.name, ...r.buckets, total:r.total})), [['Customer','customer'], ...AGE_BUCKETS.map(b=>[b,b]), ['Total','total']]);
+    count = rows.length;
+  } else if(report==='ap'){
+    const rows = supplierAgeing(filters.asOf);
+    csv = toCsv(rows.map(r=>({vendor:r.vendor.name, ...r.buckets, total:r.total})), [['Vendor','vendor'], ...AGE_BUCKETS.map(b=>[b,b]), ['Total','total']]);
+    count = rows.length;
+  } else if(report==='project-pl'){
+    const projects = filters.projectId ? DB.projects.filter(p=>p.id===filters.projectId) : DB.projects;
+    const rows = projects.map(p=>({projectId:p.id, name:p.name, ...projectPL(p.id)}));
+    csv = toCsv(rows, [['Project ID','projectId'],['Name','name'],['Revenue','revenue'],['Cost','cost'],['Profit','profit'],['Margin %','marginPct']]);
+    count = rows.length;
+  } else if(report==='inventory'){
+    let rows = DB.inventoryMovements;
+    if(filters.materialId) rows = rows.filter(m=>m.materialId===filters.materialId);
+    csv = toCsv(rows, [['ID','id'],['Date','date'],['Material','materialId'],['Qty','qty'],['Type','type'],['Warehouse','warehouseId'],['Project','projectId'],['Source Type','sourceType'],['Source ID','sourceId'],['User','userId'],['Value','valuationAmount']]);
+    count = rows.length;
+  } else if(report==='financial-360'){
+    if(!filters.projectId) return {ok:false, error:'projectId filter is required for a Financial 360 export.'};
+    const f = projectFinancial360(filters.projectId);
+    if(!f.ok) return f;
+    const flat = {};
+    ['contract','cost','procurement','inventory','manufacturing','revenue','afterSales'].forEach(sec=>{ Object.entries(f[sec]||{}).forEach(([k,v])=>{ flat[sec+'.'+k]=v; }); });
+    flat['profitability.core.profit'] = f.profitability.originalProjectMargin.profit;
+    flat['profitability.lifecycle.profit'] = f.profitability.lifecycleMargin.profit;
+    csv = toCsv([flat], Object.keys(flat).map(k=>[k,k]));
+    count = 1;
+  } else if(report==='customer-profitability'){
+    if(!filters.customerId) return {ok:false, error:'customerId filter is required for a Customer Profitability export.'};
+    const p = customerProfitability(filters.customerId);
+    csv = toCsv(p.projects, [['Project ID','projectId'],['Project','projectName'],['Revenue','revenue'],['Cost','cost'],['Warranty Cost','warrantyCost'],['Chargeable Revenue','chargeableServiceRevenue'],['AMC Revenue','amcRevenue'],['AR','ar']]);
+    count = p.projects.length;
+  } else if(report==='after-sales'){
+    const s = companyAfterSalesSummary();
+    csv = toCsv([s], Object.keys(s).map(k=>[k,k]));
+    count = 1;
+  } else {
+    return {ok:false, error:`Unknown export report "${report}".`};
+  }
+  return {ok:true, csv, recordCount:count};
+}
+
+// ============================================================
+// Phase 14 — SAP-Style Accounting Entry Architecture
+// ============================================================
+// §13 Attachments — metadata + small base64 payload stored in DB (no external file server in
+// this zero-dependency offline lab). Genuinely real, not a stub: files are actually stored and
+// retrievable. Capped at 1MB raw (base64 inflates ~37%, ~1.4MB) to stay safely under server.js's
+// 2MB request-body cap (`server.js` line ~28) with room for the surrounding JSON — a real,
+// disclosed limit, not a fake claim of unlimited storage.
+const ATTACHMENT_MAX_BYTES = 1 * 1024 * 1024;
+function attachFile({entityType, entityId, filename, mimeType, base64Data, docType, reference, actor}){
+  if(!entityType || !entityId) return {ok:false, error:'entityType and entityId are required.'};
+  if(!filename || !base64Data) return {ok:false, error:'filename and file data are required.'};
+  const sizeBytes = Math.ceil(base64Data.length * 3/4);
+  if(sizeBytes > ATTACHMENT_MAX_BYTES) return {ok:false, error:`File too large (${(sizeBytes/1024/1024).toFixed(2)}MB) — 2MB limit in this lab.`};
+  const att = { id:'ATT-'+String(DB.attachments.length+1).padStart(5,'0'), entityType, entityId, filename, mimeType:mimeType||'application/octet-stream',
+    sizeBytes, base64Data, docType:docType||'Other', reference:reference||'', uploadedBy:actor.id, uploadedByRole:actor.role, uploadedAt:nowIso() };
+  DB.attachments.push(att); save();
+  logAudit({type:'AttachmentUploaded', attachmentId:att.id, entityType, entityId, filename, sizeBytes, userId:actor.id, role:actor.role});
+  return {ok:true, attachment:{...att, base64Data:undefined}};
+}
+function listAttachments(entityType, entityId){
+  return DB.attachments.filter(a=>a.entityType===entityType && a.entityId===entityId).map(a=>({...a, base64Data:undefined}));
+}
+function getAttachment(id){ return DB.attachments.find(a=>a.id===id); }
+function deleteAttachment(id, actor){
+  const idx = DB.attachments.findIndex(a=>a.id===id);
+  if(idx<0) return {ok:false, error:'Attachment not found.'};
+  const att = DB.attachments[idx];
+  DB.attachments.splice(idx,1); save();
+  logAudit({type:'AttachmentDeleted', attachmentId:id, entityType:att.entityType, entityId:att.entityId, filename:att.filename, userId:actor.id, role:actor.role});
+  return {ok:true};
+}
+
+// §4/#3/#4 — Customer Credit Note / Debit Note. Mirror `createSupplierCreditNote`'s exact
+// pattern (post through the unmodified engine, tag the SAME docCategory as the original invoice
+// so reconciliation/Document Viewer/AR ageing all see it as an AR document with zero special-
+// casing, then apply a real clearing against the original invoice) — proven pattern since Phase
+// 7's Supplier Credit Note, now extended to the customer side which never had it.
+function createCustomerCreditNote({customerInvoiceEntryId, amount, reason, actor}){
+  const inv = DB.journalEntries.find(e=>e.id===customerInvoiceEntryId);
+  if(!inv || inv.docCategory!=='CustomerInvoice') return {ok:false, error:'Customer invoice not found.'};
+  const arLine = inv.lines.find(l=>l.account===AR_ACCOUNT);
+  if(!arLine) return {ok:false, error:'Invoice has no AR line.'};
+  if(!amount || +amount<=0) return {ok:false, error:'Amount must be positive.'};
+  // DEFECT FOUND & FIXED (Phase 14 Accountant UAT) — same over-clearing gap as
+  // createSupplierCreditNote above: never allow a credit note to clear more than what's
+  // actually still open on the invoice.
+  const openItem = customerOpenItems(arLine.customerId).find(i=>i.entryId===customerInvoiceEntryId);
+  if(!openItem || +amount > openItem.open + 0.01) return {ok:false, error:`Credit note amount ₹${(+amount).toLocaleString('en-IN')} exceeds the invoice's open balance of ₹${(openItem?openItem.open:0).toLocaleString('en-IN')} — cannot over-clear an invoice.`};
+  const cn = { id:'CCN-'+String(DB.customerCreditNotes.length+1).padStart(4,'0'), cnNo:nextDocNumber('CN'), customerInvoiceEntryId, amount:+amount, reason:reason||'', createdBy:actor.id, createdAt:nowIso() };
+  DB.customerCreditNotes.push(cn); save();
+  // Dr Revenue (reduces recognized income) / Cr AR (reduces what the customer owes).
+  const result = postJournalEntry({ date:new Date().toISOString().slice(0,10), narration:`Customer Credit Note ${cn.cnNo}`, sourceType:'Customer Credit Note',
+    sourceId:cn.id, voucherNo:cn.cnNo, party:arLine.customerId, docCategory:'CustomerInvoice',
+    lines:[ {account:'4000', debit:+amount, credit:0, customerId:arLine.customerId, projectId:arLine.projectId}, {account:AR_ACCOUNT, debit:0, credit:+amount, customerId:arLine.customerId, projectId:arLine.projectId} ],
+    postedByUserId:actor.id, postedByRole:actor.role, overrideReason:reason });
+  if(!result.ok) return result;
+  const clr = applyClearing({type:'AR', invoiceEntryId:customerInvoiceEntryId, paymentEntryId:result.entry.id, amount:+amount, actor});
+  logAudit({type:'CustomerCreditNoteCreated', creditNoteId:cn.id, amount, userId:actor.id, role:actor.role});
+  return {ok:true, creditNote:cn, entry:result.entry, clearing:clr};
+}
+function createCustomerDebitNote({customerInvoiceEntryId, amount, reason, actor}){
+  const inv = DB.journalEntries.find(e=>e.id===customerInvoiceEntryId);
+  if(!inv || inv.docCategory!=='CustomerInvoice') return {ok:false, error:'Customer invoice not found.'};
+  const arLine = inv.lines.find(l=>l.account===AR_ACCOUNT);
+  if(!arLine) return {ok:false, error:'Invoice has no AR line.'};
+  if(!amount || +amount<=0) return {ok:false, error:'Amount must be positive.'};
+  const dn = { id:'CDN-'+String(DB.customerDebitNotes.length+1).padStart(4,'0'), dnNo:nextDocNumber('DN'), customerInvoiceEntryId, amount:+amount, reason:reason||'', createdBy:actor.id, createdAt:nowIso() };
+  DB.customerDebitNotes.push(dn); save();
+  // Dr AR (increases what the customer owes) / Cr Revenue — a genuine NEW open item, not a
+  // clearing against the original (a debit note adds a balance, it doesn't reduce one).
+  const result = postJournalEntry({ date:new Date().toISOString().slice(0,10), narration:`Customer Debit Note ${dn.dnNo} (ref ${inv.voucherNo})`, sourceType:'Customer Debit Note',
+    sourceId:dn.id, voucherNo:dn.dnNo, party:arLine.customerId, docCategory:'CustomerInvoice',
+    lines:[ {account:AR_ACCOUNT, debit:+amount, credit:0, customerId:arLine.customerId, projectId:arLine.projectId}, {account:'4000', debit:0, credit:+amount, customerId:arLine.customerId, projectId:arLine.projectId} ],
+    postedByUserId:actor.id, postedByRole:actor.role, overrideReason:reason });
+  if(!result.ok) return result;
+  logAudit({type:'CustomerDebitNoteCreated', debitNoteId:dn.id, amount, userId:actor.id, role:actor.role});
+  return {ok:true, debitNote:dn, entry:result.entry};
+}
+
+// #17/#18 — Inventory Transfer (no GL impact — same company, same valuation, moving-average rate
+// carried across; `getStockLevel()` already accounted for 'TransferIn'/'TransferOut' movement
+// types since Phase 7, they simply had no creation function wired to them until now) / Inventory
+// Adjustment (real GL impact — a genuine new account, 5300, since no existing account correctly
+// represents inventory shrinkage/found-stock without misclassifying it).
+function createInventoryTransfer({materialId, qty, uom, fromWarehouseId, toWarehouseId, reason, actor}){
+  if(!fromWarehouseId || !toWarehouseId || fromWarehouseId===toWarehouseId) return {ok:false, error:'Select two different warehouses.'};
+  if(!qty || +qty<=0) return {ok:false, error:'Quantity must be positive.'};
+  const available = getStockLevel(materialId, fromWarehouseId);
+  if(+qty > available + 0.001) return {ok:false, error:`Cannot transfer ${qty} — only ${available} available at ${fromWarehouseId}.`};
+  const rate = getMovingAverageRate(materialId, fromWarehouseId);
+  const tr = { id:'ITR-'+String(DB.inventoryTransfers.length+1).padStart(4,'0'), trNo:nextDocNumber('ITR'), materialId, qty:+qty, uom:uom||'',
+    fromWarehouseId, toWarehouseId, reason:reason||'', rate, createdBy:actor.id, createdAt:nowIso() };
+  DB.inventoryTransfers.push(tr); save();
+  postInventoryMovement({type:'TransferOut', materialId, qty, uom, warehouseId:fromWarehouseId, sourceType:'InventoryTransfer', sourceId:tr.id, valuationRate:rate, actor});
+  postInventoryMovement({type:'TransferIn', materialId, qty, uom, warehouseId:toWarehouseId, sourceType:'InventoryTransfer', sourceId:tr.id, valuationRate:rate, actor});
+  logAudit({type:'InventoryTransferCreated', transferId:tr.id, materialId, qty, fromWarehouseId, toWarehouseId, userId:actor.id, role:actor.role});
+  return {ok:true, transfer:tr};
+}
+function createInventoryAdjustment({materialId, qty, uom, warehouseId, reason, actor}){
+  if(!warehouseId) return {ok:false, error:'Warehouse is required.'};
+  if(!qty || +qty===0) return {ok:false, error:'Quantity must be non-zero (positive = found/increase, negative = shrinkage/decrease).'};
+  if(!reason) return {ok:false, error:'A reason is required for every inventory adjustment — never silent.'};
+  if(+qty < 0){
+    const available = getStockLevel(materialId, warehouseId);
+    if(Math.abs(+qty) > available + 0.001) return {ok:false, error:`Cannot reduce by ${Math.abs(qty)} — only ${available} in stock.`};
+  }
+  const rate = getMovingAverageRate(materialId, warehouseId) || (DB.materials.find(m=>m.id===materialId)||{}).standardCost || 0;
+  const value = r2(Math.abs(+qty) * rate);
+  const adj = { id:'IADJ-'+String(DB.inventoryAdjustments.length+1).padStart(4,'0'), adjNo:nextDocNumber('IADJ'), materialId, qty:+qty, uom:uom||'', warehouseId, reason, rate, value, createdBy:actor.id, createdAt:nowIso() };
+  DB.inventoryAdjustments.push(adj); save();
+  postInventoryMovement({type:'Adjustment', materialId, qty, uom, warehouseId, sourceType:'InventoryAdjustment', sourceId:adj.id, valuationRate:rate, actor});
+  let glResult = {ok:true};
+  if(value>0.01){
+    const lines = (+qty>0)
+      ? [ {account:'1200', debit:value, credit:0, projectId:null}, {account:'5300', debit:0, credit:value, projectId:null} ]   // increase found
+      : [ {account:'5300', debit:value, credit:0, projectId:null}, {account:'1200', debit:0, credit:value, projectId:null} ]; // decrease/shrinkage
+    glResult = postJournalEntry({ date:new Date().toISOString().slice(0,10), narration:`Inventory Adjustment ${adj.adjNo} — ${reason}`, sourceType:'InventoryAdjustment',
+      sourceId:adj.id, voucherNo:adj.adjNo, docCategory:'InventoryAdjustment', lines, postedByUserId:actor.id, postedByRole:actor.role, overrideReason:reason });
+  }
+  logAudit({type:'InventoryAdjustmentCreated', adjustmentId:adj.id, materialId, qty, warehouseId, reason, value, userId:actor.id, role:actor.role});
+  return {ok:true, adjustment:adj, glEntry:glResult.entry||null};
+}
+
+// ================== Phase 28 — Inventory Operations ==================
+// Locations — a lightweight, OPTIONAL bin/shelf dimension within a warehouse. Deliberately does
+// NOT replace the warehouse concept anywhere; it's an additive drill-down some purchases/GRN
+// lines may tag (see createGRN's optional per-line locationId), purely for "where exactly in the
+// warehouse" reporting.
+function createLocation({warehouseId, code, description, actor}){
+  if(!warehouseId || !DB.warehouses.find(w=>w.id===warehouseId)) return {ok:false, error:'A valid warehouse is required.'};
+  if(!code) return {ok:false, error:'A location code is required.'};
+  if(DB.locations.find(l=>l.warehouseId===warehouseId && l.code===code)) return {ok:false, error:`Location "${code}" already exists in this warehouse.`};
+  const loc = { id:'LOC-'+String(DB.locations.length+1).padStart(4,'0'), warehouseId, code, description:description||'', active:true, createdBy:actor.id, createdAt:nowIso() };
+  DB.locations.push(loc); save();
+  logAudit({type:'LocationCreated', locationId:loc.id, warehouseId, code, userId:actor.id, role:actor.role});
+  return {ok:true, location:loc};
+}
+function stockByLocation(){
+  const rows = {};
+  DB.inventoryMovements.filter(m=>m.locationId).forEach(m=>{
+    const key = m.materialId+'|'+m.warehouseId+'|'+m.locationId;
+    if(!rows[key]) rows[key] = {materialId:m.materialId, warehouseId:m.warehouseId, locationId:m.locationId, qty:0};
+    const sign = (m.type==='Receipt'||m.type==='TransferIn') ? 1 : (m.type==='Issue'||m.type==='TransferOut'||m.type==='Return') ? -1 : (m.type==='Adjustment' ? Math.sign(m.qty)||1 : 0);
+    rows[key].qty += m.type==='Adjustment' ? m.qty : sign*Math.abs(m.qty);
+  });
+  return Object.values(rows).filter(r=>Math.abs(r.qty)>0.001).map(r=>{
+    const material = DB.materials.find(m=>m.id===r.materialId);
+    const loc = DB.locations.find(l=>l.id===r.locationId);
+    return {...r, materialDescription: material?material.description:r.materialId, locationCode: loc?loc.code:r.locationId, qty:r2(r.qty)};
+  });
+}
+// Stock Report — a genuine summary (material x warehouse: current qty, moving-average rate,
+// current value), distinct from the raw chronological Movement Ledger the Lab already had.
+// Read-only, derived entirely from existing inventoryMovements — no new posting, no new data.
+function stockReport(){
+  const keys = new Set(DB.inventoryMovements.map(m=>m.materialId+'|'+m.warehouseId));
+  return [...keys].map(k=>{
+    const [materialId, warehouseId] = k.split('|');
+    const qty = r2(getStockLevel(materialId, warehouseId));
+    const rate = getMovingAverageRate(materialId, warehouseId);
+    const material = DB.materials.find(m=>m.id===materialId);
+    return { materialId, description: material?material.description:materialId, uom: material?material.uom:'', warehouseId, qty, rate:r2(rate), value:r2(qty*rate) };
+  }).filter(r=>Math.abs(r.qty)>0.001 || r.value>0.01);
+}
+
+// Damage Reports — a purpose-built, reason-taxonomy-driven front end over the SAME
+// createInventoryAdjustment() engine (same pattern as Supplier Debit Note mirroring Supplier
+// Credit Note in Phase 24): NOT a second accounting/inventory mechanism. Always a decrease
+// (damaged stock cannot be "found"), always tagged with its own docCategory/sourceType so it is
+// separately reportable from a generic manual adjustment, and always requires a reason from a
+// fixed taxonomy (with a mandatory written explanation for "Other") rather than free text alone.
+const DAMAGE_REPORT_REASONS = ['Water Damage','Transit/Handling Damage','Expired/Obsolete','Manufacturing Defect','Warehouse Accident','Other'];
+function createDamageReport({materialId, qty, warehouseId, reasonCategory, explanation, actor}){
+  if(!DAMAGE_REPORT_REASONS.includes(reasonCategory)) return {ok:false, error:`Reason must be one of: ${DAMAGE_REPORT_REASONS.join(', ')}.`};
+  if(reasonCategory==='Other' && !explanation) return {ok:false, error:'"Other" requires a mandatory written explanation.'};
+  if(!qty || +qty<=0) return {ok:false, error:'Quantity must be positive.'};
+  const reasonText = `Damage Report — ${reasonCategory}${explanation?': '+explanation:''}`;
+  const adj = createInventoryAdjustment({materialId, qty:-Math.abs(+qty), warehouseId, reason:reasonText, actor});
+  if(!adj.ok) return adj;
+  const dmg = { id:'DMG-'+String(DB.damageReports.length+1).padStart(4,'0'), dmgNo:nextDocNumber('DMG'), materialId, qty:Math.abs(+qty), warehouseId,
+    reasonCategory, explanation:explanation||'', value:adj.adjustment.value, adjustmentId:adj.adjustment.id, glEntryId:adj.glEntry?adj.glEntry.id:null,
+    createdBy:actor.id, createdAt:nowIso() };
+  DB.damageReports.push(dmg); save();
+  logAudit({type:'DamageReportCreated', damageReportId:dmg.id, materialId, qty:dmg.qty, warehouseId, reasonCategory, value:dmg.value, userId:actor.id, role:actor.role});
+  return {ok:true, damageReport:dmg, adjustment:adj.adjustment, glEntry:adj.glEntry};
+}
+
+// Stock Counts — a physical/cycle count session: snapshot the system qty for a set of materials
+// in a warehouse at count time, let the counter record what they actually found, then post the
+// variance for each line through the SAME createInventoryAdjustment() engine used by damage
+// reports and manual adjustments above — one inventory-valuation mechanism, three front ends.
+function createStockCount({warehouseId, materialIds, actor}){
+  if(!warehouseId || !DB.warehouses.find(w=>w.id===warehouseId)) return {ok:false, error:'A valid warehouse is required.'};
+  if(!Array.isArray(materialIds) || !materialIds.length) return {ok:false, error:'At least one material is required.'};
+  const lines = materialIds.map(materialId=>({ materialId, systemQty: r2(getStockLevel(materialId, warehouseId)), countedQty:null }));
+  const sc = { id:'SCT-'+String(DB.stockCounts.length+1).padStart(4,'0'), sctNo:nextDocNumber('SCT'), warehouseId, lines, status:'Open',
+    createdBy:actor.id, createdAt:nowIso(), completedBy:null, completedAt:null };
+  DB.stockCounts.push(sc); save();
+  logAudit({type:'StockCountCreated', stockCountId:sc.id, warehouseId, materialCount:materialIds.length, userId:actor.id, role:actor.role});
+  return {ok:true, stockCount:sc};
+}
+function submitStockCount({id, countedQtys, actor}){
+  const sc = DB.stockCounts.find(x=>x.id===id);
+  if(!sc) return {ok:false, error:'Stock count not found.'};
+  if(sc.status!=='Open') return {ok:false, error:`This stock count is already "${sc.status}".`};
+  const adjustments = [];
+  sc.lines.forEach((line,idx)=>{
+    const counted = +countedQtys[idx];
+    if(counted===undefined || counted===null || isNaN(counted)) return;
+    line.countedQty = r2(counted);
+    const variance = r2(line.countedQty - line.systemQty);
+    if(Math.abs(variance)>0.001){
+      const adj = createInventoryAdjustment({materialId:line.materialId, qty:variance, warehouseId:sc.warehouseId,
+        reason:`Stock Count ${sc.sctNo} — system ${line.systemQty}, counted ${line.countedQty}`, actor});
+      if(adj.ok){ line.adjustmentId = adj.adjustment.id; adjustments.push(adj.adjustment); }
+    }
+  });
+  sc.status = 'Completed'; sc.completedBy = actor.id; sc.completedAt = nowIso(); save();
+  logAudit({type:'StockCountCompleted', stockCountId:sc.id, adjustmentCount:adjustments.length, userId:actor.id, role:actor.role});
+  return {ok:true, stockCount:sc, adjustments};
+}
+
+// §14 Journal Templates — reusable header/line patterns for recurring narrations (Rent/Security/
+// Utility/Provision). A template creates a normal Draft through the UNMODIFIED `createDraft()` —
+// it pre-fills the form, it does not bypass Submit/Approve/Post/authorization/balancing in any way.
+function createJournalTemplate({name, category, docTypeCode, lines, defaultNarration, branchId, actor}){
+  if(!name || !Array.isArray(lines) || lines.length<2) return {ok:false, error:'Template needs a name and at least 2 lines.'};
+  const t = { id:'JT-'+String(DB.journalTemplates.length+1).padStart(3,'0'), tmplNo:nextDocNumber('JT'), name, category:category||'General',
+    docTypeCode:docTypeCode||'JE', lines, defaultNarration:defaultNarration||name, branchId:branchId||null, createdBy:actor.id, createdAt:nowIso(), active:true };
+  DB.journalTemplates.push(t); save();
+  logAudit({type:'JournalTemplateCreated', templateId:t.id, name, userId:actor.id, role:actor.role});
+  return {ok:true, template:t};
+}
+function listJournalTemplates(){ return DB.journalTemplates.filter(t=>t.active); }
+function createDraftFromTemplate({templateId, date, amount, narration, branchId, createdByUserId, createdByRole}){
+  const t = DB.journalTemplates.find(x=>x.id===templateId && x.active);
+  if(!t) return {ok:false, error:'Template not found.'};
+  // A template's stored lines carry a `pctOfAmount` weight (defaults to matching debit/credit
+  // shape at 100%) rather than a hardcoded amount, so ONE template can be reused at any amount —
+  // e.g. "Security Wage" at ₹37,440 one month, a different figure the next, never silently reused
+  // verbatim (§14 does not permit inventing a fixed recurring amount).
+  if(!amount || +amount<=0) return {ok:false, error:'Amount is required to instantiate a template.'};
+  const lines = t.lines.map(l=>({ ...l, debit: l.debit>0 ? r2(+amount * (l.pctOfAmount!=null?l.pctOfAmount:1)) : 0, credit: l.credit>0 ? r2(+amount * (l.pctOfAmount!=null?l.pctOfAmount:1)) : 0 }));
+  return createDraft({ date, narration:narration||t.defaultNarration, docTypeCode:t.docTypeCode, sourceType:'Journal Template', docCategory:'JournalVoucher',
+    lines, branchId:branchId||t.branchId, createdByUserId, createdByRole });
+}
+
+// §15 Recurring Entries — NO background scheduler exists in this stateless dev server (a real,
+// disclosed limitation, not hidden), so "Next Run" is informational and a human must explicitly
+// trigger generation. What IS real: generation always creates a normal Draft (never an
+// auto-posted entry) that still needs Submit/Approve/Post — §15's explicit "must not
+// automatically post unauthorized transactions" requirement is structurally impossible to
+// violate here, since nothing in this code path can reach `postDraft()`.
+function createRecurringEntry({templateId, frequency, startDate, endDate, amount, narration, actor}){
+  const t = DB.journalTemplates.find(x=>x.id===templateId && x.active);
+  if(!t) return {ok:false, error:'Template not found.'};
+  if(!['Monthly','Quarterly','Yearly'].includes(frequency)) return {ok:false, error:'Frequency must be Monthly, Quarterly, or Yearly.'};
+  const re = { id:'REC-'+String(DB.recurringEntries.length+1).padStart(3,'0'), recNo:nextDocNumber('REC'), templateId, frequency, startDate, endDate:endDate||null,
+    amount:+amount, narration:narration||t.defaultNarration, nextRunDate:startDate, lastRunDate:null, status:'Active', createdBy:actor.id, createdAt:nowIso() };
+  DB.recurringEntries.push(re); save();
+  logAudit({type:'RecurringEntryCreated', recurringId:re.id, templateId, frequency, userId:actor.id, role:actor.role});
+  return {ok:true, recurring:re};
+}
+function listRecurringEntries(){ return DB.recurringEntries; }
+function advanceRecurrenceDate(dateStr, frequency){
+  const d = new Date(dateStr);
+  if(frequency==='Monthly') d.setMonth(d.getMonth()+1);
+  else if(frequency==='Quarterly') d.setMonth(d.getMonth()+3);
+  else d.setFullYear(d.getFullYear()+1);
+  return d.toISOString().slice(0,10);
+}
+// DEFECT FOUND & FIXED (Phase 14 own regression, phase14_accounting_tests.js): the first version
+// generated only ONE due period per recurring rule per call, silently leaving 2 of 3 overdue
+// periods ungenerated when the trigger hadn't been run in a while. Real accounting software (and
+// this policy's own "Next Run" tracking) expects a catch-up run to produce EVERY overdue period,
+// not just the earliest one — fixed with a while-loop that keeps generating (still only Drafts,
+// never posted) until nextRunDate is no longer due, exactly like a missed month of security-wage
+// entries should all appear for review, not trickle out one manual click at a time.
+function generateDueRecurringDrafts({asOfDate, actor}){
+  const today = asOfDate || new Date().toISOString().slice(0,10);
+  const generated = [];
+  DB.recurringEntries.filter(r=>r.status==='Active').forEach(r=>{
+    while(r.status==='Active' && r.nextRunDate<=today && (!r.endDate || r.nextRunDate<=r.endDate)){
+      const draftResult = createDraftFromTemplate({ templateId:r.templateId, date:r.nextRunDate, amount:r.amount, narration:r.narration, createdByUserId:actor.id, createdByRole:actor.role });
+      if(!draftResult.ok) break;
+      draftResult.draft.recurringEntryId = r.id;
+      r.lastRunDate = r.nextRunDate; r.nextRunDate = advanceRecurrenceDate(r.nextRunDate, r.frequency);
+      if(r.endDate && r.nextRunDate>r.endDate) r.status='Completed';
+      generated.push(draftResult.draft);
+    }
+  });
+  save();
+  logAudit({type:'RecurringDraftsGenerated', count:generated.length, asOfDate:today, userId:actor.id, role:actor.role});
+  return {ok:true, generated};
+}
+
+// §16 Controlled Excel/CSV Import — Excel→Validation→Draft→Review→Approval→Post, never a direct
+// post. Zero npm dependencies in this lab (established since Phase 6A), so CSV is the accepted
+// format — it round-trips cleanly with POL-12's own CSV exports. Every imported row still goes
+// through the SAME `createDraft()`/balance-check/RBAC/period-control path as manual entry; import
+// only assembles the lines, it never calls `postDraft()`.
+function parseImportCsv(csvText){
+  const lines = csvText.split(/\r?\n/).filter(l=>l.trim().length);
+  if(lines.length<2) return {ok:false, error:'CSV needs a header row plus at least one data row.'};
+  const header = lines[0].split(',').map(h=>h.trim());
+  const required = ['Account','Debit','Credit'];
+  for(const r of required) if(!header.includes(r)) return {ok:false, error:`Missing required column "${r}".`};
+  const rows = lines.slice(1).map(l=>{
+    const cells = l.split(',').map(c=>c.trim());
+    const row = {}; header.forEach((h,i)=>row[h]=cells[i]);
+    return row;
+  });
+  return {ok:true, header, rows};
+}
+function importJournalCSV({csvText, date, narration, branchId, createdByUserId, createdByRole}){
+  const parsed = parseImportCsv(csvText);
+  if(!parsed.ok) return parsed;
+  const errors = [];
+  const lines = parsed.rows.map((row,idx)=>{
+    if(!row.Account) errors.push(`Row ${idx+1}: missing Account.`);
+    if(!DB.accounts.find(a=>a.id===row.Account)) errors.push(`Row ${idx+1}: unknown account "${row.Account}".`);
+    if(row.Project && !DB.projects.find(p=>p.id===row.Project)) errors.push(`Row ${idx+1}: unknown project "${row.Project}".`);
+    if(row.CostCentre && !DB.costCentres.find(c=>c.id===row.CostCentre)) errors.push(`Row ${idx+1}: unknown cost centre "${row.CostCentre}".`);
+    if(row.TaxCode && !DB.taxCodes.find(t=>t.code===row.TaxCode)) errors.push(`Row ${idx+1}: unknown tax code "${row.TaxCode}".`);
+    return { account:row.Account, debit:+row.Debit||0, credit:+row.Credit||0, projectId:row.Project||null, costCentreId:row.CostCentre||null, taxCode:row.TaxCode||null, remarks:row.Remarks||'' };
+  });
+  const sim = simulateDraft(lines);
+  if(!sim.balanced) errors.push(`Import is not balanced — total debit ₹${sim.totalDebit.toFixed(2)} ≠ total credit ₹${sim.totalCredit.toFixed(2)}.`);
+  const batch = { id:'IMP-'+String(DB.importBatches.length+1).padStart(3,'0'), rowCount:parsed.rows.length, errors, valid:errors.length===0, createdBy:createdByUserId, createdAt:nowIso() };
+  if(errors.length){ DB.importBatches.push(batch); save(); return {ok:false, error:'Import validation failed.', errors, batch}; }
+  const draft = createDraft({ date, docDate:date, narration:narration||'Imported Journal Entry', docTypeCode:'JE', sourceType:'CSV Import', docCategory:'JournalVoucher',
+    lines, branchId, createdByUserId, createdByRole });
+  if(draft.ok){ batch.draftId = draft.draft.id; }
+  DB.importBatches.push(batch); save();
+  logAudit({type:'JournalImported', batchId:batch.id, rowCount:batch.rowCount, draftId:draft.draft && draft.draft.id, userId:createdByUserId, role:createdByRole});
+  return draft.ok ? {ok:true, draft:draft.draft, batch} : draft;
+}
+
+// §18 — lightweight branch data-scope: only enforced when a user actually has assignedBranches
+// set (mirrors the existing assignedProjects/assignedCustomers pattern exactly — most roles have
+// none set and are unrestricted, same as today).
+function branchAllowed(actor, branchId){
+  if(!branchId) return true;
+  if(!actor.assignedBranches || !actor.assignedBranches.length) return true;
+  return actor.assignedBranches.includes(branchId);
+}
+
+// §36 — Entry-Type Catalogue, generated from the actual posting call sites (grounded in code,
+// not hand-maintained prose that could drift). Used by the Phase 14 report and by
+// `/api/accounting/entry-types` for a live, always-current matrix.
+function entryTypeCatalogue(){
+  const seen = new Map();
+  DB.journalEntries.forEach(je=>{
+    const key = je.docCategory || je.sourceType || 'Manual';
+    if(!seen.has(key)) seen.set(key, {docCategory:key, count:0, sampleSourceTypes:new Set()});
+    const e = seen.get(key); e.count++; e.sampleSourceTypes.add(je.sourceType);
+  });
+  return Array.from(seen.values()).map(e=>({...e, sampleSourceTypes:Array.from(e.sampleSourceTypes)}));
+}
+
+// ============================================================
+// Phase 19 §4/§5 — HSN (materials) / SAC (services, on the rate card) / Customer GSTIN.
+// APPROVED decision A for both: capability required, but NEITHER is mandatory — a customer or
+// material may exist with the field blank forever, and creation/invoicing is never blocked for
+// its absence. No real HSN/SAC/GSTIN value is invented anywhere in this Lab; only what an
+// authorized user (masterData tier) explicitly types in is ever stored.
+// ============================================================
+// ============================================================
+// Phase 19 §28 (APPROVED — Decision B: strong password requirement + existing lockout, NO
+// expiry). No user-creation or password-change endpoint existed anywhere before this phase —
+// users were seed-only — so this policy had nothing real to enforce against. Building the
+// minimal real surface (Create User, Admin-authorized Reset, self-service Change) so the policy
+// is genuinely testable, not just described. Existing seeded passwords (e.g. "Admin@12345")
+// already satisfy this bar, confirmed by inspection, so no seed data needed to change.
+// ============================================================
+function validatePasswordStrength(password){
+  const p = String(password||'');
+  const errors = [];
+  if(p.length < 8) errors.push('at least 8 characters');
+  if(!/[A-Z]/.test(p)) errors.push('at least one uppercase letter');
+  if(!/[a-z]/.test(p)) errors.push('at least one lowercase letter');
+  if(!/[0-9]/.test(p)) errors.push('at least one digit');
+  if(!/[^A-Za-z0-9]/.test(p)) errors.push('at least one special character');
+  return { valid: errors.length===0, errors };
+}
+function createUser({username, name, role, password, assignedProjects, assignedCustomers, actor}){
+  if(!username || !username.trim()) return {ok:false, error:'Username is required.'};
+  if(!ROLES.includes(role)) return {ok:false, error:`Unknown role "${role}". Do not invent a new role — must be one of: ${ROLES.join(', ')}.`};
+  if(DB.users.find(u=>u.username===username)) return {ok:false, error:'Username already exists.'};
+  const strength = validatePasswordStrength(password);
+  if(!strength.valid) return {ok:false, error:'Password does not meet the strong-password policy — missing: '+strength.errors.join(', ')+'.'};
+  const {hash, salt} = hashPassword(password);
+  const user = { id:'U-'+String(DB.users.length+1).padStart(4,'0'), username:username.trim(), name:name||username, role, active:true,
+    assignedProjects:assignedProjects||null, assignedCustomers:assignedCustomers||null,
+    passwordHash:hash, passwordSalt:salt, failedLoginCount:0, lockedUntil:null, mustChangePassword:false };
+  DB.users.push(user); save();
+  logAudit({type:'UserCreated', createdUserId:user.id, createdUsername:user.username, createdRole:role, userId:actor.id, role:actor.role});
+  return {ok:true, user:{id:user.id, username:user.username, name:user.name, role:user.role}};
+}
+// "Authorized recovery" (§28) — an Admin/CEO resets a locked-out or forgotten password for
+// another user. Clears the lockout too, since a fresh valid credential makes the lockout moot.
+function resetUserPassword({userId, newPassword, actor}){
+  const u = DB.users.find(x=>x.id===userId);
+  if(!u) return {ok:false, error:'User not found.'};
+  const strength = validatePasswordStrength(newPassword);
+  if(!strength.valid) return {ok:false, error:'Password does not meet the strong-password policy — missing: '+strength.errors.join(', ')+'.'};
+  const {hash, salt} = hashPassword(newPassword);
+  u.passwordHash = hash; u.passwordSalt = salt; u.failedLoginCount = 0; u.lockedUntil = null;
+  save();
+  logAudit({type:'UserPasswordReset', targetUserId:u.id, targetUsername:u.username, userId:actor.id, role:actor.role});
+  return {ok:true};
+}
+function changeOwnPassword({actor, currentPassword, newPassword}){
+  const u = DB.users.find(x=>x.id===actor.id);
+  if(!u) return {ok:false, error:'User not found.'};
+  if(!verifyPassword(currentPassword, u.passwordHash, u.passwordSalt)) return {ok:false, error:'Current password is incorrect.'};
+  const strength = validatePasswordStrength(newPassword);
+  if(!strength.valid) return {ok:false, error:'Password does not meet the strong-password policy — missing: '+strength.errors.join(', ')+'.'};
+  const {hash, salt} = hashPassword(newPassword);
+  u.passwordHash = hash; u.passwordSalt = salt;
+  save();
+  logAudit({type:'UserPasswordChanged', userId:u.id, username:u.username, role:actor.role});
+  return {ok:true};
+}
+
+// ============================================================
+// Phase 19 §26/§27 (APPROVED — Decision A, required). Real Fixed Asset capability, built on the
+// SAME shared posting engine (§31 — no separate hidden accounting system). Lifecycle: Purchase
+// (register, no GL impact yet) -> Capitalization (the REAL GL event, Dr 1400/Cr Bank-or-AP) ->
+// Depreciation (Dr 5400/Cr 1450, repeatable) -> Transfer (register-only, no GL impact — a
+// location/custodian change is not itself an accounting event) -> Disposal (removes cost +
+// accumulated depreciation, books the gain/loss plug). Reversal reuses the EXISTING generic
+// reverseEntry() for free — Capitalization/Depreciation/Disposal postings are ordinary journal
+// entries, nothing bespoke.
+//
+// ACCOUNTING POLICY REQUIRED, never silently defaulted: useful life, depreciation method, and
+// residual value must be explicitly supplied at capitalization — capitalizeFixedAsset() rejects
+// the call outright if any is missing, rather than assuming a number. Depreciation amount is only
+// AUTO-COMPUTED when the method the USER already chose is 'StraightLine' (pure arithmetic
+// execution of a policy that was already explicitly selected, not a new invention); any other
+// method requires an explicit amount per posting, since no formula for it is assumed here.
+// ============================================================
+function createFixedAsset({assetCode, assetName, assetClass, purchaseDate, cost, location, custodian, projectId, sourceInvoiceEntryId, actor}){
+  if(!assetName) return {ok:false, error:'Asset name is required.'};
+  if(!purchaseDate) return {ok:false, error:'Purchase date is required.'};
+  if(!(+cost>0)) return {ok:false, error:'Cost must be a positive number.'};
+  const id = 'FA-'+String(DB.fixedAssets.length+1).padStart(4,'0');
+  const asset = { id, assetCode: assetCode||id, assetName, assetClass: assetClass||null, purchaseDate, cost:+cost,
+    location: location||null, custodian: custodian||null, projectId: projectId||null, sourceInvoiceEntryId: sourceInvoiceEntryId||null,
+    status: 'Purchased', capitalizationDate:null, capitalizationEntryId:null,
+    usefulLifeMonths:null, depreciationMethod:null, residualValue:null,
+    disposalDate:null, disposalProceeds:null, disposalEntryId:null,
+    transferHistory:[], createdBy:actor.id, createdAt:nowIso() };
+  DB.fixedAssets.push(asset); save();
+  logAudit({type:'FixedAssetCreated', assetId:id, assetName, cost:+cost, userId:actor.id, role:actor.role});
+  return {ok:true, asset};
+}
+function assetAccumulatedDepreciation(assetId){
+  return r2(DB.journalEntries.filter(je=>je.docCategory==='Depreciation' && je.sourceId===assetId && !je.reversedByEntryId)
+    .flatMap(je=>je.lines).filter(l=>l.account==='1450').reduce((s,l)=>s+l.credit-l.debit,0));
+}
+function assetNetBookValue(asset){ return r2(asset.cost - assetAccumulatedDepreciation(asset.id)); }
+function capitalizeFixedAsset({assetId, capitalizationDate, fundingSource, vendorId, usefulLifeMonths, depreciationMethod, residualValue, overrideReason, actor}){
+  const asset = DB.fixedAssets.find(a=>a.id===assetId);
+  if(!asset) return {ok:false, error:'Fixed asset not found.'};
+  if(asset.status!=='Purchased') return {ok:false, error:`Cannot capitalize — asset is "${asset.status}", not Purchased.`};
+  if(!capitalizationDate) return {ok:false, error:'Capitalization date is required.'};
+  if(usefulLifeMonths===undefined || usefulLifeMonths===null || usefulLifeMonths==='') return {ok:false, error:'ACCOUNTING POLICY REQUIRED — Useful Life (months) must be explicitly specified; it is never defaulted.'};
+  if(!depreciationMethod) return {ok:false, error:'ACCOUNTING POLICY REQUIRED — Depreciation Method must be explicitly specified; it is never defaulted.'};
+  if(residualValue===undefined || residualValue===null || residualValue==='') return {ok:false, error:'ACCOUNTING POLICY REQUIRED — Residual Value must be explicitly specified (enter 0 if genuinely nil — it is never silently assumed).'};
+  if(+usefulLifeMonths<=0) return {ok:false, error:'Useful Life must be a positive number of months.'};
+  if(+residualValue<0 || +residualValue>=asset.cost) return {ok:false, error:'Residual Value must be ≥ 0 and less than the asset cost.'};
+  let lines, docCategory='FixedAssetCapitalization';
+  if(fundingSource==='AP'){
+    if(!vendorId) return {ok:false, error:'A vendor is required when funding source is AP (unpaid).'};
+    lines = [ {account:'1400', debit:asset.cost, credit:0, vendorId, projectId:asset.projectId}, {account:'2000', debit:0, credit:asset.cost, vendorId, projectId:asset.projectId} ];
+  } else if(fundingSource==='Bank'){
+    lines = [ {account:'1400', debit:asset.cost, credit:0, projectId:asset.projectId}, {account:'1000', debit:0, credit:asset.cost, projectId:asset.projectId} ];
+  } else {
+    return {ok:false, error:'fundingSource must be "Bank" (paid directly) or "AP" (payable to a vendor).'};
+  }
+  const result = postJournalEntry({ date:capitalizationDate, narration:`Fixed Asset Capitalization — ${asset.assetCode} (${asset.assetName})`,
+    sourceType:'FixedAssetCapitalization', sourceId:asset.id, voucherNo:nextDocNumber('FA', capitalizationDate), docCategory, party:vendorId||null,
+    lines, postedByUserId:actor.id, postedByRole:actor.role, overrideReason });
+  if(!result.ok) return result;
+  asset.status='Capitalized'; asset.capitalizationDate=capitalizationDate; asset.capitalizationEntryId=result.entry.id;
+  asset.usefulLifeMonths=+usefulLifeMonths; asset.depreciationMethod=depreciationMethod; asset.residualValue=+residualValue;
+  save();
+  logAudit({type:'FixedAssetCapitalized', assetId:asset.id, cost:asset.cost, usefulLifeMonths:+usefulLifeMonths, depreciationMethod, residualValue:+residualValue, userId:actor.id, role:actor.role});
+  return {ok:true, asset, entry:result.entry};
+}
+function computeStraightLineMonthly(asset){
+  if(asset.depreciationMethod!=='StraightLine' || !asset.usefulLifeMonths) return null;
+  return r2((asset.cost - asset.residualValue) / asset.usefulLifeMonths);
+}
+function postAssetDepreciation({assetId, periodDate, amount, overrideReason, actor}){
+  const asset = DB.fixedAssets.find(a=>a.id===assetId);
+  if(!asset) return {ok:false, error:'Fixed asset not found.'};
+  if(asset.status!=='Capitalized') return {ok:false, error:`Cannot depreciate — asset is "${asset.status}", not Capitalized.`};
+  if(!periodDate) return {ok:false, error:'Period date is required.'};
+  let value = amount!==undefined && amount!==null && amount!=='' ? +amount : computeStraightLineMonthly(asset);
+  if(value===null) return {ok:false, error:`No amount was supplied, and depreciation method "${asset.depreciationMethod}" has no built-in formula in this Lab — an explicit amount is required for any method other than StraightLine.`};
+  if(!(value>0)) return {ok:false, error:'Depreciation amount must be positive.'};
+  const already = assetAccumulatedDepreciation(assetId);
+  const maxDepreciable = r2(asset.cost - asset.residualValue - already);
+  if(value > maxDepreciable + 0.01) return {ok:false, error:`Cannot depreciate ₹${value} — only ₹${maxDepreciable} remains depreciable before hitting the residual value floor.`};
+  const result = postJournalEntry({ date:periodDate, narration:`Depreciation — ${asset.assetCode} (${asset.assetName}) — ${periodDate.slice(0,7)}`,
+    sourceType:'Depreciation', sourceId:asset.id, voucherNo:nextDocNumber('JE', periodDate), docCategory:'Depreciation',
+    lines:[ {account:'5400', debit:value, credit:0, projectId:asset.projectId}, {account:'1450', debit:0, credit:value, projectId:asset.projectId} ],
+    postedByUserId:actor.id, postedByRole:actor.role, overrideReason });
+  if(!result.ok) return result;
+  logAudit({type:'FixedAssetDepreciationPosted', assetId, periodDate, amount:value, userId:actor.id, role:actor.role});
+  return {ok:true, entry:result.entry, accumulatedDepreciation: r2(already+value), netBookValue: assetNetBookValue(asset)};
+}
+function transferFixedAsset({assetId, newLocation, newCustodian, newProjectId, reason, actor}){
+  const asset = DB.fixedAssets.find(a=>a.id===assetId);
+  if(!asset) return {ok:false, error:'Fixed asset not found.'};
+  if(asset.status==='Disposed') return {ok:false, error:'Cannot transfer a disposed asset.'};
+  if(!reason) return {ok:false, error:'A reason is required for every asset transfer.'};
+  const before = {location:asset.location, custodian:asset.custodian, projectId:asset.projectId};
+  asset.transferHistory.push({from:before, to:{location:newLocation||asset.location, custodian:newCustodian||asset.custodian, projectId:newProjectId!==undefined?newProjectId:asset.projectId}, reason, by:actor.id, at:nowIso()});
+  if(newLocation!==undefined) asset.location = newLocation;
+  if(newCustodian!==undefined) asset.custodian = newCustodian;
+  if(newProjectId!==undefined) asset.projectId = newProjectId;
+  save();
+  logAudit({type:'FixedAssetTransferred', assetId, before, after:{location:asset.location, custodian:asset.custodian, projectId:asset.projectId}, reason, userId:actor.id, role:actor.role});
+  return {ok:true, asset};
+}
+function disposeFixedAsset({assetId, disposalDate, disposalProceeds, reason, overrideReason, actor}){
+  const asset = DB.fixedAssets.find(a=>a.id===assetId);
+  if(!asset) return {ok:false, error:'Fixed asset not found.'};
+  if(asset.status!=='Capitalized') return {ok:false, error:`Cannot dispose — asset is "${asset.status}", not Capitalized.`};
+  if(!disposalDate) return {ok:false, error:'Disposal date is required.'};
+  const proceeds = +disposalProceeds || 0;
+  const accumDep = assetAccumulatedDepreciation(assetId);
+  const nbv = r2(asset.cost - accumDep);
+  const gain = r2(proceeds - nbv); // positive = gain, negative = loss
+  const lines = [ {account:'1450', debit:accumDep, credit:0, projectId:asset.projectId} ]; // remove accumulated depreciation
+  if(proceeds>0) lines.push({account:'1000', debit:proceeds, credit:0, projectId:asset.projectId}); // cash received
+  if(gain<0) lines.push({account:'5500', debit:-gain, credit:0, projectId:asset.projectId}); // loss (debit — an expense)
+  lines.push({account:'1400', debit:0, credit:asset.cost, projectId:asset.projectId}); // remove full cost
+  if(gain>0) lines.push({account:'5500', debit:0, credit:gain, projectId:asset.projectId}); // gain (credit — reduces expense/other income)
+  const result = postJournalEntry({ date:disposalDate, narration:`Fixed Asset Disposal — ${asset.assetCode} (${asset.assetName}) — ${reason||'no reason given'}`,
+    sourceType:'FixedAssetDisposal', sourceId:asset.id, voucherNo:nextDocNumber('FA', disposalDate), docCategory:'FixedAssetDisposal',
+    lines, postedByUserId:actor.id, postedByRole:actor.role, overrideReason });
+  if(!result.ok) return result;
+  asset.status='Disposed'; asset.disposalDate=disposalDate; asset.disposalProceeds=proceeds; asset.disposalEntryId=result.entry.id;
+  save();
+  logAudit({type:'FixedAssetDisposed', assetId, disposalDate, proceeds, nbv, gain, userId:actor.id, role:actor.role});
+  return {ok:true, asset, entry:result.entry, netBookValue:nbv, gainOrLoss:gain};
+}
+function listFixedAssets(){
+  return DB.fixedAssets.map(a=>({...a, accumulatedDepreciation: a.status==='Purchased'?0:assetAccumulatedDepreciation(a.id), netBookValue: a.status==='Purchased'?a.cost:assetNetBookValue(a)}));
+}
+// §34 — Fixed Asset Register = Fixed Asset GL; Accumulated Depreciation = Depreciation Ledger.
+function reconcileFixedAssets(){
+  // Phase 22 self-test defect fix: a Disposed asset's cost/accumulated-depreciation are correctly
+  // REMOVED from the GL by disposeFixedAsset() (Cr 1400 full cost, Dr 1450 full accum. dep — the
+  // asset leaves the balance sheet, exactly as real disposal accounting requires). The register
+  // side must exclude Disposed assets too, for the same reason — otherwise this reconciliation
+  // permanently mismatches the moment ANY asset is ever disposed, comparing "still on the books"
+  // (GL, correctly zero) against "every asset that was ever capitalized, including retired ones"
+  // (the old register calculation). Found live via the Phase 22 self-test's full lifecycle
+  // (create->capitalize->depreciate->transfer->dispose) — no prior phase's fixed-asset testing
+  // had exercised reconciliation AFTER a disposal.
+  const onBooks = DB.fixedAssets.filter(a=>a.status!=='Purchased' && a.status!=='Disposed');
+  const registerCost = r2(onBooks.reduce((s,a)=>s+a.cost,0));
+  const glCost = r2(allLines().filter(l=>l.account==='1400').reduce((s,l)=>s+l.debit-l.credit,0));
+  const registerAccumDep = r2(onBooks.reduce((s,a)=>s+assetAccumulatedDepreciation(a.id),0));
+  const glAccumDep = r2(allLines().filter(l=>l.account==='1450').reduce((s,l)=>s+l.credit-l.debit,0));
+  const disposedCount = DB.fixedAssets.filter(a=>a.status==='Disposed').length;
+  return { registerCost, glCost, costMatches: Math.abs(registerCost-glCost)<0.02,
+    registerAccumDep, glAccumDep, accumDepMatches: Math.abs(registerAccumDep-glAccumDep)<0.02,
+    assetCount: onBooks.length, disposedCount };
+}
+
+// ============================================================
+// Phase 19 §7-19 (APPROVED — Decision A, required). Real ICICI Bank Statement Import, built
+// against the ACTUAL supplied statement (`icici_statement_121.csv`, a faithful row-for-row
+// transcription of the CEO's real "OpTransactionHistoryUX320-08-2026" PDF — studied first, per
+// instruction, not guessed). Columns match §9 exactly: No./Transaction ID/Value Date/Txn Posted
+// Date/Cheque No./Description/Cr-Dr/Transaction Amount/Available Balance.
+//
+// Import is explicitly NOT the same as accounting posting (§8) — a line only ever becomes a real
+// GL entry when an accountant deliberately Allocates it (`postBankImportLine`), which then routes
+// through the SAME shared `postJournalEntry()` engine as everything else (§31). Everything before
+// that is classification/matching METADATA only.
+//
+// Per the CEO's explicit instruction this phase: the statement's own printed account number is
+// stored as raw, UNRESOLVED metadata on the batch (`statementAccountNumber`) — it is NEVER
+// auto-matched, renamed, or merged into the existing Bank Account master (which still only has
+// the one Phase-15-evidenced "...1112" record). A mismatch is flagged, never silently resolved.
+// ============================================================
+function parseICICIDate(d){
+  // "29/04/2026" -> "2026-04-29"
+  const [dd,mm,yyyy] = String(d).trim().split('/');
+  return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')}`;
+}
+function parseICICICsv(csvText){
+  const lines = String(csvText).split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length) return {rows:[], errors:['Empty statement.']};
+  const header = lines[0].split(',').map(h=>h.trim().toLowerCase());
+  const idx = (name)=>header.indexOf(name);
+  const iNo=idx('no'), iTxnId=idx('transaction id'), iValueDate=idx('value date'), iPostedDate=idx('txn posted date'),
+    iCheque=idx('cheque no'), iDesc=idx('description'), iCrDr=idx('cr/dr'), iAmount=idx('transaction amount'), iBalance=idx('available balance');
+  const required = {No:iNo, 'Transaction ID':iTxnId, 'Value Date':iValueDate, 'Txn Posted Date':iPostedDate, 'Cr/Dr':iCrDr, 'Transaction Amount':iAmount, 'Available Balance':iBalance};
+  const missing = Object.entries(required).filter(([,i])=>i<0).map(([n])=>n);
+  if(missing.length) return {rows:[], errors:[`Statement is missing required column(s): ${missing.join(', ')}. Expected the real ICICI export header — do not guess the format.`]};
+  const rows = [], errors = [];
+  for(let r=1;r<lines.length;r++){
+    // Simple CSV split is safe here — the real statement's description field never contains a
+    // literal comma once transcribed (verified against the actual PDF); a quoted-field parser
+    // would be needed for a general-purpose CSV importer, out of scope for this ICICI-specific one.
+    const cols = lines[r].split(',');
+    if(cols.length < header.length){ errors.push(`Row ${r+1}: expected ${header.length} columns, got ${cols.length} — skipped.`); continue; }
+    try{
+      const row = {
+        rowNo: +cols[iNo], bankTxnId: cols[iTxnId].trim(), valueDate: parseICICIDate(cols[iValueDate]),
+        postedDate: parseICICIDate(cols[iPostedDate].split(' ')[0]), postedTime: cols[iPostedDate].split(' ').slice(1).join(' ')||null,
+        chequeNo: cols[iCheque].trim()==='-' ? null : cols[iCheque].trim(),
+        rawDescription: cols[iDesc], crDr: cols[iCrDr].trim().toUpperCase(),
+        amount: r2(+cols[iAmount]), availableBalance: r2(+cols[iBalance])
+      };
+      if(!row.bankTxnId || isNaN(row.amount) || !['CR','DR'].includes(row.crDr)){ errors.push(`Row ${r+1}: malformed data — skipped.`); continue; }
+      rows.push(row);
+    } catch(e){ errors.push(`Row ${r+1}: parse error — ${e.message}.`); }
+  }
+  return {rows, errors};
+}
+// §10 — extraction only, NEVER authoritative. Every hint is explicitly a SUGGESTION for the
+// accountant to confirm, matching "does NOT automatically prove the Project is Flykart."
+function extractDescriptionHints(rawDescription){
+  const d = rawDescription;
+  const utrMatch = d.match(/IN\d{14}/);
+  const invoiceMatch = d.match(/\/(INV\d+|W\d+|PO\d+|TQ\d+|B\d+|MGB\d+\w*)/i);
+  const typeMatch = d.match(/^(NEFT-RETURN|CLG|INF\/NEFT|INF\/INFT|MMT\/IMPS|GIB|BIL\/BPAY|NEFT-FBBT)/i) ||
+    (/NEFT/.test(d)?['NEFT']:null) || (/IMPS/.test(d)?['IMPS']:null) || (/INFT/.test(d)?['INFT']:null) ||
+    (/BBPS/.test(d)?['BBPS']:null) || (/GIB.*GST/i.test(d)?['GST']:null) || (/GIB.*DTAX/i.test(d)?['DTAX']:null) || null;
+  const segments = d.split('/');
+  const possiblePartyName = segments.length>1 ? segments[segments.length-1].trim() : null;
+  const isSalaryOrWage = /salary|wage/i.test(d);
+  const isReturn = /NEFT-RETURN|Incorrect Account Number|NEFT-FBBT.*FASTNOT ELIGIBLE/i.test(d);
+  return {
+    possibleUTR: utrMatch ? utrMatch[0] : null,
+    possibleReference: invoiceMatch ? invoiceMatch[1] : null,
+    possibleBankTxnType: Array.isArray(typeMatch) ? typeMatch[0] : (typeMatch ? typeMatch[0] : null),
+    possiblePartyName, isSalaryOrWage, isReturn
+  };
+}
+// §11/§12 — a SUGGESTED classification only, never auto-chosen accounting. Confidently only when
+// the description contains an explicit, unambiguous keyword; otherwise "Unknown", forcing
+// accountant review rather than guessing.
+// DEFECT FOUND & FIXED (this phase's own test suite, §19.9): "fund transfer" keyword detection
+// was placed AFTER the CR-branch early-return, so a real CREDIT fund transfer (row 33 in the
+// actual statement — "fund transfer from open pay") never reached that check and fell through to
+// the generic "Other Receipt" label. Fund transfers can genuinely be either direction, so the
+// keyword check must run BEFORE the CR/DR branch splits, not only inside the DR branch.
+function classifyBankLine(row, hints){
+  if(hints.isReturn) return 'Returned Transaction';
+  if(/fund transfer/i.test(row.rawDescription)) return 'Fund Transfer (confirm)';
+  if(row.crDr==='CR'){
+    if(row.amount >= 100000) return 'Possible Customer Receipt / Large Credit (confirm)';
+    return 'Other Receipt / Transfer (confirm)';
+  }
+  if(hints.isSalaryOrWage) return 'Salary / Wage Payment (confirm)';
+  if(/GST|DTAX/i.test(row.rawDescription)) return 'GST / Tax Payment (confirm)';
+  if(/BBPS/i.test(row.rawDescription)) return 'Utility / Bill Payment (confirm)';
+  if(/ASSET PURCHASE/i.test(row.rawDescription)) return 'Asset Purchase (confirm)';
+  if(/Rawmateril|Raw material|Rawmaterial|Material for|Material purchase|Goods purchase/i.test(row.rawDescription)) return 'Supplier / Material Payment (confirm)';
+  if(/Labour|putty work|partition|Painting work|frame work/i.test(row.rawDescription)) return 'Labour Payment (confirm)';
+  return 'Unknown (confirm)';
+}
+function createBankImportBatch({bankAccountId, csvText, statementAccountNumber, label, actor}){
+  if(!bankAccountId || !DB.bankAccounts.find(b=>b.id===bankAccountId)) return {ok:false, error:'A valid bankAccountId is required.'};
+  const {rows, errors:parseErrors} = parseICICICsv(csvText);
+  if(!rows.length) return {ok:false, error:'No valid transaction rows found. '+parseErrors.join(' ')};
+  const bankAccount = DB.bankAccounts.find(b=>b.id===bankAccountId);
+  const accountNumberMismatch = statementAccountNumber && bankAccount.accountNumberLast4 && !statementAccountNumber.endsWith(bankAccount.accountNumberLast4)
+    ? `Statement account number "${statementAccountNumber}" does not match the configured bank account's last 4 digits ("${bankAccount.accountNumberLast4}") — UNRESOLVED, flagged for accountant/CEO confirmation. Import proceeds against the selected bank account regardless.`
+    : null;
+  const batch = { id:'BIB-'+String(DB.bankImportBatches.length+1).padStart(4,'0'), bankAccountId, statementAccountNumber: statementAccountNumber||null,
+    accountNumberMismatch, label: label||'', importedBy:actor.id, importedByRole:actor.role, importedAt: nowIso(),
+    rowCount: rows.length, parseErrors, duplicateCount:0, errorCount:0 };
+  DB.bankImportBatches.push(batch);
+
+  // §15 — running balance validation. Opening balance derived from the FIRST row (balance after
+  // that row, minus/plus its own movement) — the statement itself never states an explicit
+  // opening balance line, exactly like a real ICICI export.
+  let running = rows[0].crDr==='CR' ? r2(rows[0].availableBalance - rows[0].amount) : r2(rows[0].availableBalance + rows[0].amount);
+  const createdLines = [];
+  rows.forEach(row=>{
+    running = row.crDr==='CR' ? r2(running + row.amount) : r2(running - row.amount);
+    const balanceMatches = Math.abs(running - row.availableBalance) < 0.02;
+    const hints = extractDescriptionHints(row.rawDescription);
+    // §14 — duplicate detection by Transaction ID across ALL prior batches (not just this one),
+    // never by description alone.
+    const isDuplicate = DB.bankImportLines.some(l=>l.bankTxnId===row.bankTxnId);
+    let status = 'Imported';
+    if(isDuplicate) status = 'Duplicate';
+    else if(hints.isReturn) status = 'Returned';
+    const line = { id:'BIL-'+String(DB.bankImportLines.length+1).padStart(5,'0'), batchId:batch.id, bankAccountId,
+      rowNo:row.rowNo, bankTxnId:row.bankTxnId, valueDate:row.valueDate, postedDate:row.postedDate, postedTime:row.postedTime,
+      chequeNo:row.chequeNo, rawDescription:row.rawDescription, normalizedDescription: row.rawDescription.replace(/\s+/g,' ').trim(),
+      crDr:row.crDr, amount:row.amount, statementBalance:row.availableBalance, computedRunningBalance:running, balanceMatches,
+      extractedHints:hints, suggestedClassification: classifyBankLine(row, hints),
+      status, matchedEntryId:null, matchedDocumentType:null, matchConfidence:null,
+      isReturned: hints.isReturn, returnOfLineId:null, excludeReason:null, postedEntryId:null,
+      duplicateOfLineId: isDuplicate ? DB.bankImportLines.find(l=>l.bankTxnId===row.bankTxnId).id : null,
+      createdAt: nowIso() };
+    DB.bankImportLines.push(line);
+    createdLines.push(line);
+    if(isDuplicate) batch.duplicateCount++;
+    if(!balanceMatches) batch.errorCount++;
+  });
+  // §13 — link each Returned line back to its ORIGINAL transaction by matching the UTR embedded
+  // in the return's own description against an earlier line's bankTxnId/UTR — proven possible on
+  // this exact real statement (row 43 "NEFT-RETURN-IN42620852272606..." matches row 40's UTR).
+  createdLines.filter(l=>l.isReturned).forEach(retLine=>{
+    const utrInReturn = (retLine.rawDescription.match(/IN\d{14}/)||[])[0];
+    if(!utrInReturn) return;
+    const original = DB.bankImportLines.find(l=>l.id!==retLine.id && l.extractedHints.possibleUTR===utrInReturn && l.crDr==='DR');
+    if(original){ retLine.returnOfLineId = original.id; save(); }
+  });
+  save();
+  logAudit({type:'BankImportBatchCreated', batchId:batch.id, bankAccountId, rowCount:rows.length, duplicateCount:batch.duplicateCount,
+    balanceErrorCount:batch.errorCount, accountNumberMismatch: !!accountNumberMismatch, userId:actor.id, role:actor.role});
+  return {ok:true, batch, lines:createdLines, parseErrors};
+}
+function listBankImportLines({batchId, bankAccountId, status, crDr}){
+  let rows = DB.bankImportLines;
+  if(batchId) rows = rows.filter(l=>l.batchId===batchId);
+  if(bankAccountId) rows = rows.filter(l=>l.bankAccountId===bankAccountId);
+  if(status) rows = rows.filter(l=>l.status===status);
+  if(crDr) rows = rows.filter(l=>l.crDr===crDr);
+  return rows;
+}
+function matchBankImportLine({lineId, entryId, actor}){
+  const line = DB.bankImportLines.find(l=>l.id===lineId);
+  if(!line) return {ok:false, error:'Bank import line not found.'};
+  if(['Posted','Duplicate','Excluded'].includes(line.status)) return {ok:false, error:`Cannot match a line that is "${line.status}".`};
+  const entry = DB.journalEntries.find(e=>e.id===entryId);
+  if(!entry) return {ok:false, error:'Target accounting entry not found.'};
+  if(Math.abs(entry.totalDebit - line.amount) > 0.02 && Math.abs(entry.totalCredit - line.amount) > 0.02){
+    return {ok:false, error:`Amount mismatch — bank line ₹${line.amount.toLocaleString('en-IN')} vs document ₹${Math.max(entry.totalDebit,entry.totalCredit).toLocaleString('en-IN')}. Match rejected, not forced.`};
+  }
+  line.status = 'Matched'; line.matchedEntryId = entryId; line.matchedDocumentType = entry.docCategory||entry.sourceType;
+  save();
+  logAudit({type:'BankImportLineMatched', lineId, entryId, userId:actor.id, role:actor.role});
+  return {ok:true, line};
+}
+function unmatchBankImportLine({lineId, actor}){
+  const line = DB.bankImportLines.find(l=>l.id===lineId);
+  if(!line) return {ok:false, error:'Bank import line not found.'};
+  if(line.status==='Posted') return {ok:false, error:'Cannot unmatch a line that already has a directly-posted accounting entry — reverse that entry first.'};
+  line.status = line.isReturned ? 'Returned' : 'Imported'; line.matchedEntryId=null; line.matchedDocumentType=null;
+  save();
+  logAudit({type:'BankImportLineUnmatched', lineId, userId:actor.id, role:actor.role});
+  return {ok:true, line};
+}
+function excludeBankImportLine({lineId, reason, actor}){
+  const line = DB.bankImportLines.find(l=>l.id===lineId);
+  if(!line) return {ok:false, error:'Bank import line not found.'};
+  if(!reason) return {ok:false, error:'A reason is required to exclude a bank transaction.'};
+  if(line.status==='Posted') return {ok:false, error:'Cannot exclude a line that already has a posted accounting entry.'};
+  line.status='Excluded'; line.excludeReason=reason;
+  save();
+  logAudit({type:'BankImportLineExcluded', lineId, reason, userId:actor.id, role:actor.role});
+  return {ok:true, line};
+}
+function markBankImportLineReturned({lineId, returnOfLineId, actor}){
+  const line = DB.bankImportLines.find(l=>l.id===lineId);
+  if(!line) return {ok:false, error:'Bank import line not found.'};
+  line.isReturned = true; line.status='Returned';
+  if(returnOfLineId){
+    if(!DB.bankImportLines.find(l=>l.id===returnOfLineId)) return {ok:false, error:'Referenced original line not found.'};
+    line.returnOfLineId = returnOfLineId;
+  }
+  save();
+  logAudit({type:'BankImportLineMarkedReturned', lineId, returnOfLineId:line.returnOfLineId, userId:actor.id, role:actor.role});
+  return {ok:true, line};
+}
+// "Allocate" (§17) — the ONE action that actually creates a real accounting entry from a bank
+// line, through the SAME shared engine, never a parallel posting path. The accountant chooses the
+// OTHER side of the entry (an account); the Bank side (1000) is always automatic and correct.
+function postBankImportLine({lineId, glAccount, projectId, customerId, vendorId, narration, overrideReason, actor}){
+  const line = DB.bankImportLines.find(l=>l.id===lineId);
+  if(!line) return {ok:false, error:'Bank import line not found.'};
+  if(['Posted','Duplicate','Excluded'].includes(line.status)) return {ok:false, error:`Cannot post — line is "${line.status}".`};
+  if(!glAccount || !DB.accounts.find(a=>a.id===glAccount)) return {ok:false, error:'A valid GL account is required for the other side of this entry.'};
+  const lines = line.crDr==='CR'
+    ? [ {account:'1000', debit:line.amount, credit:0, projectId, customerId, vendorId}, {account:glAccount, debit:0, credit:line.amount, projectId, customerId, vendorId} ]
+    : [ {account:glAccount, debit:line.amount, credit:0, projectId, customerId, vendorId}, {account:'1000', debit:0, credit:line.amount, projectId, customerId, vendorId} ];
+  const result = postJournalEntry({ date:line.valueDate, narration:narration||`Bank import allocation — ${line.rawDescription.slice(0,80)}`,
+    sourceType:'BankImportAllocation', sourceId:line.id, voucherNo:nextDocNumber('JE', line.valueDate), docCategory:'BankImportAllocation',
+    lines, postedByUserId:actor.id, postedByRole:actor.role, overrideReason });
+  if(!result.ok) return result;
+  line.status='Posted'; line.postedEntryId=result.entry.id;
+  save();
+  logAudit({type:'BankImportLinePosted', lineId, entryId:result.entry.id, glAccount, amount:line.amount, userId:actor.id, role:actor.role});
+  return {ok:true, entry:result.entry, line};
+}
+function reconcileBankImportLine({lineId, actor}){
+  const line = DB.bankImportLines.find(l=>l.id===lineId);
+  if(!line) return {ok:false, error:'Bank import line not found.'};
+  if(!['Matched','Posted'].includes(line.status)) return {ok:false, error:`Cannot reconcile — line must be Matched or Posted first (currently "${line.status}").`};
+  line.status='Reconciled';
+  save();
+  logAudit({type:'BankImportLineReconciled', lineId, userId:actor.id, role:actor.role});
+  return {ok:true, line};
+}
+// §16 — Bank Reconciliation. `erpBankBalance` reads GL account 1000 company-wide, since this Lab
+// (unchanged since Phase 15) has ONE unified Bank/Cash control account, not a sub-account per
+// physical bank — a real, disclosed architectural boundary, not something invented this phase.
+function bankImportReconciliationSummary(bankAccountId){
+  const lines = DB.bankImportLines.filter(l=>l.bankAccountId===bankAccountId && l.status!=='Duplicate');
+  const latestBatchLine = lines.slice().sort((a,b)=> (a.valueDate+String(a.rowNo).padStart(5,'0')).localeCompare(b.valueDate+String(b.rowNo).padStart(5,'0'))).pop();
+  const statementBalance = latestBatchLine ? latestBatchLine.statementBalance : null;
+  // Phase 24 Part A7 — was hardcoded to account 1000 regardless of which bank account this
+  // reconciliation is actually for; now uses THAT account's own glAccount, so Bank A's
+  // reconciliation can never accidentally include Bank B's postings.
+  const acctForRecon = DB.bankAccounts.find(b=>b.id===bankAccountId);
+  const reconGlAccount = acctForRecon ? acctForRecon.glAccount : '1000';
+  const erpBankBalance = r2(allLines().filter(l=>l.account===reconGlAccount).reduce((s,l)=>s+l.debit-l.credit,0));
+  const outstandingDeposits = lines.filter(l=>l.crDr==='CR' && !['Posted','Reconciled','Excluded','Returned'].includes(l.status));
+  const outstandingPayments = lines.filter(l=>l.crDr==='DR' && !['Posted','Reconciled','Excluded','Returned'].includes(l.status));
+  const unmatched = lines.filter(l=>l.status==='Imported');
+  const returned = lines.filter(l=>l.isReturned);
+  const balanceMismatches = lines.filter(l=>!l.balanceMatches);
+  return { bankAccountId, statementBalance, erpBankBalance,
+    difference: statementBalance!==null ? r2(statementBalance - erpBankBalance) : null,
+    outstandingDeposits: outstandingDeposits.map(l=>({id:l.id, date:l.valueDate, amount:l.amount, description:l.normalizedDescription})),
+    outstandingDepositsTotal: r2(outstandingDeposits.reduce((s,l)=>s+l.amount,0)),
+    outstandingPayments: outstandingPayments.map(l=>({id:l.id, date:l.valueDate, amount:l.amount, description:l.normalizedDescription})),
+    outstandingPaymentsTotal: r2(outstandingPayments.reduce((s,l)=>s+l.amount,0)),
+    unmatchedCount: unmatched.length, returnedCount: returned.length,
+    statementLineBalanceMismatches: balanceMismatches.map(l=>({id:l.id, rowNo:l.rowNo, statementBalance:l.statementBalance, computedRunningBalance:l.computedRunningBalance})) };
+}
+
+// ============================================================
+// Phase 20 §3/§4 — Master Data Import Framework. The accounts team will configure the REAL
+// Appletree Chart of Accounts, Customers, Suppliers, Items, Projects, Cost Centres, Banks, Tax
+// Codes, and Fixed Assets after handover — none of it is invented here. What this phase builds is
+// the CAPABILITY to enter/import that data safely: validation, duplicate checking, audit,
+// authorization, and an error report that never partially imports an invalid row.
+//
+// Several of these masters (Vendors, Materials, Projects, Cost Centres, Tax Codes) had NO
+// creation function at all before this phase — they were seed-only since Phase 4/6A/7. Building
+// real single-record creators for each (masterData-gated, audited, duplicate-checked) is a
+// genuine, previously-missing piece of the technical build, not a business-data decision.
+// ============================================================
+function createVendorMaster({name, gstNumber, paymentTerms, category, actor}){
+  if(!name || !name.trim()) return {ok:false, error:'Vendor name is required.'};
+  if(DB.vendors.find(v=>v.name.trim().toLowerCase()===name.trim().toLowerCase())) return {ok:false, error:`A vendor named "${name}" already exists.`};
+  const v = { id:'VEND-'+String(DB.vendors.length+1).padStart(2,'0'), name:name.trim(), gstNumber:gstNumber||'', paymentTerms:paymentTerms||'', category:category||'', active:true, createdBy:actor.id, createdAt:nowIso() };
+  DB.vendors.push(v); save();
+  logAudit({type:'VendorCreated', vendorId:v.id, name:v.name, userId:actor.id, role:actor.role});
+  return {ok:true, vendor:v};
+}
+function createMaterialMaster({code, description, category, uom, standardCost, taxCode, hsnCode, stockItem, actor}){
+  if(!code || !description || !uom) return {ok:false, error:'Code, Description and UOM are all required.'};
+  if(DB.materials.find(m=>m.code.trim().toLowerCase()===code.trim().toLowerCase())) return {ok:false, error:`A material with code "${code}" already exists.`};
+  if(taxCode && !DB.taxCodes.find(t=>t.code===taxCode)) return {ok:false, error:`Unknown tax code "${taxCode}".`};
+  const m = { id:'MAT-'+String(DB.materials.length+1).padStart(3,'0'), code:code.trim(), description, category:category||'General', uom,
+    // Phase 21 §7/§8 — UoM Conversion. `uom` (unchanged field, unchanged meaning) IS the base/stock
+    // unit inventory has always been tracked and valued in. purchaseUom/purchaseConversionFactor
+    // default to the base unit / 1 — i.e. NO conversion — so every pre-existing material and every
+    // already-tested transaction this engagement has run is completely unaffected unless a real
+    // conversion is explicitly configured via setMaterialUomConversion(). Not inventing Appletree's
+    // actual conversion factors (e.g. 1 Sheet = X Sq.Ft) — those are configured, never hardcoded.
+    purchaseUom: uom, purchaseConversionFactor: 1,
+    stockItem: stockItem!==false, standardCost:+standardCost||0, valuationMethod:'MovingAverage', taxCode:taxCode||null, hsnCode:hsnCode||null,
+    active:true, reorderLevel:0, minStock:0, maxStock:0, createdBy:actor.id, createdAt:nowIso() };
+  DB.materials.push(m); save();
+  logAudit({type:'MaterialCreated', materialId:m.id, code:m.code, userId:actor.id, role:actor.role});
+  return {ok:true, material:m};
+}
+// ============================================================
+// Phase 21 §5/§6 — Master Data Edit / Deactivate (audit finding: Customer, Vendor and Material
+// were create-only — zero code path anywhere could edit or retire an existing record). Rules,
+// exactly as instructed: no destructive deletion, ever; if a master already carries real
+// accounting history, only non-identity/non-financial fields may still be edited (protecting what
+// a past transaction actually meant); Active/Inactive replaces deletion — an inactive master
+// cannot be selected for a NEW transaction, but every historical transaction referencing it stays
+// fully visible and unaffected. Every edit/deactivate is audited field-by-field (old -> new),
+// matching every other audited mutation already in this codebase. Gated by the SAME 'masterData'
+// permission (Admin/CEO only) the existing create-endpoints already use — not a new role concept.
+// ============================================================
+function customerHasAccountingHistory(customerId){ return DB.journalEntries.some(e => e.lines.some(l => l.customerId===customerId)); }
+function vendorHasAccountingHistory(vendorId){ return DB.journalEntries.some(e => e.lines.some(l => l.vendorId===vendorId)); }
+function materialHasAccountingHistory(materialId){
+  return DB.journalEntries.some(e => e.lines.some(l => l.itemId===materialId)) || DB.inventoryMovements.some(m => m.materialId===materialId);
+}
+// Fields locked once history exists — because a historical journal/inventory line stores only the
+// ID, any report or reconciliation reads the master's OTHER fields live off the CURRENT record,
+// not a point-in-time snapshot. Silently changing these after history exists would misrepresent
+// what a past transaction actually meant. `id`/`code` are never editable at all, with or without
+// history — they are the permanent join key.
+const CUSTOMER_LOCKED_FIELDS_WITH_HISTORY = ['gstin'];
+const VENDOR_LOCKED_FIELDS_WITH_HISTORY = ['gstNumber'];
+const MATERIAL_LOCKED_FIELDS_WITH_HISTORY = ['uom', 'taxCode']; // uom locked: changing it after transactions exist would misrepresent every historical quantity
+function _applyMasterEdit({record, changes, reason, lockedAlways, lockedWithHistory, hasHistory, entityLabel}){
+  if(!record) return {ok:false, error:`${entityLabel} not found.`};
+  const changeLog = [];
+  for(const field of Object.keys(changes||{})){
+    if(lockedAlways.includes(field)) return {ok:false, error:`Field "${field}" can never be changed on a ${entityLabel.toLowerCase()} — it is the permanent identity/join key for all historical transactions.`};
+    if(hasHistory && lockedWithHistory.includes(field)) return {ok:false, error:`Field "${field}" cannot be changed — this ${entityLabel.toLowerCase()} already has accounting history, and changing "${field}" would silently alter the meaning of past transactions.`};
+    const oldValue = record[field], newValue = changes[field];
+    if(oldValue===newValue) continue;
+    changeLog.push({field, oldValue, newValue});
+  }
+  if(hasHistory && changeLog.length && (!reason || !String(reason).trim())) return {ok:false, error:`A reason is required to edit a ${entityLabel.toLowerCase()} that already has accounting history.`};
+  changeLog.forEach(({field,newValue})=>{ record[field]=newValue; });
+  return {ok:true, changeLog};
+}
+function editCustomer({customerId, changes, reason, actor}){
+  const c = DB.customers.find(x=>x.id===customerId);
+  const hasHistory = c ? customerHasAccountingHistory(customerId) : false;
+  const r = _applyMasterEdit({record:c, changes, reason, lockedAlways:['id'], lockedWithHistory:CUSTOMER_LOCKED_FIELDS_WITH_HISTORY, hasHistory, entityLabel:'Customer'});
+  if(!r.ok) return r;
+  if(r.changeLog.length){ c.lastEditedBy=actor.id; c.lastEditedAt=nowIso(); save();
+    logAudit({type:'CustomerEdited', customerId, changes:r.changeLog, hadAccountingHistory:hasHistory, reason:reason||null, userId:actor.id, role:actor.role}); }
+  return {ok:true, customer:c, changed:r.changeLog.map(x=>x.field)};
+}
+function setCustomerActive({customerId, active, reason, actor}){
+  const c = DB.customers.find(x=>x.id===customerId);
+  if(!c) return {ok:false, error:'Customer not found.'};
+  if(active===false && (!reason || !String(reason).trim())) return {ok:false, error:'A reason is required to deactivate a customer.'};
+  const old = c.active;
+  c.active = active!==false;
+  if(old===c.active) return {ok:true, customer:c, changed:false};
+  save();
+  logAudit({type: c.active?'CustomerReactivated':'CustomerDeactivated', customerId, reason:reason||null, userId:actor.id, role:actor.role});
+  return {ok:true, customer:c, changed:true};
+}
+function editVendorMaster({vendorId, changes, reason, actor}){
+  const v = DB.vendors.find(x=>x.id===vendorId);
+  const hasHistory = v ? vendorHasAccountingHistory(vendorId) : false;
+  const r = _applyMasterEdit({record:v, changes, reason, lockedAlways:['id'], lockedWithHistory:VENDOR_LOCKED_FIELDS_WITH_HISTORY, hasHistory, entityLabel:'Vendor'});
+  if(!r.ok) return r;
+  if(r.changeLog.length){ v.lastEditedBy=actor.id; v.lastEditedAt=nowIso(); save();
+    logAudit({type:'VendorEdited', vendorId, changes:r.changeLog, hadAccountingHistory:hasHistory, reason:reason||null, userId:actor.id, role:actor.role}); }
+  return {ok:true, vendor:v, changed:r.changeLog.map(x=>x.field)};
+}
+function setVendorActive({vendorId, active, reason, actor}){
+  const v = DB.vendors.find(x=>x.id===vendorId);
+  if(!v) return {ok:false, error:'Vendor not found.'};
+  if(active===false && (!reason || !String(reason).trim())) return {ok:false, error:'A reason is required to deactivate a vendor.'};
+  const old = v.active;
+  v.active = active!==false;
+  if(old===v.active) return {ok:true, vendor:v, changed:false};
+  save();
+  logAudit({type: v.active?'VendorReactivated':'VendorDeactivated', vendorId, reason:reason||null, userId:actor.id, role:actor.role});
+  return {ok:true, vendor:v, changed:true};
+}
+function editMaterialMaster({materialId, changes, reason, actor}){
+  const m = DB.materials.find(x=>x.id===materialId);
+  const hasHistory = m ? materialHasAccountingHistory(materialId) : false;
+  const r = _applyMasterEdit({record:m, changes, reason, lockedAlways:['id','code'], lockedWithHistory:MATERIAL_LOCKED_FIELDS_WITH_HISTORY, hasHistory, entityLabel:'Material'});
+  if(!r.ok) return r;
+  if(r.changeLog.length){ m.lastEditedBy=actor.id; m.lastEditedAt=nowIso(); save();
+    logAudit({type:'MaterialEdited', materialId, changes:r.changeLog, hadAccountingHistory:hasHistory, reason:reason||null, userId:actor.id, role:actor.role}); }
+  return {ok:true, material:m, changed:r.changeLog.map(x=>x.field)};
+}
+function setMaterialActive({materialId, active, reason, actor}){
+  const m = DB.materials.find(x=>x.id===materialId);
+  if(!m) return {ok:false, error:'Material not found.'};
+  if(active===false && (!reason || !String(reason).trim())) return {ok:false, error:'A reason is required to deactivate a material.'};
+  const old = m.active;
+  m.active = active!==false;
+  if(old===m.active) return {ok:true, material:m, changed:false};
+  save();
+  logAudit({type: m.active?'MaterialReactivated':'MaterialDeactivated', materialId, reason:reason||null, userId:actor.id, role:actor.role});
+  return {ok:true, material:m, changed:true};
+}
+// Guards used at the point a NEW transaction is created (not retroactively — historical
+// transactions referencing an inactive master are never touched or hidden).
+// Phase 32 DEFECT FOUND & FIXED (ID-tampering audit, Part 26): all three of these guards only
+// ever checked "does this exist AND is it inactive" — `if(v && v.active===false)` — so a
+// completely FABRICATED id (v undefined) fell through silently, returning null (no error), rather
+// than being rejected. Live-reproduced: `createPurchaseOrder` accepted vendorId "VEND-FAKE-999"
+// and created a real PO; `draftCustomerInvoice`/`draftSupplierInvoice` did the same for a
+// fabricated customer/vendor id, producing a real draft that could be posted all the way to the
+// GL against a party that never existed. Fixed at this single shared root (all 6 call sites
+// across PO/Customer-Invoice/Supplier-Bill/Customer-Advance/Damage-Report immediately benefit,
+// not just one) rather than patching each caller individually — same "fix at the lowest common
+// point" discipline as the r2() rounding fix. Functions that already had their OWN separate
+// `!record` existence check before calling this (e.g. createMaterialIssue) are unaffected — this
+// guard now simply agrees with them instead of being the one exception that didn't check.
+function assertCustomerSelectable(customerId){
+  const c = DB.customers.find(x=>x.id===customerId);
+  if(!c) return `Customer "${customerId}" does not exist.`;
+  if(c.active===false) return `Customer "${c.name}" (${customerId}) is INACTIVE and cannot be used on a new transaction.`;
+  return null;
+}
+function assertVendorSelectable(vendorId){
+  const v = DB.vendors.find(x=>x.id===vendorId);
+  if(!v) return `Vendor "${vendorId}" does not exist.`;
+  if(v.active===false) return `Vendor "${v.name}" (${vendorId}) is INACTIVE and cannot be used on a new transaction.`;
+  return null;
+}
+// Phase 21 §7/§8 — configure a material's Purchase UOM -> Base/Stock UOM conversion. Changing the
+// factor does NOT retroactively touch any already-posted transaction: every past GRN already
+// captured its own converted base-unit quantity as a fixed number at the moment it was posted
+// (see createGRN below), never a live-recomputed formula — so this is safe to change even after
+// history exists, unlike the identity-locked fields in MATERIAL_LOCKED_FIELDS_WITH_HISTORY.
+function setMaterialUomConversion({materialId, purchaseUom, purchaseConversionFactor, actor}){
+  const m = DB.materials.find(x=>x.id===materialId);
+  if(!m) return {ok:false, error:'Material not found.'};
+  const factor = +purchaseConversionFactor;
+  if(!(factor > 0)) return {ok:false, error:'Conversion factor must be a positive number (zero and negative factors are rejected).'};
+  if(!purchaseUom || !String(purchaseUom).trim()) return {ok:false, error:'Purchase UOM is required.'};
+  const old = { purchaseUom:m.purchaseUom, purchaseConversionFactor:m.purchaseConversionFactor };
+  m.purchaseUom = String(purchaseUom).trim();
+  m.purchaseConversionFactor = factor;
+  save();
+  logAudit({type:'MaterialUomConversionChanged', materialId, baseUom:m.uom, old, new:{purchaseUom:m.purchaseUom, purchaseConversionFactor:factor}, userId:actor.id, role:actor.role});
+  return {ok:true, material:m};
+}
+function assertMaterialSelectable(materialId){
+  const m = DB.materials.find(x=>x.id===materialId);
+  if(!m) return `Material "${materialId}" does not exist.`;
+  if(m.active===false) return `Material "${m.code}" (${materialId}) is INACTIVE and cannot be used on a new transaction.`;
+  return null;
+}
+function createProjectMaster({name, budget, customerId, branchId, projectManagerId, actor}){
+  if(!name || !name.trim()) return {ok:false, error:'Project name is required.'};
+  if(customerId && !DB.customers.find(c=>c.id===customerId)) return {ok:false, error:`Unknown customer "${customerId}".`};
+  if(branchId && !DB.branches.find(b=>b.id===branchId)) return {ok:false, error:`Unknown branch "${branchId}".`};
+  if(projectManagerId && !DB.users.find(u=>u.id===projectManagerId && u.role==='ProjectManager')) return {ok:false, error:`Unknown or non-PM user "${projectManagerId}".`};
+  const p = { id:'PRJ-'+String(DB.projects.length+1), name:name.trim(), budget:+budget||0, status:'ACTIVE', projectManagerId:projectManagerId||null,
+    salesOwnerId:null, quotationId:null, leadId:null, customerId:customerId||null, advanceRequiredAmount:null, branchId:branchId||null,
+    createdBy:actor.id, createdAt:nowIso() };
+  DB.projects.push(p); save();
+  logAudit({type:'ProjectCreated', projectId:p.id, name:p.name, userId:actor.id, role:actor.role});
+  return {ok:true, project:p};
+}
+function createCostCentreMaster({id, name, actor}){
+  if(!id || !name) return {ok:false, error:'Cost Centre ID and Name are both required.'};
+  const ccId = 'CC-'+id.trim().toUpperCase().replace(/[^A-Z0-9_-]/g,'');
+  if(DB.costCentres.find(c=>c.id===ccId)) return {ok:false, error:`Cost Centre "${ccId}" already exists.`};
+  const cc = { id:ccId, name, createdBy:actor.id, createdAt:nowIso() };
+  DB.costCentres.push(cc); save();
+  logAudit({type:'CostCentreCreated', costCentreId:cc.id, name, userId:actor.id, role:actor.role});
+  return {ok:true, costCentre:cc};
+}
+function createTaxCodeMaster({code, label, cgstPct, sgstPct, igstPct, actor}){
+  if(!code || !label) return {ok:false, error:'Tax code and label are both required.'};
+  if(DB.taxCodes.find(t=>t.code===code)) return {ok:false, error:`Tax code "${code}" already exists.`};
+  const tc = { code, label, cgstPct:+cgstPct||0, sgstPct:+sgstPct||0, igstPct:+igstPct||0, active:true, createdBy:actor.id, createdAt:nowIso() };
+  DB.taxCodes.push(tc); save();
+  logAudit({type:'TaxCodeCreated', taxCode:code, userId:actor.id, role:actor.role});
+  return {ok:true, taxCode:tc};
+}
+function createPaymentMethodMaster({code, name, category, actor}){
+  if(!code || !name) return {ok:false, error:'Code and name are both required.'};
+  const id = 'PM-'+code.trim().toUpperCase();
+  if(DB.paymentMethods.find(m=>m.id===id)) return {ok:false, error:`Payment method "${code}" already exists.`};
+  const pm = { id, code:code.trim().toUpperCase(), name, category:category||'Bank', active:true, createdBy:actor.id, createdAt:nowIso() };
+  DB.paymentMethods.push(pm); save();
+  logAudit({type:'PaymentMethodCreated', paymentMethodId:id, name, userId:actor.id, role:actor.role});
+  return {ok:true, paymentMethod:pm};
+}
+function createAccountMaster({accountCode, accountName, accountType, parentAccount, controlAccount, taxRelevant, projectRelevant, costCentreRelevant, profitCentreRelevant, actor}){
+  if(!accountCode || !accountName || !accountType) return {ok:false, error:'Account Code, Name and Type are all required.'};
+  if(!['Asset','Liability','Income','Expense'].includes(accountType)) return {ok:false, error:`Account Type must be one of Asset/Liability/Income/Expense — got "${accountType}".`};
+  if(DB.accounts.find(a=>a.id===accountCode)) return {ok:false, error:`Account code "${accountCode}" already exists.`};
+  if(parentAccount && !DB.accounts.find(a=>a.id===parentAccount)) return {ok:false, error:`Unknown parent account "${parentAccount}".`};
+  const acc = { id:accountCode, name:accountName, type:accountType, parentAccount:parentAccount||null, active:true,
+    controlAccount: controlAccount===true||controlAccount==='true', taxRelevant: taxRelevant===true||taxRelevant==='true',
+    projectRelevant: projectRelevant===true||projectRelevant==='true', costCentreRelevant: costCentreRelevant===true||costCentreRelevant==='true',
+    profitCentreRelevant: profitCentreRelevant===true||profitCentreRelevant==='true', createdBy:actor.id, createdAt:nowIso() };
+  DB.accounts.push(acc); save();
+  logAudit({type:'AccountCreated', accountCode, accountName, accountType, userId:actor.id, role:actor.role});
+  return {ok:true, account:acc};
+}
+
+// ---------- Generic CSV parsing + field validators, shared by every import type ----------
+function genericCsvRows(csvText){
+  const lines = String(csvText).split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length) return {header:[], rows:[]};
+  const header = lines[0].split(',').map(h=>h.trim());
+  const rows = lines.slice(1).map(line=>{
+    const cols = line.split(',');
+    const obj = {};
+    header.forEach((h,i)=> obj[h] = (cols[i]!==undefined ? cols[i].trim() : ''));
+    return obj;
+  });
+  return {header, rows};
+}
+function isValidGSTIN(v){ return /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i.test(v); }
+function isValidDateStr(v){ return /^\d{4}-\d{2}-\d{2}$/.test(v) && !isNaN(Date.parse(v)); }
+function isValidAmountStr(v){ return v!=='' && v!==undefined && v!==null && !isNaN(+v); }
+
+// Per-type import spec: requiredFields (must be non-empty), validateRow (returns an array of
+// error strings — empty means valid), createRow (calls the REAL single-record creator above, so
+// import and manual single-entry always go through the identical validation/audit path).
+const MASTER_IMPORT_SPECS = {
+  ChartOfAccounts: {
+    requiredFields: ['accountCode','accountName','accountType'],
+    validateRow(row){
+      const errs = [];
+      if(row.accountType && !['Asset','Liability','Income','Expense'].includes(row.accountType)) errs.push(`Account Type must be Asset/Liability/Income/Expense, got "${row.accountType}".`);
+      if(DB.accounts.find(a=>a.id===row.accountCode)) errs.push(`Duplicate account code "${row.accountCode}".`);
+      if(row.parentAccount && !DB.accounts.find(a=>a.id===row.parentAccount)) errs.push(`Unknown parent account "${row.parentAccount}".`);
+      return errs;
+    },
+    createRow(row, actor){ return createAccountMaster({...row, actor}); }
+  },
+  Customers: {
+    requiredFields: ['name'],
+    validateRow(row){
+      const errs = [];
+      if(DB.customers.find(c=>c.name.trim().toLowerCase()===row.name.trim().toLowerCase())) errs.push(`Duplicate customer name "${row.name}" — will be linked, not re-created.`);
+      if(row.gstin && !isValidGSTIN(row.gstin)) errs.push(`Invalid GSTIN format: "${row.gstin}".`);
+      return errs.filter(e=>!e.includes('will be linked')); // duplicate customer is not an error — findOrCreateCustomer links it
+    },
+    createRow(row, actor){ return findOrCreateCustomer({...row, actor}); }
+  },
+  Suppliers: {
+    requiredFields: ['name'],
+    validateRow(row){
+      const errs = [];
+      if(DB.vendors.find(v=>v.name.trim().toLowerCase()===row.name.trim().toLowerCase())) errs.push(`Duplicate vendor name "${row.name}".`);
+      if(row.gstNumber && !isValidGSTIN(row.gstNumber)) errs.push(`Invalid GSTIN format: "${row.gstNumber}".`);
+      return errs;
+    },
+    createRow(row, actor){ return createVendorMaster({...row, actor}); }
+  },
+  Items: {
+    requiredFields: ['code','description','uom'],
+    validateRow(row){
+      const errs = [];
+      if(DB.materials.find(m=>m.code.trim().toLowerCase()===row.code.trim().toLowerCase())) errs.push(`Duplicate item code "${row.code}".`);
+      if(row.taxCode && !DB.taxCodes.find(t=>t.code===row.taxCode)) errs.push(`Unknown tax code "${row.taxCode}".`);
+      if(row.standardCost && !isValidAmountStr(row.standardCost)) errs.push(`Invalid standardCost "${row.standardCost}".`);
+      return errs;
+    },
+    createRow(row, actor){ return createMaterialMaster({...row, actor}); }
+  },
+  ServiceLabourRates: {
+    requiredFields: ['technicianLevel'],
+    validateRow(row){ return []; },
+    createRow(row, actor){ return setServiceLabourRate({...row, actor}); }
+  },
+  Projects: {
+    requiredFields: ['name'],
+    validateRow(row){
+      const errs = [];
+      if(row.customerId && !DB.customers.find(c=>c.id===row.customerId)) errs.push(`Unknown customer "${row.customerId}".`);
+      if(row.branchId && !DB.branches.find(b=>b.id===row.branchId)) errs.push(`Unknown branch "${row.branchId}".`);
+      if(row.budget && !isValidAmountStr(row.budget)) errs.push(`Invalid budget "${row.budget}".`);
+      return errs;
+    },
+    createRow(row, actor){ return createProjectMaster({...row, actor}); }
+  },
+  CostCentres: {
+    requiredFields: ['id','name'],
+    validateRow(row){ return DB.costCentres.find(c=>c.id==='CC-'+row.id.toUpperCase()) ? [`Duplicate cost centre "${row.id}".`] : []; },
+    createRow(row, actor){ return createCostCentreMaster({...row, actor}); }
+  },
+  Banks: {
+    // Phase 24 Part A — glAccount is now required: a bank/cash account imported without one can
+    // no longer silently default to account 1000, since real multi-account GL segregation
+    // depends on every account having its own distinct GL code.
+    requiredFields: ['bankName','accountName','glAccount'],
+    validateRow(row){ return []; },
+    createRow(row, actor){ return createBankAccount({...row, actor}); }
+  },
+  PaymentMethods: {
+    requiredFields: ['code','name'],
+    validateRow(row){ return DB.paymentMethods.find(m=>m.id==='PM-'+row.code.toUpperCase()) ? [`Duplicate payment method code "${row.code}".`] : []; },
+    createRow(row, actor){ return createPaymentMethodMaster({...row, actor}); }
+  },
+  FixedAssets: {
+    requiredFields: ['assetName','purchaseDate','cost'],
+    validateRow(row){
+      const errs = [];
+      if(!isValidDateStr(row.purchaseDate)) errs.push(`Invalid purchaseDate "${row.purchaseDate}" — expected YYYY-MM-DD.`);
+      if(!isValidAmountStr(row.cost)) errs.push(`Invalid cost "${row.cost}".`);
+      return errs;
+    },
+    createRow(row, actor){ return createFixedAsset({...row, actor}); }
+  },
+  TaxCodes: {
+    requiredFields: ['code','label'],
+    validateRow(row){ return DB.taxCodes.find(t=>t.code===row.code) ? [`Duplicate tax code "${row.code}".`] : []; },
+    createRow(row, actor){ return createTaxCodeMaster({...row, actor}); }
+  }
+};
+// §5 — validate → accept/reject per row, NEVER partial-import a row. §33 — rollback: nothing is
+// written until every row in the batch has been validated; rows that fail validation are
+// reported with a reason and simply never created (no partial record, nothing to roll back).
+function importMasterData({importType, csvText, actor}){
+  const spec = MASTER_IMPORT_SPECS[importType];
+  if(!spec) return {ok:false, error:`Unknown import type "${importType}". Must be one of: ${Object.keys(MASTER_IMPORT_SPECS).join(', ')}.`};
+  const {rows} = genericCsvRows(csvText);
+  if(!rows.length) return {ok:false, error:'No data rows found in the import file.'};
+  const results = [];
+  rows.forEach((row, idx)=>{
+    const missing = spec.requiredFields.filter(f=>!row[f] || !String(row[f]).trim());
+    if(missing.length){ results.push({row:idx+2, status:'REJECTED', reason:`Missing required field(s): ${missing.join(', ')}.`, data:row}); return; }
+    const errs = spec.validateRow(row);
+    if(errs.length){ results.push({row:idx+2, status:'REJECTED', reason:errs.join(' '), data:row}); return; }
+    const r = spec.createRow(row, actor);
+    if(!r.ok){ results.push({row:idx+2, status:'REJECTED', reason:r.error, data:row}); return; }
+    results.push({row:idx+2, status:'ACCEPTED', reason:null, data:row, created:Object.values(r).find(v=>v&&v.id)?.id||null});
+  });
+  const batch = { id:'MIB-'+String(DB.masterImportBatches.length+1).padStart(4,'0'), importType, importedBy:actor.id, importedByRole:actor.role, importedAt:nowIso(),
+    rowCount:rows.length, acceptedCount:results.filter(r=>r.status==='ACCEPTED').length, rejectedCount:results.filter(r=>r.status==='REJECTED').length };
+  DB.masterImportBatches.push(batch); save();
+  logAudit({type:'MasterDataImported', batchId:batch.id, importType, rowCount:batch.rowCount, acceptedCount:batch.acceptedCount, rejectedCount:batch.rejectedCount, userId:actor.id, role:actor.role});
+  return {ok:true, batch, results};
+}
+
+// ============================================================
+// Phase 20 §7-§10 — Opening Balance Engine. Deliberately reuses the EXISTING `createDraft()` /
+// `submitDraft()` / `approveDraft()` / `postDraft()` lifecycle — the SAME central posting
+// architecture as every other document (§16: "every entry must use the SAME central posting
+// architecture... do not create separate hidden accounting systems"). An opening balance import
+// creates real Drafts, tagged `openingBalanceBatchId` for traceability; the accountant then
+// Submits/Approves/Posts them through the SAME Document Workflow screen as anything else — SoD,
+// Financial Period lock, and audit all apply automatically, for free, with zero new code.
+//
+// Every opening entry books against account 3000 (Opening Balance Equity, §7 above) as the other
+// side. Once every real opening balance is loaded correctly, 3000's balance should be exactly
+// ZERO — that zero balance IS the "Opening Trial Balance Debit=Credit" proof (§7/§18), not a
+// separate invented rule.
+// ============================================================
+const OPENING_BALANCE_SPECS = {
+  OpeningAR: {
+    requiredFields: ['customerId','invoiceRef','invoiceDate','amount'],
+    validateRow(row){
+      const errs = [];
+      if(!DB.customers.find(c=>c.id===row.customerId)) errs.push(`Unknown customer "${row.customerId}".`);
+      if(!isValidDateStr(row.invoiceDate)) errs.push(`Invalid invoiceDate "${row.invoiceDate}".`);
+      if(!isValidAmountStr(row.amount) || +row.amount<=0) errs.push(`Invalid amount "${row.amount}".`);
+      if(row.project && !DB.projects.find(p=>p.id===row.project)) errs.push(`Unknown project "${row.project}".`);
+      if(DB.openingBalanceLines.some(l=>l.type==='OpeningAR' && l.customerId===row.customerId && l.invoiceRef===row.invoiceRef)) errs.push(`Duplicate opening AR document — customer "${row.customerId}" invoice ref "${row.invoiceRef}" already imported.`);
+      return errs;
+    },
+    buildLines(row){ return [ {account:AR_ACCOUNT, debit:+row.amount, credit:0, customerId:row.customerId, projectId:row.project||null, reference:row.invoiceRef},
+      {account:'3000', debit:0, credit:+row.amount, customerId:row.customerId, projectId:row.project||null} ]; },
+    narration(row){ return `Opening AR — ${row.customerId} — ${row.invoiceRef}`; },
+    dueDate(row){ return row.dueDate || undefined; },
+    // DEFECT FOUND & FIXED (this phase's own test suite): without this, the posted opening
+    // entry never appeared in customerOpenItems()/ageing at all — `AR_DOC_CATEGORIES` only
+    // recognizes 'CustomerInvoice', not a separate 'OpeningBalance' category the rest of the
+    // AR engine has never heard of. An imported Opening AR balance IS, functionally, an open
+    // customer invoice for collection purposes — it must use the SAME category the rest of the
+    // AR subledger keys off of (§16 consistency), distinguishable instead via `sourceType`.
+    docCategory: 'CustomerInvoice'
+  },
+  OpeningAP: {
+    requiredFields: ['vendorId','billRef','billDate','amount'],
+    validateRow(row){
+      const errs = [];
+      if(!DB.vendors.find(v=>v.id===row.vendorId)) errs.push(`Unknown vendor "${row.vendorId}".`);
+      if(!isValidDateStr(row.billDate)) errs.push(`Invalid billDate "${row.billDate}".`);
+      if(!isValidAmountStr(row.amount) || +row.amount<=0) errs.push(`Invalid amount "${row.amount}".`);
+      if(row.project && !DB.projects.find(p=>p.id===row.project)) errs.push(`Unknown project "${row.project}".`);
+      if(DB.openingBalanceLines.some(l=>l.type==='OpeningAP' && l.vendorId===row.vendorId && l.billRef===row.billRef)) errs.push(`Duplicate opening AP document — vendor "${row.vendorId}" bill ref "${row.billRef}" already imported.`);
+      return errs;
+    },
+    buildLines(row){ return [ {account:'3000', debit:+row.amount, credit:0, vendorId:row.vendorId, projectId:row.project||null},
+      {account:AP_ACCOUNT, debit:0, credit:+row.amount, vendorId:row.vendorId, projectId:row.project||null, reference:row.billRef} ]; },
+    narration(row){ return `Opening AP — ${row.vendorId} — ${row.billRef}`; },
+    docCategory: 'SupplierInvoice' // same fix/reason as OpeningAR above
+  },
+  OpeningInventory: {
+    requiredFields: ['materialId','warehouseId','qty','unitCost'],
+    validateRow(row){
+      const errs = [];
+      if(!DB.materials.find(m=>m.id===row.materialId)) errs.push(`Unknown material "${row.materialId}".`);
+      if(!DB.warehouses.find(w=>w.id===row.warehouseId)) errs.push(`Unknown warehouse "${row.warehouseId}".`);
+      if(!isValidAmountStr(row.qty) || +row.qty<=0) errs.push(`Invalid qty "${row.qty}".`);
+      if(!isValidAmountStr(row.unitCost) || +row.unitCost<0) errs.push(`Invalid unitCost "${row.unitCost}".`);
+      if(DB.openingBalanceLines.some(l=>l.type==='OpeningInventory' && l.materialId===row.materialId && l.warehouseId===row.warehouseId)) errs.push(`Opening inventory for "${row.materialId}" at "${row.warehouseId}" was already imported — cannot import twice.`);
+      return errs;
+    },
+    buildLines(row){ const value = r2(+row.qty * +row.unitCost); return [ {account:'1200', debit:value, credit:0}, {account:'3000', debit:0, credit:value} ]; },
+    narration(row){ return `Opening Inventory — ${row.materialId} @ ${row.warehouseId}`; },
+    extraEffect(row, actor){ postInventoryMovement({type:'Receipt', materialId:row.materialId, qty:+row.qty, uom:'', warehouseId:row.warehouseId, sourceType:'OpeningBalanceImport', sourceId:null, valuationRate:+row.unitCost, actor}); }
+  },
+  OpeningGLBalances: {
+    requiredFields: ['accountCode','amount','drCr'],
+    validateRow(row){
+      const errs = [];
+      if(!DB.accounts.find(a=>a.id===row.accountCode)) errs.push(`Unknown account code "${row.accountCode}".`);
+      if(row.accountCode===AR_ACCOUNT || row.accountCode===AP_ACCOUNT || row.accountCode==='1200') errs.push(`Account "${row.accountCode}" is a subledger control account (AR/AP/Inventory) — use the Opening AR/Opening AP/Opening Inventory templates instead, not Opening GL Balances, to keep the subledger and control account in sync.`);
+      if(!isValidAmountStr(row.amount) || +row.amount<=0) errs.push(`Invalid amount "${row.amount}".`);
+      if(!['DR','CR'].includes((row.drCr||'').toUpperCase())) errs.push(`drCr must be DR or CR, got "${row.drCr}".`);
+      return errs;
+    },
+    buildLines(row){ const isDr = row.drCr.toUpperCase()==='DR';
+      return isDr ? [ {account:row.accountCode, debit:+row.amount, credit:0}, {account:'3000', debit:0, credit:+row.amount} ]
+                   : [ {account:'3000', debit:+row.amount, credit:0}, {account:row.accountCode, debit:0, credit:+row.amount} ]; },
+    narration(row){ return `Opening GL Balance — ${row.accountCode}`; }
+  }
+};
+function importOpeningBalance({type, csvText, actor}){
+  const spec = OPENING_BALANCE_SPECS[type];
+  if(!spec) return {ok:false, error:`Unknown opening balance type "${type}". Must be one of: ${Object.keys(OPENING_BALANCE_SPECS).join(', ')}.`};
+  const {rows} = genericCsvRows(csvText);
+  if(!rows.length) return {ok:false, error:'No data rows found in the import file.'};
+  const batch = { id:'OBB-'+String(DB.openingBalanceBatches.length+1).padStart(4,'0'), type, importedBy:actor.id, importedByRole:actor.role, importedAt:nowIso(), status:'Imported' };
+  DB.openingBalanceBatches.push(batch);
+  const results = [];
+  rows.forEach((row, idx)=>{
+    const missing = spec.requiredFields.filter(f=>!row[f] || !String(row[f]).trim());
+    if(missing.length){ results.push({row:idx+2, status:'REJECTED', reason:`Missing required field(s): ${missing.join(', ')}.`}); return; }
+    const errs = spec.validateRow(row);
+    if(errs.length){ results.push({row:idx+2, status:'REJECTED', reason:errs.join(' ')}); return; }
+    const lines = spec.buildLines(row);
+    const draft = createDraft({ date: row.asOfDate||row.invoiceDate||row.billDate||new Date().toISOString().slice(0,10), docTypeCode:'OB',
+      sourceType:'OpeningBalance', docCategory: spec.docCategory||'OpeningBalance', party: row.customerId||row.vendorId||null, lines,
+      dueDate: spec.dueDate ? spec.dueDate(row) : undefined, narration: spec.narration(row), createdByUserId:actor.id, createdByRole:actor.role });
+    if(!draft.ok){ results.push({row:idx+2, status:'REJECTED', reason:draft.error}); return; }
+    draft.draft.openingBalanceBatchId = batch.id;
+    const obLine = { id:'OBL-'+String(DB.openingBalanceLines.length+1).padStart(5,'0'), batchId:batch.id, type, draftId:draft.draft.id,
+      customerId:row.customerId||null, vendorId:row.vendorId||null, invoiceRef:row.invoiceRef||null, billRef:row.billRef||null,
+      materialId:row.materialId||null, warehouseId:row.warehouseId||null, qty:row.qty?+row.qty:null, unitCost:row.unitCost?+row.unitCost:null,
+      accountCode:row.accountCode||null, inventoryMovementPosted:false, amount:+row.amount||r2((+row.qty||0)*(+row.unitCost||0)) };
+    DB.openingBalanceLines.push(obLine);
+    save();
+    results.push({row:idx+2, status:'ACCEPTED', reason:null, draftId:draft.draft.id});
+  });
+  batch.rowCount = rows.length; batch.acceptedCount = results.filter(r=>r.status==='ACCEPTED').length; batch.rejectedCount = results.filter(r=>r.status==='REJECTED').length;
+  save();
+  logAudit({type:'OpeningBalanceImported', batchId:batch.id, obType:type, rowCount:batch.rowCount, acceptedCount:batch.acceptedCount, rejectedCount:batch.rejectedCount, userId:actor.id, role:actor.role});
+  return {ok:true, batch, results};
+}
+function reconcileOpeningBalances(){
+  const lines3000 = allLines().filter(l=>l.account==='3000');
+  const balance = r2(lines3000.reduce((s,l)=>s+l.debit-l.credit,0));
+  const batches = DB.openingBalanceBatches;
+  const pendingDrafts = DB.openingBalanceLines.map(l=>DB.jeDrafts.find(d=>d.id===l.draftId)).filter(d=>d && d.status!=='Posted');
+  return { openingBalanceEquityAccount:'3000', balance, isZero: Math.abs(balance)<0.02, batchCount:batches.length,
+    totalLinesImported: DB.openingBalanceLines.length, pendingUnpostedCount: pendingDrafts.length,
+    note: Math.abs(balance)<0.02 ? 'Zero balance — the opening trial balance loaded so far is internally consistent.' : 'Non-zero balance — either more opening entries remain to be loaded, or an error exists. Do not force this to zero manually.' };
+}
+
+function setMaterialHSN({materialId, hsnCode, actor}){
+  const m = DB.materials.find(x=>x.id===materialId);
+  if(!m) return {ok:false, error:'Material not found.'};
+  const old = m.hsnCode;
+  m.hsnCode = hsnCode ? String(hsnCode).trim() : null;
+  save();
+  logAudit({type:'MaterialHSNChanged', materialId, oldValue:old, newValue:m.hsnCode, userId:actor.id, role:actor.role});
+  return {ok:true, material:m};
+}
+function setCustomerGSTIN({customerId, gstin, actor}){
+  const c = DB.customers.find(x=>x.id===customerId);
+  if(!c) return {ok:false, error:'Customer not found.'};
+  const old = c.gstin;
+  c.gstin = gstin ? String(gstin).trim().toUpperCase() : null;
+  save();
+  // §5 explicit requirement: audit changes to GSTIN specifically, not just folded into a generic
+  // "customer edited" event — old/new value both recorded, matching the PolicyConfigChanged
+  // pattern already used for other sensitive-field changes since Phase 13.
+  logAudit({type:'CustomerGSTINChanged', customerId, oldValue:old, newValue:c.gstin, userId:actor.id, role:actor.role});
+  return {ok:true, customer:c};
+}
+
+// ============================================================
+// Phase 15 — Gap Closure
+// ============================================================
+
+// §3 Profit Centre — a real master-data mechanism, DELIBERATELY seeded empty (see freshDB()
+// comment) since no real Appletree profit-centre value has ever been supplied, unlike Branch
+// (Ulliyeri) which had direct screenshot evidence. Full CRUD/search/audit exists; the VALUES are
+// management's to define, not invented here.
+function createProfitCentre({code, name, actor}){
+  if(!code || !name) return {ok:false, error:'Code and name are required.'};
+  const id = 'PC-'+code.toUpperCase();
+  if(DB.profitCentres.find(p=>p.id===id)) return {ok:false, error:'Profit centre code already exists.'};
+  const pc = {id, code:code.toUpperCase(), name, active:true, createdBy:actor.id, createdAt:nowIso()};
+  DB.profitCentres.push(pc); save();
+  logAudit({type:'ProfitCentreCreated', profitCentreId:id, code:pc.code, name, userId:actor.id, role:actor.role});
+  return {ok:true, profitCentre:pc};
+}
+function listProfitCentres(){ return DB.profitCentres.filter(p=>p.active); }
+
+// §5 Bank Reconciliation. Existing architecture (audited first, per instruction): a single GL
+// "Bank" account (1000), Payments/Receipts/Clearing already exist. What was missing: any concept
+// of an individual bank account, or a bank statement line to match against postings. Built as a
+// genuinely minimal, real workflow: Statement Line (imported) -> Match (link to an existing
+// posted entry) -> Reconciled. Never auto-creates accounting entries for an unmatched item — an
+// unmatched line just sits Unmatched until a human matches or a real accounting workflow (out of
+// this phase's scope) is approved to handle it.
+function listBankAccounts(){ return DB.bankAccounts.filter(b=>b.active); }
+// Phase 24 Part A — Multi-Bank/Cash GL Segregation (Phase 23 audit finding: multiple bank account
+// RECORDS could already be created, but every receipt/payment posted unconditionally to account
+// 1000 regardless of which one was tagged). `type` ('Bank'/'Cash') is added to the SAME existing
+// master — not a new parallel Cash Account entity — since a cash account is, for GL purposes,
+// exactly the same shape as a bank account (an id, a name, a GL control account, a balance). Each
+// account MUST have its own distinct glAccount for real segregation to mean anything; this is
+// validated here, not assumed.
+function createBankAccount({bankName, accountName, accountNumberLast4, glAccount, type, actor}){
+  if(!bankName || !accountName) return {ok:false, error:'Bank name and account name are required.'};
+  if(!glAccount) return {ok:false, error:'A distinct GL account is required for real bank/cash segregation — it can no longer default silently to account 1000.'};
+  if(!DB.accounts.find(a=>a.id===glAccount)) return {ok:false, error:`Unknown GL account "${glAccount}".`};
+  if(DB.bankAccounts.some(b=>b.glAccount===glAccount && b.active)) return {ok:false, error:`GL account "${glAccount}" is already used by another active bank/cash account — each account needs its OWN distinct GL account for real segregation, not a shared one.`};
+  const acctType = type==='Cash' ? 'Cash' : 'Bank';
+  const ba = {id:'BANK-'+String(DB.bankAccounts.length+1).padStart(3,'0'), type:acctType, bankName, accountName, accountNumberLast4:accountNumberLast4||'', glAccount, active:true, createdBy:actor.id, createdAt:nowIso()};
+  DB.bankAccounts.push(ba); save();
+  logAudit({type:'BankAccountCreated', bankAccountId:ba.id, acctType, bankName, accountName, glAccount, userId:actor.id, role:actor.role});
+  return {ok:true, bankAccount:ba};
+}
+// Per-account GL balance — the real proof that segregation works: each account's balance is
+// derived from ONLY the journal lines posted to ITS OWN glAccount, nothing else.
+function bankAccountBalances(){
+  return DB.bankAccounts.map(b => ({
+    id:b.id, type:b.type||'Bank', bankName:b.bankName, accountName:b.accountName, glAccount:b.glAccount, active:b.active,
+    balance: r2(allLines().filter(l=>l.account===b.glAccount).reduce((s,l)=>s+l.debit-l.credit,0))
+  }));
+}
+// A transfer between two bank/cash accounts — still just an ordinary 2-line journal entry
+// assembled here and handed to the ONE central postJournalEntry() function, not a parallel
+// posting engine. Dr the destination account's GL, Cr the source account's GL.
+function createBankTransfer({fromAccountId, toAccountId, amount, date, narration, reference, actor, overrideReason}){
+  if(!(+amount>0)) return {ok:false, error:'Transfer amount must be positive.'};
+  const from = DB.bankAccounts.find(b=>b.id===fromAccountId);
+  const to = DB.bankAccounts.find(b=>b.id===toAccountId);
+  if(!from) return {ok:false, error:`Unknown source account "${fromAccountId}".`};
+  if(!to) return {ok:false, error:`Unknown destination account "${toAccountId}".`};
+  if(from.id===to.id) return {ok:false, error:'Source and destination accounts must be different.'};
+  if(from.active===false) return {ok:false, error:`Source account "${from.accountName}" is inactive.`};
+  if(to.active===false) return {ok:false, error:`Destination account "${to.accountName}" is inactive.`};
+  const lines = [ {account:to.glAccount, debit:+amount, credit:0}, {account:from.glAccount, debit:0, credit:+amount} ];
+  const result = postJournalEntry({ date, narration: narration || `Transfer: ${from.accountName} -> ${to.accountName}`,
+    sourceType:'BankTransfer', voucherNo:nextDocNumber('BXFR', date), docCategory:'BankTransfer', refNo1: reference||'',
+    lines, postedByUserId:actor.id, postedByRole:actor.role, overrideReason });
+  if(!result.ok) return result;
+  logAudit({type:'BankTransferPosted', fromAccountId, toAccountId, amount:+amount, entryId:result.entry.id, userId:actor.id, role:actor.role});
+  return {ok:true, entry:result.entry};
+}
+// CSV format (generic, since no real ICICI statement export was supplied — the exact real
+// format is BANK FORMAT CONFIGURATION REQUIRED, documented not guessed): Date,Reference,
+// Description,Amount,Type(Debit/Credit). Import is metadata-only — it creates UNRECONCILED
+// statement lines, never a GL posting of any kind.
+function importBankStatement({bankAccountId, csvText, actor}){
+  const ba = DB.bankAccounts.find(b=>b.id===bankAccountId);
+  if(!ba) return {ok:false, error:'Bank account not found.'};
+  const lines = (csvText||'').split(/\r?\n/).filter(l=>l.trim().length);
+  if(lines.length<2) return {ok:false, error:'CSV needs a header row plus at least one data row.'};
+  const header = lines[0].split(',').map(h=>h.trim());
+  const required = ['Date','Reference','Amount','Type'];
+  for(const r of required) if(!header.includes(r)) return {ok:false, error:`Missing required column "${r}". Expected: Date,Reference,Description,Amount,Type(Debit/Credit) — BANK FORMAT CONFIGURATION REQUIRED if your real statement export differs.`};
+  const rows = lines.slice(1).map(l=>{ const c=l.split(','); const row={}; header.forEach((h,i)=>row[h]=(c[i]||'').trim()); return row; });
+  const errors = [];
+  rows.forEach((row,idx)=>{
+    if(!row.Date) errors.push(`Row ${idx+1}: missing Date.`);
+    if(!row.Amount || isNaN(+row.Amount)) errors.push(`Row ${idx+1}: invalid Amount.`);
+    if(!['Debit','Credit'].includes(row.Type)) errors.push(`Row ${idx+1}: Type must be Debit or Credit.`);
+  });
+  if(errors.length) return {ok:false, error:'Bank statement import validation failed.', errors};
+  const created = rows.map(row=>{
+    const line = { id:'BSL-'+String(DB.bankStatementLines.length+1).padStart(5,'0'), bankAccountId, date:row.Date, reference:row.Reference||'', description:row.Description||'',
+      amount:r2(+row.Amount), type:row.Type, status:'Unmatched', matchedEntryId:null, reconciledDate:null, reconciledBy:null, importedBy:actor.id, importedAt:nowIso() };
+    DB.bankStatementLines.push(line); return line;
+  });
+  save();
+  logAudit({type:'BankStatementImported', bankAccountId, count:created.length, userId:actor.id, role:actor.role});
+  return {ok:true, lines:created};
+}
+function matchBankStatementLine({lineId, entryId, actor}){
+  const line = DB.bankStatementLines.find(l=>l.id===lineId);
+  if(!line) return {ok:false, error:'Statement line not found.'};
+  if(line.status==='Reconciled') return {ok:false, error:'Already reconciled.'};
+  const entry = DB.journalEntries.find(e=>e.id===entryId);
+  if(!entry) return {ok:false, error:'Accounting document not found.'};
+  const bankLine = entry.lines.find(l=>l.account==='1000');
+  if(!bankLine) return {ok:false, error:'That accounting document has no Bank (1000) line — cannot match.'};
+  // Bank-statement Debit/Credit is from the BANK's perspective, the OPPOSITE polarity of our own
+  // GL: a statement "Credit" (money deposited into our account) is a DEBIT to our own asset
+  // account (Bank, 1000) in double-entry terms, and vice versa for a statement "Debit"
+  // (withdrawal). DEFECT FOUND & FIXED (Phase 15 smoke test) — the first version compared them
+  // with matching polarity, so every real receipt/payment failed to match.
+  const entryAmount = line.type==='Credit' ? bankLine.debit : bankLine.credit;
+  if(Math.abs(entryAmount - line.amount) > 0.01) return {ok:false, error:`Amount mismatch — statement line ₹${line.amount.toLocaleString('en-IN')} vs document ₹${entryAmount.toLocaleString('en-IN')}.`};
+  line.status = 'Reconciled'; line.matchedEntryId = entryId; line.reconciledDate = new Date().toISOString().slice(0,10); line.reconciledBy = actor.id;
+  save();
+  logAudit({type:'BankStatementLineMatched', lineId, entryId, userId:actor.id, role:actor.role});
+  return {ok:true, line};
+}
+function unmatchBankStatementLine({lineId, actor}){
+  const line = DB.bankStatementLines.find(l=>l.id===lineId);
+  if(!line) return {ok:false, error:'Statement line not found.'};
+  line.status = 'Unmatched'; line.matchedEntryId = null; line.reconciledDate = null; line.reconciledBy = null;
+  save();
+  logAudit({type:'BankStatementLineUnmatched', lineId, userId:actor.id, role:actor.role});
+  return {ok:true, line};
+}
+function bankReconciliationStatus(bankAccountId){
+  const lines = DB.bankStatementLines.filter(l=>l.bankAccountId===bankAccountId);
+  const matched = lines.filter(l=>l.status==='Reconciled');
+  const unmatched = lines.filter(l=>l.status==='Unmatched');
+  return { bankAccountId, totalLines:lines.length, matchedCount:matched.length, unmatchedCount:unmatched.length,
+    unmatchedItems: unmatched, matchedItems: matched };
+}
+
+// ============================================================
+// Phase 18 §2/§3 — Financial Period Control. Reuses the SAME role-tier already established for
+// posting/approval authority (FinanceManager/CEO/Admin — the roles with post:true AND
+// approve:true in ROLE_ACTIONS) to administer periods (Create/Close/Reopen), rather than
+// inventing a new role. The separate, more sensitive question — "which role, if any, may post
+// INTO a closed period without reopening it" — is deliberately NOT defaulted to this same tier;
+// it lives on each period's own `overrideRole` field, starts null on every period, and can only
+// be set by CEO/Admin (the two roles that already hold every other systemwide override in this
+// engagement — SoD self-approval override, Backup/Restore). Until management explicitly approves
+// a role for that field, it stays null and the period simply cannot be posted into once closed —
+// the only path back in is an audited Reopen, never a silent bypass.
+// ============================================================
+const PERIOD_MANAGEMENT_ROLES = new Set(['FinanceManager','CEO','Admin']);
+const PERIOD_OVERRIDE_CONFIG_ROLES = new Set(['CEO','Admin']);
+function findPeriodForDate(dateStr){
+  return DB.financialPeriods.find(p => dateStr >= p.startDate && dateStr <= p.endDate) || null;
+}
+function listFinancialPeriods(){ return DB.financialPeriods.slice().sort((a,b)=> a.startDate.localeCompare(b.startDate)); }
+function createFinancialPeriod({name, startDate, endDate, actor}){
+  if(!PERIOD_MANAGEMENT_ROLES.has(actor.role)) return {ok:false, error:`Role "${actor.role}" cannot create a financial period.`};
+  if(!name || !startDate || !endDate) return {ok:false, error:'Name, Start Date and End Date are required.'};
+  if(startDate > endDate) return {ok:false, error:'Start Date must be on or before End Date.'};
+  const overlap = DB.financialPeriods.find(p => !(endDate < p.startDate || startDate > p.endDate));
+  if(overlap) return {ok:false, error:`Overlaps existing period "${overlap.name}" (${overlap.startDate} to ${overlap.endDate}).`};
+  const period = { id:'FP-'+String(DB.financialPeriods.length+1).padStart(4,'0'), name, startDate, endDate, status:'Open',
+    overrideRole: null, closedBy:null, closedByRole:null, closedAt:null, closeReason:null,
+    reopenedBy:null, reopenedByRole:null, reopenedAt:null, reopenReason:null,
+    createdBy:actor.id, createdByRole:actor.role, createdAt: nowIso() };
+  DB.financialPeriods.push(period); save();
+  logAudit({type:'FinancialPeriodCreated', periodId:period.id, name, startDate, endDate, userId:actor.id, role:actor.role});
+  return {ok:true, period};
+}
+function closeFinancialPeriod({periodId, reason, actor}){
+  if(!PERIOD_MANAGEMENT_ROLES.has(actor.role)) return {ok:false, error:`Role "${actor.role}" cannot close a financial period.`};
+  const p = DB.financialPeriods.find(x=>x.id===periodId);
+  if(!p) return {ok:false, error:'Period not found.'};
+  if(p.status==='Closed') return {ok:false, error:'Period is already Closed.'};
+  if(!reason) return {ok:false, error:'A reason is required to close a financial period.'};
+  p.status='Closed'; p.closedBy=actor.id; p.closedByRole=actor.role; p.closedAt=nowIso(); p.closeReason=reason;
+  save();
+  logAudit({type:'FinancialPeriodClosed', periodId:p.id, name:p.name, reason, userId:actor.id, role:actor.role});
+  return {ok:true, period:p};
+}
+function reopenFinancialPeriod({periodId, reason, actor}){
+  if(!PERIOD_MANAGEMENT_ROLES.has(actor.role)) return {ok:false, error:`Role "${actor.role}" cannot reopen a financial period.`};
+  const p = DB.financialPeriods.find(x=>x.id===periodId);
+  if(!p) return {ok:false, error:'Period not found.'};
+  if(p.status!=='Closed') return {ok:false, error:'Period is not Closed.'};
+  if(!reason) return {ok:false, error:'A reason is required to reopen a financial period.'};
+  p.status='Open'; p.reopenedBy=actor.id; p.reopenedByRole=actor.role; p.reopenedAt=nowIso(); p.reopenReason=reason;
+  save();
+  logAudit({type:'FinancialPeriodReopened', periodId:p.id, name:p.name, reason, userId:actor.id, role:actor.role});
+  return {ok:true, period:p};
+}
+// Deliberately the MOST restricted configuration action in this whole Lab — narrower than
+// masterData/configure — because it determines who can bypass a closed-period control. Not
+// exposed as a general "configure" action; CEO/Admin only, always audited with old->new value.
+function setPeriodOverrideRole({periodId, role, actor}){
+  if(!PERIOD_OVERRIDE_CONFIG_ROLES.has(actor.role)) return {ok:false, error:`Role "${actor.role}" cannot configure a financial period's override role.`};
+  const p = DB.financialPeriods.find(x=>x.id===periodId);
+  if(!p) return {ok:false, error:'Period not found.'};
+  if(role && !ROLES.includes(role)) return {ok:false, error:`Unknown role "${role}".`};
+  const old = p.overrideRole;
+  p.overrideRole = role || null; save();
+  logAudit({type:'FinancialPeriodOverrideRoleSet', periodId:p.id, oldValue:old, newValue:p.overrideRole, userId:actor.id, role:actor.role});
+  return {ok:true, period:p};
+}
+function periodTrialBalance(period){
+  const lines = allLines().filter(l => l.date >= period.startDate && l.date <= period.endDate);
+  let debit=0, credit=0;
+  lines.forEach(l=>{ debit += l.debit; credit += l.credit; });
+  return { debit:r2(debit), credit:r2(credit), balanced: Math.abs(debit-credit) < 0.02, lineCount: lines.length };
+}
+// §3 — Period-close reconciliation checklist. AR/AP/Inventory checks are deliberately point-in-
+// time company-wide figures, not period-sliced sums: real open-item accounting reconciles a
+// BALANCE "as of" a date, not a total "for" a date range, so this correctly mirrors how
+// reconcileAR()/reconcileAP() and the Phase 16 moving-average check already work — not a new
+// invented reconciliation rule, the existing architecture's own proof extended to a checklist.
+function periodCloseReconciliation(periodId){
+  const p = DB.financialPeriods.find(x=>x.id===periodId);
+  if(!p) return {ok:false, error:'Period not found.'};
+  const tb = periodTrialBalance(p);
+  const ar = reconcileAR();
+  const ap = reconcileAP();
+  let invValue = 0;
+  const pairs = new Set(DB.inventoryMovements.map(m=>m.materialId+'|'+m.warehouseId));
+  pairs.forEach(key=>{ const [materialId, warehouseId] = key.split('|'); const stock = getStockLevel(materialId, warehouseId); const rate = getMovingAverageRate(materialId, warehouseId); invValue += stock*rate; });
+  invValue = r2(invValue);
+  const glInv = r2(allLines().filter(l=>l.account==='1200').reduce((s,l)=>s+l.debit-l.credit,0));
+  const inventory = { computedValue: invValue, glBalance: glInv, matches: Math.abs(invValue-glInv) < 0.5 };
+  const bankUnmatched = DB.bankStatementLines.filter(l=>l.status==='Unmatched').length;
+  let amcMismatch = 0;
+  DB.amcContracts.forEach(a=>{ const s = amcRevenueSchedule(a.id); if(Math.abs((s.billed - s.recognized) - s.deferredBalance) > 0.02) amcMismatch++; });
+  const afterSales = companyAfterSalesSummary();
+  const issues = [];
+  if(!tb.balanced) issues.push(`Trial Balance for this period's own postings is NOT balanced (Debit ₹${tb.debit} vs Credit ₹${tb.credit}) — this should be structurally impossible; investigate immediately before closing.`);
+  if(!ar.matches) issues.push(`AR subledger (₹${ar.subledgerTotal}) does not match the AR control account (₹${ar.controlAccountBalance}) — company-wide, as of now.`);
+  if(!ap.matches) issues.push(`AP subledger (₹${ap.subledgerTotal}) does not match the AP control account (₹${ap.controlAccountBalance}) — company-wide, as of now.`);
+  if(!inventory.matches) issues.push(`Computed Inventory value (₹${inventory.computedValue}) does not match GL Inventory balance (₹${inventory.glBalance}) — company-wide, as of now.`);
+  if(bankUnmatched>0) issues.push(`${bankUnmatched} bank statement line(s) remain unmatched across all bank accounts — review before closing if any fall within this period.`);
+  if(amcMismatch>0) issues.push(`${amcMismatch} AMC contract(s) show Billed − Recognized ≠ Deferred Balance — investigate before closing.`);
+  return { ok:true, period:p, trialBalance:tb, ar, ap, inventory, bank:{unmatchedLines:bankUnmatched},
+    amc:{contractsChecked:DB.amcContracts.length, mismatches:amcMismatch, totalBilled:afterSales.totalAMCBilled, totalRecognized:afterSales.totalAMCRevenue, totalDeferred:afterSales.totalAMCDeferredBalance},
+    warranty:{totalCost:afterSales.totalWarrantyCost, note:'Sourced directly from posted GL lines — no separate subledger exists to drift from it.'},
+    serviceRevenue:{totalChargeable:afterSales.totalChargeableServiceRevenue, note:'Sourced directly from posted GL lines — no separate subledger exists to drift from it.'},
+    projectCosts:{note:'Project Actual Cost is a live GL-derived figure (Financial 360), not a separately maintained total — no reconciliation drift is structurally possible.'},
+    projectRevenue:{note:'Same as above — Project Revenue is GL-derived.'},
+    outstandingIssues: issues, readyToClose: issues.length===0 };
+}
+
+// ============================================================================================
+// PHASE 33 — Apple Tree Finance SOP Compliance & Control Implementation
+// Source of truth: Apple_Tree_SOP_Sent.docx (Apple Tree Pvt Ltd's real Finance Team SOP).
+// Every new account/collection/doc-type follows the existing SEED + migration-guard discipline.
+// Not one function below calls postJournalEntry() directly except through the ONE existing engine
+// — no second GL/AP/AR/inventory engine is introduced anywhere in this section.
+// ============================================================================================
+const FINANCE_CONFIG_ROLES = new Set(['Admin','CEO','FinanceManager']);
+const PURCHASE_APPROVAL_ROLES = new Set(['Purchase','FinanceManager','CEO','Admin']);
+const CASH_LIMIT_OVERRIDE_ROLES = new Set(['Admin','CEO','FinanceManager']);
+
+// ---------- Sites master ----------
+function createSite({name, address, state, siteInChargeUserId, actor}){
+  if(!name) return {ok:false, error:'Site name is required.'};
+  if(siteInChargeUserId && !DB.users.find(u=>u.id===siteInChargeUserId)) return {ok:false, error:'Unknown Site In-charge user.'};
+  const site = { id:'SITE-'+String(DB.sites.length+1).padStart(3,'0'), name, address:address||'', state:state||null,
+    siteInChargeUserId:siteInChargeUserId||null, active:true, createdBy:actor.id, createdAt:nowIso() };
+  DB.sites.push(site); save();
+  logAudit({type:'SiteCreated', siteId:site.id, name, userId:actor.id, role:actor.role});
+  return {ok:true, site};
+}
+function listSites(){ return DB.sites; }
+function setSiteActive({siteId, active, actor}){
+  const s = DB.sites.find(x=>x.id===siteId); if(!s) return {ok:false, error:'Site not found.'};
+  s.active = !!active; save();
+  logAudit({type:'SiteActiveSet', siteId, active:s.active, userId:actor.id, role:actor.role});
+  return {ok:true, site:s};
+}
+
+// ---------- Company GST configuration + Place of Supply (SOP §1/§2/§6) ----------
+function setCompanyGSTConfig({newGSTIN, oldGSTIN, companyState, turnoverExceeds10CrPrecedingFY, actor}){
+  if(!FINANCE_CONFIG_ROLES.has(actor.role)) return {ok:false, error:`Role "${actor.role}" cannot configure company GST settings.`};
+  if(!DB.companyGSTConfig) DB.companyGSTConfig = {};
+  const before = {...DB.companyGSTConfig};
+  const nGst = newGSTIN!==undefined ? (newGSTIN?String(newGSTIN).trim().toUpperCase():null) : DB.companyGSTConfig.newGSTIN;
+  const oGst = oldGSTIN!==undefined ? (oldGSTIN?String(oldGSTIN).trim().toUpperCase():null) : DB.companyGSTConfig.oldGSTIN;
+  if(nGst && oGst && nGst===oGst) return {ok:false, error:'New GSTIN cannot be the same as the erstwhile partnership firm\'s old GSTIN — SOP §2.1 requires a distinct new GSTIN for Apple Tree Pvt Ltd, never reused for sales or purchases.'};
+  DB.companyGSTConfig.newGSTIN = nGst; DB.companyGSTConfig.oldGSTIN = oGst;
+  if(companyState!==undefined) DB.companyGSTConfig.companyState = companyState||null;
+  if(turnoverExceeds10CrPrecedingFY!==undefined) DB.companyGSTConfig.turnoverExceeds10CrPrecedingFY = !!turnoverExceeds10CrPrecedingFY;
+  DB.companyGSTConfig.gstinConfirmedBy = actor.id; DB.companyGSTConfig.gstinConfirmedAt = nowIso();
+  save();
+  logAudit({type:'CompanyGSTConfigSet', before, after:{...DB.companyGSTConfig}, userId:actor.id, role:actor.role});
+  return {ok:true, config:DB.companyGSTConfig};
+}
+function setCustomerState({customerId, state, actor}){
+  const c = DB.customers.find(x=>x.id===customerId); if(!c) return {ok:false, error:'Customer not found.'};
+  const old = c.state; c.state = state||null; save();
+  logAudit({type:'CustomerStateChanged', customerId, oldValue:old, newValue:c.state, userId:actor.id, role:actor.role});
+  return {ok:true, customer:c};
+}
+// Advisory determination only — calcTax()/draftCustomerInvoice() already support CGST+SGST vs
+// IGST via whichever taxCode is selected (GST18/GST5 = intra-state split, GST12 = inter-state
+// IGST per SEED.taxCodes); this closes the gap of nothing telling the user WHICH to pick, without
+// changing draftCustomerInvoice()'s signature or behavior for any existing caller.
+function determinePlaceOfSupply({customerId, siteState}){
+  if(!DB.companyGSTConfig || !DB.companyGSTConfig.companyState){
+    return {ok:false, error:'Company state is not configured (Company GST Configuration) — Place of Supply cannot be determined. CONFIGURATION REQUIRED.'};
+  }
+  const customer = DB.customers.find(c=>c.id===customerId);
+  const placeOfSupplyState = siteState || (customer && customer.state) || null;
+  if(!placeOfSupplyState) return {ok:false, error:'Neither a site state nor the customer\'s own state is on record — record one to determine Place of Supply.'};
+  const sameState = placeOfSupplyState.trim().toLowerCase() === DB.companyGSTConfig.companyState.trim().toLowerCase();
+  return { ok:true, placeOfSupplyState, companyState:DB.companyGSTConfig.companyState, taxType: sameState?'INTRA_STATE':'INTER_STATE',
+    recommendedTaxCodeHint: sameState ? 'Use an intra-state code (CGST+SGST split, e.g. GST18/GST5).' : 'Use an inter-state code (full IGST, e.g. GST12) — required even for a B2C individual customer (SOP §6).' };
+}
+
+// ---------- Purchase Requisition (SOP §1/§7) ----------
+const PR_STATUSES = ['Draft','Submitted','Approved','Rejected','Converted','Cancelled'];
+function createPurchaseRequisition({projectId, siteId, raisedBy, items, jobSiteReference, actor}){
+  if(!Array.isArray(items) || !items.length) return {ok:false, error:'At least one requisition line is required.'};
+  for(const it of items){ if(!it.description || !(+it.qty>0)) return {ok:false, error:'Every line needs a description and a positive quantity.'}; }
+  if(siteId && !DB.sites.find(s=>s.id===siteId)) return {ok:false, error:'Unknown site.'};
+  const pr = { id:'PR-'+String(DB.purchaseRequisitions.length+1).padStart(4,'0'), prNo:null, projectId:projectId||null, siteId:siteId||null,
+    raisedBy:raisedBy||actor.id, items, jobSiteReference:jobSiteReference||'', status:'Draft',
+    createdBy:actor.id, createdAt:nowIso(), approvedBy:null, approvedAt:null, convertedToPoId:null };
+  DB.purchaseRequisitions.push(pr); save();
+  logAudit({type:'PurchaseRequisitionCreated', prId:pr.id, projectId, siteId, userId:actor.id, role:actor.role});
+  return {ok:true, purchaseRequisition:pr};
+}
+function submitPurchaseRequisition({id, actor}){
+  const pr = DB.purchaseRequisitions.find(x=>x.id===id); if(!pr) return {ok:false, error:'PR not found.'};
+  if(pr.status!=='Draft') return {ok:false, error:`Cannot submit — "${pr.status}", not Draft.`};
+  pr.status='Submitted'; pr.prNo = nextDocNumber('PR'); save();
+  logAudit({type:'PurchaseRequisitionSubmitted', prId:id, userId:actor.id, role:actor.role});
+  return {ok:true, purchaseRequisition:pr};
+}
+function approvePurchaseRequisition({id, actor}){
+  const pr = DB.purchaseRequisitions.find(x=>x.id===id); if(!pr) return {ok:false, error:'PR not found.'};
+  if(pr.status!=='Submitted') return {ok:false, error:`Cannot approve — "${pr.status}", not Submitted.`};
+  if(!PURCHASE_APPROVAL_ROLES.has(actor.role) && actor.role!=='SiteInCharge') return {ok:false, error:`Role "${actor.role}" is not authorized to approve a Purchase Requisition.`};
+  if(pr.siteId && actor.role==='SiteInCharge'){
+    const estTotal = pr.items.reduce((s,it)=>s+((+it.estimatedRate||0)*(+it.qty||0)),0);
+    const limit = (DB.purchaseApprovalConfig&&DB.purchaseApprovalConfig.sitePettyDailyLimit) || 5000;
+    if(estTotal > limit) return {ok:false, error:`Estimated value ₹${estTotal.toLocaleString('en-IN')} exceeds the site-petty daily limit of ₹${limit.toLocaleString('en-IN')} — must be approved by Purchase/FinanceManager/CEO/Admin, not Site In-charge alone (SOP §7).`};
+  } else if(actor.role==='SiteInCharge'){
+    return {ok:false, error:'Site In-charge can only approve site-scoped Purchase Requisitions within the site-petty limit.'};
+  }
+  if(pr.createdBy===actor.id && !['CEO','Admin'].includes(actor.role)) return {ok:false, error:'Segregation of duties: PR creator cannot also be PR approver.'};
+  pr.status='Approved'; pr.approvedBy=actor.id; pr.approvedAt=nowIso(); save();
+  logAudit({type:'PurchaseRequisitionApproved', prId:id, userId:actor.id, role:actor.role});
+  return {ok:true, purchaseRequisition:pr};
+}
+function rejectPurchaseRequisition({id, reason, actor}){
+  const pr = DB.purchaseRequisitions.find(x=>x.id===id); if(!pr) return {ok:false, error:'PR not found.'};
+  if(pr.status!=='Submitted') return {ok:false, error:`Cannot reject — "${pr.status}".`};
+  pr.status='Rejected'; pr.rejectReason=reason||''; save();
+  logAudit({type:'PurchaseRequisitionRejected', prId:id, reason, userId:actor.id, role:actor.role});
+  return {ok:true, purchaseRequisition:pr};
+}
+
+// ---------- Cash Payment Limit engine (SOP §4) ----------
+function isCashPayment({paymentMethodId}){
+  if(paymentMethodId){ const pm = DB.paymentMethods.find(p=>p.id===paymentMethodId); if(pm && pm.category==='Cash') return true; }
+  return false;
+}
+function checkCashLimit({kind, amount, isTransporter, actor, overrideReason}){
+  const limits = DB.cashLimits || {};
+  let cap = null, label = '';
+  if(kind==='expense'){ cap = isTransporter ? limits.dailyTransporterExpense : limits.dailyExpensePerPerson; label = isTransporter?'transporter cash payment (₹35,000/day cap)':'cash payment to a single person (₹10,000/day cap)'; }
+  else if(kind==='loanDepositReceived'){ cap = limits.loanDepositReceived; label='cash loan/deposit received (₹20,000 cap, incl. Director payments)'; }
+  else if(kind==='loanDepositRepaid'){ cap = limits.loanDepositRepaid; label='cash loan/deposit repayment (₹20,000 cap)'; }
+  else if(kind==='receiptAggregate'){ cap = limits.cashReceiptAggregate; label='cash receipt aggregate (₹2,00,000/day/person/event cap)'; }
+  if(cap==null) return {ok:true};
+  if(+amount <= cap) return {ok:true};
+  if(overrideReason && CASH_LIMIT_OVERRIDE_ROLES.has(actor.role)){
+    DB.cashControlExceptions.push({ id:'CCE-'+String(DB.cashControlExceptions.length+1).padStart(4,'0'), kind, amount:+amount, cap, reason:overrideReason,
+      authorizedBy:actor.id, authorizedByRole:actor.role, at:nowIso() });
+    save();
+    logAudit({type:'CashControlLimitOverridden', kind, amount:+amount, cap, reason:overrideReason, userId:actor.id, role:actor.role});
+    return {ok:true, overridden:true};
+  }
+  return {ok:false, error:`Exceeds the SOP §4 cash limit for ${label} — ₹${(+amount).toLocaleString('en-IN')} vs the ₹${cap.toLocaleString('en-IN')} cap. SOP-stated consequence: the entire expenditure is disallowed as a tax deduction / a penalty equal to the amount applies. A FinanceManager/CEO/Admin must record an authorized overrideReason to proceed anyway (still logged and reported).`};
+}
+
+// ---------- Seller-wise cumulative tracking + Section 194Q flag (SOP §1) ----------
+function fyStartDateFor(dateStr){
+  const [y,m] = String(dateStr).slice(0,10).split('-').map(Number);
+  const startYear = (m>=4) ? y : y-1;
+  return `${startYear}-04-01`;
+}
+function sellerCumulativePurchases(vendorId, asOfDate){
+  const fyStart = fyStartDateFor(asOfDate || new Date().toISOString().slice(0,10));
+  const bills = DB.journalEntries.filter(je=>je.docCategory==='SupplierInvoice' && !je.reversalOfId && je.date>=fyStart && je.lines.some(l=>l.vendorId===vendorId));
+  const cumulativeThisFY = r2(bills.reduce((s,je)=>{ const l=je.lines.find(x=>x.vendorId===vendorId && x.account===AP_ACCOUNT); return s + (l?l.credit:0); },0));
+  const threshold = (DB.tdsConfig && DB.tdsConfig.goods && DB.tdsConfig.goods.thresholdPerSellerFY) || 5000000;
+  return { vendorId, cumulativeThisFY, threshold, crosses194Q: cumulativeThisFY > threshold, fyStart };
+}
+function sellerCumulativeReport(){
+  return DB.vendors.map(v=>({...sellerCumulativePurchases(v.id), vendorName:v.name})).filter(r=>r.cumulativeThisFY>0);
+}
+
+// ---------- TDS engine (SOP §3) — SOP-sourced values, NOT independently verified tax law ----------
+const TDS_CATEGORIES = ['goods','contractorJobWork','transport','professional','rent','commission'];
+function computeTDS({category, billAmount, vendorId, hasPAN, isIndividualOrHUF, ownsUpTo10Carriages, hasTransporterDeclaration}){
+  if(!TDS_CATEGORIES.includes(category)) return {ok:false, error:`Unknown TDS category "${category}".`};
+  const cfg = (DB.tdsConfig||{})[category];
+  if(!cfg || !cfg.active) return {ok:true, applicable:false, tdsAmount:0, ratePct:0, note:'Category not active in TDS configuration.'};
+  const amount = +billAmount||0;
+  let applicable = false, ratePct = 0, note = 'SOP-sourced value — not independently verified as current tax law. Tax/Legal review required.';
+  if(category==='goods'){
+    const cumulative = sellerCumulativePurchases(vendorId).cumulativeThisFY + amount;
+    applicable = cumulative > cfg.thresholdPerSellerFY;
+    ratePct = hasPAN===false ? cfg.noPanRatePct : cfg.ratePct;
+    if(!DB.companyGSTConfig || !DB.companyGSTConfig.turnoverExceeds10CrPrecedingFY){ applicable = false; note += ' NOT APPLIED — Section 194Q turnover threshold (preceding FY > ₹10Cr) is not confirmed in Company GST Configuration.'; }
+  } else if(category==='contractorJobWork' || category==='transport'){
+    applicable = amount > cfg.singleBillThreshold;
+    ratePct = isIndividualOrHUF ? cfg.rateIndividualHUFPct : cfg.rateOtherPct;
+    if(category==='transport' && cfg.exemptionRequiresPanAndDeclaration && hasPAN && hasTransporterDeclaration && ownsUpTo10Carriages){ applicable=false; ratePct=0; note='Exempt — transporter furnished PAN + declaration + owns ≤10 carriages (SOP §3).'; }
+  } else if(category==='professional'){
+    applicable = amount > cfg.thresholdPerAnnum; ratePct = cfg.ratePct;
+    note += ` SOP distinguishes a lower ${cfg.technicalServicesRatePct}% rate for "technical services" — select explicitly if applicable, not auto-detected.`;
+  } else if(category==='rent'){
+    applicable = amount > cfg.thresholdPerAnnum; ratePct = cfg.rateLandBuildingPct;
+    note += ` SOP distinguishes a lower ${cfg.ratePlantMachineryPct}% rate for Plant & Machinery rent — select explicitly if applicable.`;
+  } else if(category==='commission'){
+    applicable = amount > cfg.thresholdFY; ratePct = cfg.ratePct; note = cfg.note;
+  }
+  const tdsAmount = applicable ? r2(amount * ratePct/100) : 0;
+  return {ok:true, applicable, ratePct, tdsAmount, category, note, sopSourced:true, taxLegalReviewRequired:true};
+}
+function tdsComplianceSummary(){
+  const total = r2(DB.tdsDeductions.reduce((s,t)=>s+t.tdsAmount,0));
+  const byCategory = {};
+  DB.tdsDeductions.forEach(t=>{ byCategory[t.category]=r2((byCategory[t.category]||0)+t.tdsAmount); });
+  const tdsPayableBalance = r2(allLines().filter(l=>l.account==='2300').reduce((s,l)=>s+l.credit-l.debit,0));
+  return {totalDeducted:total, byCategory, tdsPayableBalance, deductionCount:DB.tdsDeductions.length,
+    disclaimer:'Rates/thresholds are the Finance SOP\'s own stated values — not independently verified as current tax law. Tax/Legal review required before relying on this for filing.'};
+}
+
+// ---------- Site Material Subledger (SOP §7.2/§8) ----------
+const MRS_STATUSES = ['Draft','Submitted','Approved','Rejected','Issued','Cancelled'];
+function createSiteMaterialRequisition({siteId, projectId, jobWorkOrderRef, items, actor}){
+  const site = DB.sites.find(s=>s.id===siteId); if(!site) return {ok:false, error:'Site not found.'};
+  if(!Array.isArray(items) || !items.length) return {ok:false, error:'At least one line is required.'};
+  for(const it of items){
+    if(!it.materialId || !(+it.qty>0)) return {ok:false, error:'Every line needs a material and a positive quantity.'};
+    if(!DB.materials.find(m=>m.id===it.materialId)) return {ok:false, error:`Unknown material "${it.materialId}".`};
+  }
+  const mrs = { id:'MRS-'+String(DB.siteMaterialRequisitions.length+1).padStart(4,'0'), mrsNo:null, siteId, projectId:projectId||null, jobWorkOrderRef:jobWorkOrderRef||'',
+    items, status:'Draft', createdBy:actor.id, createdAt:nowIso(), approvedBy:null, approvedAt:null, issuedAt:null, deliveryChallanId:null };
+  DB.siteMaterialRequisitions.push(mrs); save();
+  logAudit({type:'SiteMaterialRequisitionCreated', mrsId:mrs.id, siteId, userId:actor.id, role:actor.role});
+  return {ok:true, mrs};
+}
+function submitSiteMaterialRequisition({id, actor}){
+  const mrs = DB.siteMaterialRequisitions.find(x=>x.id===id); if(!mrs) return {ok:false, error:'MRS not found.'};
+  if(mrs.status!=='Draft') return {ok:false, error:`Cannot submit — "${mrs.status}", not Draft.`};
+  mrs.status='Submitted'; mrs.mrsNo = nextDocNumber('MRS'); save();
+  logAudit({type:'SiteMaterialRequisitionSubmitted', mrsId:id, userId:actor.id, role:actor.role});
+  return {ok:true, mrs};
+}
+function approveSiteMaterialRequisition({id, actor}){
+  const mrs = DB.siteMaterialRequisitions.find(x=>x.id===id); if(!mrs) return {ok:false, error:'MRS not found.'};
+  if(mrs.status!=='Submitted') return {ok:false, error:`Cannot approve — "${mrs.status}", not Submitted.`};
+  if(!['SiteInCharge','Purchase','FinanceManager','CEO','Admin'].includes(actor.role)) return {ok:false, error:`Role "${actor.role}" cannot approve a Site Material Requisition.`};
+  const estValue = mrs.items.reduce((s,it)=>{ const m=DB.materials.find(mt=>mt.id===it.materialId); return s + ((+it.qty||0)*((m&&m.standardCost)||0)); },0);
+  const limit = (DB.purchaseApprovalConfig&&DB.purchaseApprovalConfig.sitePettyDailyLimit)||5000;
+  if(actor.role==='SiteInCharge' && estValue>limit) return {ok:false, error:`Estimated value ₹${estValue.toLocaleString('en-IN')} exceeds the site-petty daily limit — must be approved by Purchase/FinanceManager/CEO/Admin (SOP §8).`};
+  if(mrs.createdBy===actor.id && !['CEO','Admin'].includes(actor.role)) return {ok:false, error:'Segregation of duties: MRS creator cannot also be MRS approver.'};
+  mrs.status='Approved'; mrs.approvedBy=actor.id; mrs.approvedAt=nowIso(); save();
+  logAudit({type:'SiteMaterialRequisitionApproved', mrsId:id, userId:actor.id, role:actor.role});
+  return {ok:true, mrs};
+}
+function rejectSiteMaterialRequisition({id, reason, actor}){
+  const mrs = DB.siteMaterialRequisitions.find(x=>x.id===id); if(!mrs) return {ok:false, error:'MRS not found.'};
+  if(mrs.status!=='Submitted') return {ok:false, error:`Cannot reject — "${mrs.status}".`};
+  mrs.status='Rejected'; mrs.rejectReason=reason||''; save();
+  logAudit({type:'SiteMaterialRequisitionRejected', mrsId:id, reason, userId:actor.id, role:actor.role});
+  return {ok:true, mrs};
+}
+// Central Store Issue against an approved MRS — posts the EXISTING 'Issue' movement at the
+// warehouse (no GL, exactly like any other raw postInventoryMovement call — GL only happens at
+// actual consumption, in createMaterialIssue({siteId})) PLUS a new 'SiteReceipt' movement, and
+// generates a Delivery Challan capturing transporter/vehicle (SOP §7.2/§8 Step 3).
+function issueToSite({mrsId, warehouseId, actor, transporterName, vehicleNo}){
+  const mrs = DB.siteMaterialRequisitions.find(x=>x.id===mrsId); if(!mrs) return {ok:false, error:'MRS not found.'};
+  if(mrs.status!=='Approved') return {ok:false, error:`Cannot issue — MRS status is "${mrs.status}", not Approved.`};
+  if(!warehouseId || !DB.warehouses.find(w=>w.id===warehouseId)) return {ok:false, error:'A valid source warehouse is required.'};
+  const errors = [];
+  mrs.items.forEach(it=>{
+    const material = DB.materials.find(m=>m.id===it.materialId);
+    const available = getStockLevel(it.materialId, warehouseId);
+    if(+it.qty > available + 0.001) errors.push(`${material?material.description:it.materialId}: only ${available} available in ${warehouseId}, requested ${it.qty}.`);
+  });
+  if(errors.length) return {ok:false, error:'Cannot issue: '+errors.join(' | ')};
+  const movementIds = [];
+  mrs.items.forEach(it=>{
+    const material = DB.materials.find(m=>m.id===it.materialId);
+    const rate = getMovingAverageRate(it.materialId, warehouseId);
+    postInventoryMovement({type:'Issue', materialId:it.materialId, qty:it.qty, uom:material.uom, warehouseId, projectId:mrs.projectId, sourceType:'SiteMaterialRequisition', sourceId:mrs.id, valuationRate:rate, actor});
+    const mv = postInventoryMovement({type:'SiteReceipt', materialId:it.materialId, qty:it.qty, uom:material.uom, warehouseId:null, siteId:mrs.siteId, projectId:mrs.projectId, sourceType:'SiteMaterialRequisition', sourceId:mrs.id, valuationRate:rate, actor});
+    movementIds.push(mv.id);
+  });
+  const dc = { id:'DC-'+String(DB.deliveryChallans.length+1).padStart(4,'0'), dcNo:nextDocNumber('DC'), mrsId:mrs.id, siteId:mrs.siteId, warehouseId,
+    items:mrs.items, transporterName:transporterName||'', vehicleNo:vehicleNo||'', movementIds, status:'Dispatched',
+    createdBy:actor.id, createdAt:nowIso() };
+  DB.deliveryChallans.push(dc);
+  mrs.status='Issued'; mrs.issuedAt=nowIso(); mrs.deliveryChallanId=dc.id;
+  save();
+  logAudit({type:'SiteMaterialIssued', mrsId:mrs.id, dcId:dc.id, siteId:mrs.siteId, userId:actor.id, role:actor.role});
+  return {ok:true, deliveryChallan:dc, mrs};
+}
+// Site Material Receipt Note — site-side confirmation, notes discrepancy vs the challan (SOP §8
+// Step 4: "every discrepancy is investigated BEFORE material is used").
+function createSiteMaterialReceipt({deliveryChallanId, receivedItems, actor}){
+  const dc = DB.deliveryChallans.find(x=>x.id===deliveryChallanId); if(!dc) return {ok:false, error:'Delivery Challan not found.'};
+  if(DB.siteMaterialReceipts.find(r=>r.deliveryChallanId===deliveryChallanId)) return {ok:false, error:'A Site Material Receipt already exists for this Delivery Challan.'};
+  const discrepancies = [];
+  (receivedItems||[]).forEach((ri,idx)=>{
+    const dcLine = dc.items[idx];
+    if(dcLine && +ri.qtyReceived !== +dcLine.qty) discrepancies.push({line:idx, materialId:dcLine.materialId, challanQty:dcLine.qty, receivedQty:+ri.qtyReceived, diff:r2(+dcLine.qty-(+ri.qtyReceived))});
+  });
+  const smr = { id:'SMR-'+String(DB.siteMaterialReceipts.length+1).padStart(4,'0'), smrNo:nextDocNumber('SMR'), deliveryChallanId, siteId:dc.siteId,
+    receivedItems, discrepancies, receivedBy:actor.id, receivedAt:nowIso() };
+  DB.siteMaterialReceipts.push(smr); save();
+  if(discrepancies.length) logAudit({type:'SiteMaterialReceiptDiscrepancy', smrId:smr.id, dcId:dc.id, discrepancies, userId:actor.id, role:actor.role});
+  return {ok:true, smr, hasDiscrepancy: discrepancies.length>0};
+}
+function siteMaterialReconciliationReport(siteId){
+  const sites = siteId ? DB.sites.filter(s=>s.id===siteId) : DB.sites;
+  return sites.map(s=>{
+    const materialIds = [...new Set(DB.inventoryMovements.filter(m=>m.siteId===s.id).map(m=>m.materialId))];
+    const lines = materialIds.map(materialId=>{
+      const material = DB.materials.find(m=>m.id===materialId);
+      const received = r2(DB.inventoryMovements.filter(m=>m.siteId===s.id && m.materialId===materialId && m.type==='SiteReceipt').reduce((s2,m)=>s2+m.qty,0));
+      const consumed = r2(DB.inventoryMovements.filter(m=>m.siteId===s.id && m.materialId===materialId && m.type==='SiteConsumption').reduce((s2,m)=>s2+m.qty,0));
+      return {materialId, description:material?material.description:materialId, received, consumed, closing:r2(received-consumed)};
+    });
+    return {site:s, lines};
+  });
+}
+
+// ---------- Payment maker-checker + (explicitly "Not Finalised") approval matrix (SOP §9) ----------
+function paymentApprovalRoleFor(amount){
+  const matrix = DB.paymentApprovalMatrix || {tiers:[]};
+  const tier = (matrix.tiers||[]).find(t=>t.upTo==null || amount<=t.upTo);
+  return tier ? tier.role : null;
+}
+function createPaymentRequest({vendorId, invoiceEntryId, amount, narration, actor}){
+  const openItem = supplierOpenItems(vendorId).find(i=>i.entryId===invoiceEntryId);
+  if(!openItem) return {ok:false, error:'That bill is not an open item for this vendor.'};
+  if(+amount > openItem.open + 0.01) return {ok:false, error:`Amount exceeds the open balance of ₹${openItem.open.toLocaleString('en-IN')}.`};
+  const req = { id:'PAYREQ-'+String(DB.paymentApprovals.length+1).padStart(4,'0'), vendorId, invoiceEntryId, amount:+amount, narration:narration||'',
+    status:'PendingApproval', requiredApprovalRole: paymentApprovalRoleFor(+amount), maker:actor.id, makerRole:actor.role,
+    checker:null, checkerRole:null, approvedAt:null, executedBy:null, executedAt:null, paymentEntryId:null, createdAt:nowIso() };
+  DB.paymentApprovals.push(req); save();
+  logAudit({type:'PaymentRequestCreated', requestId:req.id, vendorId, amount:+amount, requiredApprovalRole:req.requiredApprovalRole, userId:actor.id, role:actor.role});
+  return {ok:true, paymentRequest:req};
+}
+function approvePaymentRequest({id, actor}){
+  const req = DB.paymentApprovals.find(x=>x.id===id); if(!req) return {ok:false, error:'Payment request not found.'};
+  if(req.status!=='PendingApproval') return {ok:false, error:`Cannot approve — "${req.status}".`};
+  if(req.maker===actor.id) return {ok:false, error:'Maker-checker: the person who raised this payment request cannot also approve it.'};
+  if(req.requiredApprovalRole==='Director (CEO)' && !['CEO','Admin'].includes(actor.role)){
+    return {ok:false, error:`This ₹${req.amount.toLocaleString('en-IN')} payment requires Director (CEO) approval per the (Not Finalised) SOP illustrative approval matrix.`};
+  }
+  req.status='Approved'; req.checker=actor.id; req.checkerRole=actor.role; req.approvedAt=nowIso(); save();
+  logAudit({type:'PaymentRequestApproved', requestId:id, userId:actor.id, role:actor.role});
+  return {ok:true, paymentRequest:req};
+}
+function rejectPaymentRequest({id, reason, actor}){
+  const req = DB.paymentApprovals.find(x=>x.id===id); if(!req) return {ok:false, error:'Payment request not found.'};
+  if(req.status!=='PendingApproval') return {ok:false, error:`Cannot reject — "${req.status}".`};
+  req.status='Rejected'; req.rejectReason=reason||''; save();
+  logAudit({type:'PaymentRequestRejected', requestId:id, reason, userId:actor.id, role:actor.role});
+  return {ok:true, paymentRequest:req};
+}
+// Execution is a THIRD, distinct step from maker and checker ("at least 2, ideally 3, different
+// people" — SOP §9). Internally calls the EXISTING postSupplierPayment() — no second posting path.
+function executePaymentRequest({id, date, paymentMethodId, bankAccountId, overrideReason, tdsCategory, tdsOptions, isTransporterPayment, actor}){
+  const req = DB.paymentApprovals.find(x=>x.id===id); if(!req) return {ok:false, error:'Payment request not found.'};
+  if(req.status!=='Approved') return {ok:false, error:`Cannot execute — "${req.status}", not Approved.`};
+  if([req.maker, req.checker].includes(actor.id) && !['CEO','Admin'].includes(actor.role)){
+    return {ok:false, error:'Maker-checker: execution must be a third person distinct from the maker and the approver (or CEO/Admin), per SOP §9.'};
+  }
+  const result = postSupplierPayment({vendorId:req.vendorId, invoiceEntryId:req.invoiceEntryId, amount:req.amount, date, narration:req.narration,
+    actor, overrideReason, paymentMethodId, bankAccountId, tdsCategory, tdsOptions, isTransporterPayment});
+  if(!result.ok) return result;
+  req.status='Executed'; req.executedBy=actor.id; req.executedAt=nowIso(); req.paymentEntryId=result.entry.id; save();
+  logAudit({type:'PaymentRequestExecuted', requestId:id, entryId:result.entry.id, userId:actor.id, role:actor.role});
+  return {ok:true, paymentRequest:req, entry:result.entry, clearing:result.clearing, tds:result.tds};
+}
+
+// ---------- Petty Cash / Imprest (SOP §9.2) ----------
+function createPettyCashFloat({siteId, custodianUserId, floatAmount, actor}){
+  const site = DB.sites.find(s=>s.id===siteId); if(!site) return {ok:false, error:'Site not found.'};
+  if(DB.pettyCashFloats.find(f=>f.siteId===siteId && f.active)) return {ok:false, error:'An active petty cash float already exists for this site.'};
+  const amt = floatAmount!=null ? +floatAmount : (DB.pettyCashDefaultFloat||10000);
+  const pcf = { id:'PCF-'+String(DB.pettyCashFloats.length+1).padStart(4,'0'), pcfNo:nextDocNumber('PCF'), siteId, custodianUserId:custodianUserId||null,
+    floatAmount:amt, active:true, createdBy:actor.id, createdAt:nowIso() };
+  DB.pettyCashFloats.push(pcf); save();
+  logAudit({type:'PettyCashFloatCreated', pcfId:pcf.id, siteId, floatAmount:amt, userId:actor.id, role:actor.role});
+  return {ok:true, pettyCashFloat:pcf};
+}
+function recordPettyCashVoucher({pettyCashFloatId, amount, category, billReference, description, date, actor, overrideReason}){
+  const pcf = DB.pettyCashFloats.find(x=>x.id===pettyCashFloatId); if(!pcf) return {ok:false, error:'Petty cash float not found.'};
+  if(!pcf.active) return {ok:false, error:'This petty cash float is not active.'};
+  if(!billReference) return {ok:false, error:'An original bill reference is required for every petty cash voucher (SOP §9.2) — no unconditional top-up.'};
+  const amt = r2(+amount||0); if(amt<=0) return {ok:false, error:'Amount must be positive.'};
+  const cashCheck = checkCashLimit({kind:'expense', amount:amt, isTransporter:false, actor, overrideReason});
+  if(!cashCheck.ok) return cashCheck;
+  const vouchersSoFar = r2(DB.pettyCashVouchers.filter(v=>v.pettyCashFloatId===pettyCashFloatId).reduce((s,v)=>s+v.amount,0));
+  if(vouchersSoFar + amt > pcf.floatAmount + 0.01) return {ok:false, error:`Voucher total ₹${(vouchersSoFar+amt).toLocaleString('en-IN')} would exceed the sanctioned float of ₹${pcf.floatAmount.toLocaleString('en-IN')} — replenish the float before recording further vouchers.`};
+  const v = { id:'PCV-'+String(DB.pettyCashVouchers.length+1).padStart(4,'0'), pcvNo:nextDocNumber('PCV'), pettyCashFloatId, amount:amt, category:category||'Other',
+    billReference, description:description||'', date:date||new Date().toISOString().slice(0,10), replenishedEntryId:null, createdBy:actor.id, createdAt:nowIso() };
+  DB.pettyCashVouchers.push(v); save();
+  logAudit({type:'PettyCashVoucherRecorded', pcvId:v.id, pettyCashFloatId, amount:amt, userId:actor.id, role:actor.role});
+  return {ok:true, voucher:v};
+}
+function pettyCashReconciliation(pettyCashFloatId){
+  const pcf = DB.pettyCashFloats.find(x=>x.id===pettyCashFloatId); if(!pcf) return {ok:false, error:'Petty cash float not found.'};
+  const vouchers = DB.pettyCashVouchers.filter(v=>v.pettyCashFloatId===pettyCashFloatId);
+  const vouchersTotal = r2(vouchers.reduce((s,v)=>s+v.amount,0));
+  return {ok:true, pettyCashFloat:pcf, vouchers, vouchersTotal, expectedCashOnHand:r2(pcf.floatAmount-vouchersTotal), balanced: r2(pcf.floatAmount-vouchersTotal)>=-0.01};
+}
+function replenishPettyCashFloat({pettyCashFloatId, bankAccountId, actor}){
+  const pcf = DB.pettyCashFloats.find(x=>x.id===pettyCashFloatId); if(!pcf) return {ok:false, error:'Petty cash float not found.'};
+  const unreplenished = DB.pettyCashVouchers.filter(v=>v.pettyCashFloatId===pettyCashFloatId && !v.replenishedEntryId);
+  const total = r2(unreplenished.reduce((s,v)=>s+v.amount,0));
+  if(total<=0) return {ok:false, error:'No outstanding vouchers to replenish.'};
+  let bankGlAccount='1000';
+  if(bankAccountId){ const acct=DB.bankAccounts.find(b=>b.id===bankAccountId); if(!acct) return {ok:false, error:'Unknown bank/cash account.'}; bankGlAccount=acct.glAccount; }
+  const site = DB.sites.find(s=>s.id===pcf.siteId);
+  const glResult = postJournalEntry({ date:new Date().toISOString().slice(0,10), narration:`Petty Cash Replenishment — ${site?site.name:pcf.siteId}`,
+    sourceType:'PettyCashReplenishment', voucherNo:nextDocNumber('PCV'), docCategory:'PettyCashReplenishment',
+    lines:[ {account:'5200', debit:total, credit:0, projectId:null}, {account:bankGlAccount, debit:0, credit:total} ],
+    postedByUserId:actor.id, postedByRole:actor.role });
+  if(!glResult.ok) return glResult;
+  unreplenished.forEach(v=>{ v.replenishedEntryId = glResult.entry.id; });
+  save();
+  logAudit({type:'PettyCashReplenished', pcfId:pettyCashFloatId, total, userId:actor.id, role:actor.role});
+  return {ok:true, glEntry:glResult.entry, replenishedAmount:total, voucherCount:unreplenished.length};
+}
+
+// ---------- SOP Compliance Dashboard ----------
+function cashControlExceptionsReport(){ return DB.cashControlExceptions; }
+function sopComplianceDashboard(){
+  return {
+    companyGSTConfig: DB.companyGSTConfig, tdsConfig: DB.tdsConfig, cashLimits: DB.cashLimits,
+    purchaseApprovalConfig: DB.purchaseApprovalConfig, paymentApprovalMatrix: DB.paymentApprovalMatrix,
+    openPurchaseRequisitions: DB.purchaseRequisitions.filter(p=>p.status==='Submitted').length,
+    pendingSiteMaterialRequisitions: DB.siteMaterialRequisitions.filter(m=>m.status==='Submitted').length,
+    pendingPaymentApprovals: DB.paymentApprovals.filter(p=>p.status==='PendingApproval').length,
+    openCashControlExceptions: DB.cashControlExceptions.length,
+    sellersCrossing194Q: sellerCumulativeReport().filter(r=>r.crosses194Q).length,
+    totalTDSDeducted: tdsComplianceSummary().totalDeducted,
+    activeSites: DB.sites.filter(s=>s.active).length,
+    activePettyCashFloats: DB.pettyCashFloats.filter(f=>f.active).length
+  };
+}
+
+module.exports = {
+  get DB(){ return DB; }, save, resetToFreshSeed, logAudit,
+  ROLES, ROLE_ACTIONS, GL_VISIBLE_ROLES,
+  nextDocNumber, postJournalEntry, createDraft, simulateDraft, findDraft, submitDraft, approveDraft, rejectDraft, postDraft, cancelDraft, reverseEntry,
+  calcTax, draftCustomerInvoice, draftSupplierInvoice, allLines, customerOpenItems, supplierOpenItems, applyClearing,
+  postCustomerReceipt, postSupplierPayment, reconcileAR, reconcileAP, projectPL, AGE_BUCKETS, customerAgeing, supplierAgeing,
+  verifyPassword, hashPassword,
+  // Phase 6B
+  LEAD_STATUSES, ESTIMATION_STATUSES, QUOTATION_STATUSES, PROJECT_STATUSES, DESIGN_STATUSES,
+  createLead, canSeeLead, addLeadActivity, changeLeadStatus,
+  createEstimationRequest, setEstimationStatus, createCostingVersion,
+  createQuotation, requiredDiscountApprovalRole, submitQuotation, approveQuotationDiscount, reviseQuotation, recordAcceptance,
+  findOrCreateCustomer, freezeStandardCostBaseline, wonTransition,
+  setProjectAdvanceRequirement, draftCustomerAdvance, projectFinancialReadiness,
+  submitDesign, reviewDesign, createChangeRequest, approveChangeRequest,
+  // Phase 7
+  MR_STATUSES, PO_STATUSES,
+  createMaterialRequirement, submitMaterialRequirement, approveMaterialRequirement,
+  createMaterialRequest, submitMaterialRequest, approveMaterialRequest, rejectMaterialRequest,
+  createRFQ, recordSupplierQuotation, createSupplierComparison, approveSupplierComparison,
+  requiredPOApprovalRole, createPurchaseOrder, submitPurchaseOrder, approvePurchaseOrder, rejectPurchaseOrder,
+  postInventoryMovement, getStockLevel, getMovingAverageRate, createGRN, checkThreeWayMatch, draftSupplierInvoiceFromPO,
+  checkInvoiceableBalance, invoiceableGRNsForVendor,
+  createPurchaseReturn, createSupplierCreditNote, createMaterialIssue, materialBomQuota, projectCostBreakdown,
+  createSupplierDebitNote, SUPPLIER_DEBIT_NOTE_REASONS,
+  cancelApprovedPurchaseOrder, projectCommitments,
+  createBOM, approveBOM, createProductionOrder, issueProductionMaterial, postProductionLabourCost, completeProductionOrder,
+  holdProductionOrder, resumeProductionOrder, cancelProductionOrder, closeProductionOrder,
+  // Phase 8
+  PROD_STATUSES, DISPATCH_STATUSES, INSTALLATION_STATUSES, QC_STATUSES, SNAG_STATUSES, SNAG_SEVERITIES, MILESTONE_TYPES,
+  createDispatch, dispatchReadinessCheck, markDispatchReady, approveDispatch, markDispatched,
+  createDelivery, createInstallation, updateInstallationProgress,
+  createQCChecklist, submitQCResult,
+  createSnag, assignSnag, resolveSnag, verifySnag, closeSnag,
+  handoverReadinessCheck, createHandover,
+  createBillingMilestone, markMilestoneReady, draftCustomerInvoiceFromMilestone,
+  projectClosureReadiness, closeProject,
+  // Phase 10 — After-Sales
+  COMPLAINT_STATUSES, TICKET_CLASSIFICATIONS, TICKET_STATUSES, VISIT_STATUSES, AMC_STATUSES, CAPA_STATUSES, CAPA_TRIGGERS,
+  createWarranty, warrantyEffectiveStatus, voidWarranty, cancelWarranty, warrantyEligibility,
+  createComplaint, triageComplaint, changeComplaintStatus,
+  createServiceTicket, assignServiceTicket, escalateServiceTicket, setTicketClassification,
+  createServiceVisit, startServiceVisit, recordDiagnosis, completeServiceVisit, cancelServiceVisit,
+  issueServiceMaterial, postServiceLabourCost, serviceTicketCostBreakdown, draftServiceInvoice,
+  createAMCContract, activateAMCContract, cancelAMCContract, renewAMCContract, createAMCScheduleEntry, linkAMCScheduleToTicket, draftAMCBillingInvoice,
+  amcRevenueSchedule, recognizeAMCRevenue, amcBilledTotal, amcRecognizedTotal, createRebillMilestone,
+  createCAPACase, recordCAPAAnalysis, recordCAPAAction, recordCAPAVerification, recordCAPAEffectivenessCheck, closeCAPACase,
+  serviceTicketClosureReadiness, closeServiceTicket, rejectServiceTicket,
+  // Phase 13 — Approved Policy Implementation
+  setServiceLabourRate, getServiceLabourRate,
+  diagnosisRequiresApproval, approveDiagnosis, setPolicyConfig, ticketSlaStatus,
+  repeatComplaintHistory, customerAfterSalesSummary,
+  // Phase 11 — Financial Integration
+  afterSalesFinancials, coreProjectPL, projectFinancial360, customerProfitability, companyAfterSalesSummary,
+  // Phase 13
+  companyProjectProfitability, generateExport,
+  // Phase 14 — SAP-Style Accounting Entry Architecture
+  attachFile, listAttachments, getAttachment, deleteAttachment,
+  createCustomerCreditNote, createCustomerDebitNote,
+  createInventoryTransfer, createInventoryAdjustment,
+  createJournalTemplate, listJournalTemplates, createDraftFromTemplate,
+  createRecurringEntry, listRecurringEntries, generateDueRecurringDrafts,
+  parseImportCsv, importJournalCSV,
+  branchAllowed, entryTypeCatalogue,
+  // Phase 15
+  postInstallationLabourCost,
+  createProfitCentre, listProfitCentres,
+  listBankAccounts, createBankAccount, importBankStatement, matchBankStatementLine, unmatchBankStatementLine, bankReconciliationStatus,
+  // Phase 18 §2/§3 — Financial Period Control
+  listFinancialPeriods, createFinancialPeriod, closeFinancialPeriod, reopenFinancialPeriod, setPeriodOverrideRole, periodCloseReconciliation, findPeriodForDate,
+  // Phase 19 §4/§5 — HSN / Customer GSTIN
+  setMaterialHSN, setCustomerGSTIN,
+  // Phase 20 §3/§4 — Master Data Import Framework
+  createVendorMaster, createMaterialMaster, createProjectMaster, createCostCentreMaster, createTaxCodeMaster, createPaymentMethodMaster, createAccountMaster,
+  importMasterData, MASTER_IMPORT_SPECS,
+  // Phase 21 §5/§6/§7/§8 — Master Data Edit/Deactivate + UoM Conversion
+  editCustomer, setCustomerActive, editVendorMaster, setVendorActive, editMaterialMaster, setMaterialActive, setMaterialUomConversion,
+  // Phase 21 §17 — Tax / Customer Advance reconciliation reports
+  reconcileOutputTax, reconcileInputTax, reconcileCustomerAdvances,
+  // Phase 24 Part A — Multi-Bank/Cash GL Segregation
+  bankAccountBalances, createBankTransfer,
+  // Phase 20 §7-§10 — Opening Balance Engine
+  importOpeningBalance, reconcileOpeningBalances, OPENING_BALANCE_SPECS,
+  // Phase 19 §28 — Password Security
+  validatePasswordStrength, createUser, resetUserPassword, changeOwnPassword,
+  // Phase 19 §26/§27 — Fixed Assets
+  createFixedAsset, capitalizeFixedAsset, postAssetDepreciation, transferFixedAsset, disposeFixedAsset,
+  listFixedAssets, reconcileFixedAssets, assetAccumulatedDepreciation, assetNetBookValue, computeStraightLineMonthly,
+  // Phase 19 §7-19 — ICICI Bank Import
+  parseICICICsv, createBankImportBatch, listBankImportLines, matchBankImportLine, unmatchBankImportLine,
+  excludeBankImportLine, markBankImportLineReturned, postBankImportLine, reconcileBankImportLine, bankImportReconciliationSummary,
+  // Phase 19 §25 — Annual Document Numbering
+  financialYearKey,
+  setProjectBranch, projectBranch,
+  // Phase 17
+  createBackup, listBackups, restoreBackup,
+  // Phase 30 — company-wide financial statements + ledgers
+  companyBalanceSheet, companyProfitAndLoss, generalLedger, customerLedger, supplierLedger,
+  // Phase 28 — Purchases Intelligence / Inventory Operations / Operations / Factory-MES
+  createLocation, stockByLocation, stockReport,
+  DAMAGE_REPORT_REASONS, createDamageReport,
+  createStockCount, submitStockCount,
+  procurementIntelligence, vendorRating, purchaseVendorReport,
+  recordLabourWages, recordProjectExpense, qcDashboard,
+  createTimesheetEntry, TASK_STATUSES, createTask, updateTaskStatus,
+  createRiskEntry, closeRiskEntry, captureWeeklySnapshot,
+  MACHINE_STATUSES, createMachine, setMachineStatus,
+  JOB_CARD_STATUSES, createJobCard, startJobCard, completeJobCard,
+  productionSchedule, factoryDashboard, jobAnalysis, jobCostSheet, productCosting, labourPerformance,
+  // Phase 33 — Finance SOP Compliance & Control Implementation
+  createSite, listSites, setSiteActive,
+  setCompanyGSTConfig, setCustomerState, determinePlaceOfSupply,
+  PR_STATUSES, createPurchaseRequisition, submitPurchaseRequisition, approvePurchaseRequisition, rejectPurchaseRequisition,
+  isCashPayment, checkCashLimit,
+  fyStartDateFor, sellerCumulativePurchases, sellerCumulativeReport,
+  TDS_CATEGORIES, computeTDS, tdsComplianceSummary,
+  getSiteStockLevel, getSiteMovingAverageRate,
+  MRS_STATUSES, createSiteMaterialRequisition, submitSiteMaterialRequisition, approveSiteMaterialRequisition, rejectSiteMaterialRequisition,
+  issueToSite, createSiteMaterialReceipt, siteMaterialReconciliationReport,
+  paymentApprovalRoleFor, createPaymentRequest, approvePaymentRequest, rejectPaymentRequest, executePaymentRequest,
+  createPettyCashFloat, recordPettyCashVoucher, pettyCashReconciliation, replenishPettyCashFloat,
+  cashControlExceptionsReport, sopComplianceDashboard
+};

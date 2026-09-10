@@ -1,0 +1,148 @@
+[
+  {
+    "label": "1. Sales Invoice",
+    "ok": true,
+    "entryId": "JE-0001",
+    "voucherNo": "INV/2026-27/0001",
+    "dr": 118000,
+    "cr": 118000
+  },
+  {
+    "label": "2. Purchase Invoice",
+    "ok": true,
+    "entryId": "JE-0002",
+    "voucherNo": "BILL/2026-27/0001",
+    "dr": 59000,
+    "cr": 59000
+  },
+  {
+    "label": "3. Customer Receipt",
+    "ok": true,
+    "entryId": "JE-0003",
+    "voucherNo": "RCPT/2026-27/0001",
+    "dr": 40000,
+    "cr": 40000
+  },
+  {
+    "label": "4. Vendor Payment",
+    "ok": true,
+    "entryId": "JE-0004",
+    "voucherNo": "PAY/2026-27/0001",
+    "dr": 30000,
+    "cr": 30000
+  },
+  {
+    "label": "5. Generic Expense (JV)",
+    "ok": true,
+    "entryId": "JE-0005",
+    "voucherNo": "JV/2026-27/0001",
+    "dr": 5000,
+    "cr": 5000
+  },
+  {
+    "label": "6. Customer Credit Note",
+    "ok": true,
+    "entryId": "JE-0006",
+    "voucherNo": "CN/2026-27/0001",
+    "dr": 10000,
+    "cr": 10000
+  },
+  {
+    "label": "7. Customer Debit Note",
+    "ok": true,
+    "entryId": "JE-0007",
+    "voucherNo": "DN/2026-27/0001",
+    "dr": 2000,
+    "cr": 2000
+  },
+  {
+    "label": "8. Customer Advance",
+    "ok": true,
+    "entryId": "JE-0008",
+    "voucherNo": "RCPT/2026-27/0002",
+    "dr": 75000,
+    "cr": 75000
+  },
+  {
+    "label": "9. Inventory Adjustment (shrinkage)",
+    "ok": false
+  },
+  {
+    "label": "10. Inventory Adjustment (found)",
+    "ok": true,
+    "entryId": "JE-0009",
+    "voucherNo": "IADJ/2026-27/0001",
+    "dr": 8400,
+    "cr": 8400
+  },
+  {
+    "label": "11. Fixed Asset Capitalization",
+    "ok": true,
+    "entryId": "JE-0010",
+    "voucherNo": "FA/2026-27/0001",
+    "dr": 200000,
+    "cr": 200000
+  },
+  {
+    "label": "12. Asset Depreciation",
+    "ok": true,
+    "entryId": "JE-0011",
+    "voucherNo": "JV/2026-27/0002",
+    "dr": 3000,
+    "cr": 3000
+  },
+  {
+    "label": "13. Bank/Cash Contra",
+    "ok": true,
+    "entryId": "JE-0012",
+    "voucherNo": "JV/2026-27/0003",
+    "dr": 15000,
+    "cr": 15000
+  },
+  {
+    "label": "14. Project Labour Cost",
+    "ok": true,
+    "entryId": "JE-0013",
+    "voucherNo": "JV/2026-27/0004",
+    "dr": 18000,
+    "cr": 18000
+  },
+  {
+    "label": "16. Sales Invoice (for reversal test)",
+    "ok": true,
+    "entryId": "JE-0014",
+    "voucherNo": "INV/2026-27/0002",
+    "dr": 70800,
+    "cr": 70800
+  },
+  {
+    "label": "17. Reversal of Invoice 16",
+    "ok": true,
+    "entryId": "JE-0015",
+    "voucherNo": "JV/2026-27/0005",
+    "dr": 70800,
+    "cr": 70800
+  },
+  {
+    "label": "18. Purchase Invoice 2",
+    "ok": true,
+    "entryId": "JE-0016",
+    "voucherNo": "BILL/2026-27/0002",
+    "dr": 41300,
+    "cr": 41300
+  },
+  {
+    "label": "19. Supplier Credit Note",
+    "ok": true,
+    "entryId": "JE-0017",
+    "voucherNo": "SCN/2026-27/0001",
+    "dr": 5000,
+    "cr": 5000
+  },
+  {
+    "label": "20. Sales Invoice (final sweep)",
+    "ok": false,
+    "stage": "draft",
+    "error": "Sales user is not assigned to customer CUST-4."
+  }
+]

@@ -1,0 +1,2 @@
+customerId,invoiceRef,invoiceDate,dueDate,amount,project
+CUST-1,TEST-INV-001,2026-01-01,,0,

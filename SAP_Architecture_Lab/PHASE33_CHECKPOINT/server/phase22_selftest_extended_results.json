@@ -1,0 +1,605 @@
+[
+  {
+    "section": "Bank",
+    "desc": "A second, genuinely distinct GL account can be created for a second bank",
+    "ok": true,
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "account": {
+        "id": "9100",
+        "name": "PHASE22-TEST Bank B",
+        "type": "Asset",
+        "parentAccount": null,
+        "active": true,
+        "controlAccount": false,
+        "taxRelevant": false,
+        "projectRelevant": false,
+        "costCentreRelevant": false,
+        "profitCentreRelevant": false,
+        "createdBy": "U-ADMIN",
+        "createdAt": "2026-08-27T15:19:54.832Z"
+      }
+    }
+  },
+  {
+    "section": "Bank",
+    "desc": "A second Bank Account record can be created, pointing at the distinct GL account",
+    "ok": true,
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "bankAccount": {
+        "id": "BANK-002",
+        "type": "Bank",
+        "bankName": "PHASE22-TEST Bank B Ltd",
+        "accountName": "Test Current Account B",
+        "accountNumberLast4": "9999",
+        "glAccount": "9100",
+        "active": true,
+        "createdBy": "U-ADMIN",
+        "createdAt": "2026-08-27T15:19:54.849Z"
+      }
+    }
+  },
+  {
+    "section": "Bank",
+    "desc": "FINDING (not a defect — a disclosed Phase 19 design decision, re-confirmed live): a receipt has NO way to route to the new Bank B GL account (9100) — it always posts to account 1000, because Payment Method / bank selection is metadata-only for reconciliation, not a GL router",
+    "ok": true,
+    "detail": {
+      "hitAccount": "1000",
+      "expectedIfMultiGLExisted": "9100 (would not exist without a real feature build)"
+    }
+  },
+  {
+    "section": "FixedAsset",
+    "desc": "Test asset created (pre-capitalization)",
+    "ok": true,
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "asset": {
+        "id": "FA-0001",
+        "assetCode": "PHASE22-TEST-CNC-01",
+        "assetName": "PHASE22-TEST CNC Machine",
+        "assetClass": "Equipment",
+        "purchaseDate": "2026-08-01",
+        "cost": 500000,
+        "location": "PHASE22-TEST Workshop",
+        "custodian": "U-FIN1",
+        "projectId": null,
+        "sourceInvoiceEntryId": null,
+        "status": "Purchased",
+        "capitalizationDate": null,
+        "capitalizationEntryId": null,
+        "usefulLifeMonths": null,
+        "depreciationMethod": null,
+        "residualValue": null,
+        "disposalDate": null,
+        "disposalProceeds": null,
+        "disposalEntryId": null,
+        "transferHistory": [],
+        "createdBy": "U-FIN1",
+        "createdAt": "2026-08-27T15:19:54.932Z"
+      }
+    }
+  },
+  {
+    "section": "FixedAsset",
+    "desc": "Capitalized (Dr Asset Cost / Cr Bank), TEST depreciation policy used, not an invented Appletree policy",
+    "ok": true,
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "asset": {
+        "id": "FA-0001",
+        "assetCode": "PHASE22-TEST-CNC-01",
+        "assetName": "PHASE22-TEST CNC Machine",
+        "assetClass": "Equipment",
+        "purchaseDate": "2026-08-01",
+        "cost": 500000,
+        "location": "PHASE22-TEST Workshop",
+        "custodian": "U-FIN1",
+        "projectId": null,
+        "sourceInvoiceEntryId": null,
+        "status": "Capitalized",
+        "capitalizationDate": "2026-08-01",
+        "capitalizationEntryId": "JE-0003",
+        "usefulLifeMonths": 60,
+        "depreciationMethod": "StraightLine",
+        "residualValue": 50000,
+        "disposalDate": null,
+        "disposalProceeds": null,
+        "disposalEntryId": null,
+        "transferHistory": [],
+        "createdBy": "U-FIN1",
+        "createdAt": "2026-08-27T15:19:54.932Z"
+      },
+      "entry": {
+        "id": "JE-0003",
+        "date": "2026-08-01",
+        "docDate": "2026-08-01",
+        "narration": "Fixed Asset Capitalization — PHASE22-TEST-CNC-01 (PHASE22-TEST CNC Machine)",
+        "sourceType": "FixedAssetCapitalization",
+        "sourceId": "FA-0001",
+        "voucherNo": "FA/2026-27/0001",
+        "party": null,
+        "reversalOfId": null,
+        "dueDate": null,
+        "docCategory": "FixedAssetCapitalization",
+        "branchId": null,
+        "refNo1": "",
+        "refNo2": "",
+        "refNo3": "",
+        "postedByUserId": "U-FIN1",
+        "postedByRole": "FinanceManager",
+        "paymentMethodId": null,
+        "totalDebit": 500000,
+        "totalCredit": 500000,
+        "lines": [
+          {
+            "account": "1400",
+            "debit": 500000,
+            "credit": 0,
+            "customerId": null,
+            "vendorId": null,
+            "projectId": null,
+            "costCentreId": null,
+            "profitCentreId": null,
+            "taxCode": null,
+            "currency": "INR",
+            "remarks": "",
+            "branchId": null,
+            "locationId": null,
+            "distributionRule": null,
+            "itemId": null,
+            "reference": null
+          },
+          {
+            "account": "1000",
+            "debit": 0,
+            "credit": 500000,
+            "customerId": null,
+            "vendorId": null,
+            "projectId": null,
+            "costCentreId": null,
+            "profitCentreId": null,
+            "taxCode": null,
+            "currency": "INR",
+            "remarks": "",
+            "branchId": null,
+            "locationId": null,
+            "distributionRule": null,
+            "itemId": null,
+            "reference": null
+          }
+        ],
+        "postedAt": "2026-08-27T15:19:54.949Z"
+      }
+    }
+  },
+  {
+    "section": "FixedAsset",
+    "desc": "Depreciation posted (Dr Depreciation Expense / Cr Accumulated Depreciation)",
+    "ok": true,
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "entry": {
+        "id": "JE-0004",
+        "date": "2026-08-31",
+        "docDate": "2026-08-31",
+        "narration": "Depreciation — PHASE22-TEST-CNC-01 (PHASE22-TEST CNC Machine) — 2026-08",
+        "sourceType": "Depreciation",
+        "sourceId": "FA-0001",
+        "voucherNo": "JV/2026-27/0001",
+        "party": null,
+        "reversalOfId": null,
+        "dueDate": null,
+        "docCategory": "Depreciation",
+        "branchId": null,
+        "refNo1": "",
+        "refNo2": "",
+        "refNo3": "",
+        "postedByUserId": "U-FIN1",
+        "postedByRole": "FinanceManager",
+        "paymentMethodId": null,
+        "totalDebit": 7500,
+        "totalCredit": 7500,
+        "lines": [
+          {
+            "account": "5400",
+            "debit": 7500,
+            "credit": 0,
+            "customerId": null,
+            "vendorId": null,
+            "projectId": null,
+            "costCentreId": null,
+            "profitCentreId": null,
+            "taxCode": null,
+            "currency": "INR",
+            "remarks": "",
+            "branchId": null,
+            "locationId": null,
+            "distributionRule": null,
+            "itemId": null,
+            "reference": null
+          },
+          {
+            "account": "1450",
+            "debit": 0,
+            "credit": 7500,
+            "customerId": null,
+            "vendorId": null,
+            "projectId": null,
+            "costCentreId": null,
+            "profitCentreId": null,
+            "taxCode": null,
+            "currency": "INR",
+            "remarks": "",
+            "branchId": null,
+            "locationId": null,
+            "distributionRule": null,
+            "itemId": null,
+            "reference": null
+          }
+        ],
+        "postedAt": "2026-08-27T15:19:54.965Z"
+      },
+      "accumulatedDepreciation": 7500,
+      "netBookValue": 492500
+    }
+  },
+  {
+    "section": "FixedAsset",
+    "desc": "Asset transferred to a new location/custodian, no GL impact expected for a pure location/custodian change",
+    "ok": true,
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "asset": {
+        "id": "FA-0001",
+        "assetCode": "PHASE22-TEST-CNC-01",
+        "assetName": "PHASE22-TEST CNC Machine",
+        "assetClass": "Equipment",
+        "purchaseDate": "2026-08-01",
+        "cost": 500000,
+        "location": "PHASE22-TEST Site B",
+        "custodian": "U-PM1",
+        "projectId": null,
+        "sourceInvoiceEntryId": null,
+        "status": "Capitalized",
+        "capitalizationDate": "2026-08-01",
+        "capitalizationEntryId": "JE-0003",
+        "usefulLifeMonths": 60,
+        "depreciationMethod": "StraightLine",
+        "residualValue": 50000,
+        "disposalDate": null,
+        "disposalProceeds": null,
+        "disposalEntryId": null,
+        "transferHistory": [
+          {
+            "from": {
+              "location": "PHASE22-TEST Workshop",
+              "custodian": "U-FIN1",
+              "projectId": null
+            },
+            "to": {
+              "location": "PHASE22-TEST Site B",
+              "custodian": "U-PM1",
+              "projectId": null
+            },
+            "reason": "Self-test transfer",
+            "by": "U-FIN1",
+            "at": "2026-08-27T15:19:54.982Z"
+          }
+        ],
+        "createdBy": "U-FIN1",
+        "createdAt": "2026-08-27T15:19:54.932Z"
+      }
+    }
+  },
+  {
+    "section": "FixedAsset",
+    "desc": "Asset disposed with proceeds — expect a Gain/Loss on Disposal entry (NBV vs proceeds)",
+    "ok": true,
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "asset": {
+        "id": "FA-0001",
+        "assetCode": "PHASE22-TEST-CNC-01",
+        "assetName": "PHASE22-TEST CNC Machine",
+        "assetClass": "Equipment",
+        "purchaseDate": "2026-08-01",
+        "cost": 500000,
+        "location": "PHASE22-TEST Site B",
+        "custodian": "U-PM1",
+        "projectId": null,
+        "sourceInvoiceEntryId": null,
+        "status": "Disposed",
+        "capitalizationDate": "2026-08-01",
+        "capitalizationEntryId": "JE-0003",
+        "usefulLifeMonths": 60,
+        "depreciationMethod": "StraightLine",
+        "residualValue": 50000,
+        "disposalDate": "2026-08-25",
+        "disposalProceeds": 400000,
+        "disposalEntryId": "JE-0005",
+        "transferHistory": [
+          {
+            "from": {
+              "location": "PHASE22-TEST Workshop",
+              "custodian": "U-FIN1",
+              "projectId": null
+            },
+            "to": {
+              "location": "PHASE22-TEST Site B",
+              "custodian": "U-PM1",
+              "projectId": null
+            },
+            "reason": "Self-test transfer",
+            "by": "U-FIN1",
+            "at": "2026-08-27T15:19:54.982Z"
+          }
+        ],
+        "createdBy": "U-FIN1",
+        "createdAt": "2026-08-27T15:19:54.932Z"
+      },
+      "entry": {
+        "id": "JE-0005",
+        "date": "2026-08-25",
+        "docDate": "2026-08-25",
+        "narration": "Fixed Asset Disposal — PHASE22-TEST-CNC-01 (PHASE22-TEST CNC Machine) — Self-test disposal",
+        "sourceType": "FixedAssetDisposal",
+        "sourceId": "FA-0001",
+        "voucherNo": "FA/2026-27/0002",
+        "party": null,
+        "reversalOfId": null,
+        "dueDate": null,
+        "docCategory": "FixedAssetDisposal",
+        "branchId": null,
+        "refNo1": "",
+        "refNo2": "",
+        "refNo3": "",
+        "postedByUserId": "U-FIN1",
+        "postedByRole": "FinanceManager",
+        "paymentMethodId": null,
+        "totalDebit": 500000,
+        "totalCredit": 500000,
+        "lines": [
+          {
+            "account": "1450",
+            "debit": 7500,
+            "credit": 0,
+            "customerId": null,
+            "vendorId": null,
+            "projectId": null,
+            "costCentreId": null,
+            "profitCentreId": null,
+            "taxCode": null,
+            "currency": "INR",
+            "remarks": "",
+            "branchId": null,
+            "locationId": null,
+            "distributionRule": null,
+            "itemId": null,
+            "reference": null
+          },
+          {
+            "account": "1000",
+            "debit": 400000,
+            "credit": 0,
+            "customerId": null,
+            "vendorId": null,
+            "projectId": null,
+            "costCentreId": null,
+            "profitCentreId": null,
+            "taxCode": null,
+            "currency": "INR",
+            "remarks": "",
+            "branchId": null,
+            "locationId": null,
+            "distributionRule": null,
+            "itemId": null,
+            "reference": null
+          },
+          {
+            "account": "5500",
+            "debit": 92500,
+            "credit": 0,
+            "customerId": null,
+            "vendorId": null,
+            "projectId": null,
+            "costCentreId": null,
+            "profitCentreId": null,
+            "taxCode": null,
+            "currency": "INR",
+            "remarks": "",
+            "branchId": null,
+            "locationId": null,
+            "distributionRule": null,
+            "itemId": null,
+            "reference": null
+          },
+          {
+            "account": "1400",
+            "debit": 0,
+            "credit": 500000,
+            "customerId": null,
+            "vendorId": null,
+            "projectId": null,
+            "costCentreId": null,
+            "profitCentreId": null,
+            "taxCode": null,
+            "currency": "INR",
+            "remarks": "",
+            "branchId": null,
+            "locationId": null,
+            "distributionRule": null,
+            "itemId": null,
+            "reference": null
+          }
+        ],
+        "postedAt": "2026-08-27T15:19:54.999Z"
+      },
+      "netBookValue": 492500,
+      "gainOrLoss": -92500
+    }
+  },
+  {
+    "section": "FixedAsset",
+    "desc": "Fixed Asset register still reconciles to GL after the full lifecycle (create->capitalize->depreciate->transfer->dispose)",
+    "ok": true,
+    "detail": {
+      "registerCost": 0,
+      "glCost": 0,
+      "costMatches": true,
+      "registerAccumDep": 0,
+      "glAccumDep": 0,
+      "accumDepMatches": true,
+      "assetCount": 0,
+      "disposedCount": 1
+    }
+  },
+  {
+    "section": "AMC",
+    "desc": "Scenario A (no recognition, fully deferred): cancellation requires disclosure, does NOT silently post a refund/write-off",
+    "ok": true,
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "amc": {
+        "id": "AMC-0001",
+        "amcNo": "AMC/2026-27/0001",
+        "customerId": "CUST-1",
+        "projectId": "PRJ-1",
+        "site": "PHASE22-TEST Site",
+        "coveredSystems": "HVAC",
+        "startDate": "2026-08-01",
+        "endDate": "2027-07-31",
+        "contractValue": 120000,
+        "billingTerms": "",
+        "serviceFrequencyMonths": 3,
+        "coverage": "",
+        "exclusions": "",
+        "sla": "",
+        "status": "CANCELLED",
+        "createdBy": "U-FIN1",
+        "createdAt": "2026-08-27T15:19:55.015Z",
+        "activatedBy": "U-FIN1",
+        "cancelReason": "PHASE22-TEST cancellation, no revenue recognized yet"
+      },
+      "deferredBalanceAtCancellation": 120000,
+      "disclosure": "BUSINESS POLICY REQUIRED: ₹120000 remains deferred (billed but not yet recognized as revenue) as of cancellation — no refund/write-off policy is approved, so no accounting entry has been posted for this balance. A human must decide whether to refund the customer, write off the balance, or recognize it immediately, and that decision has not been made here."
+    }
+  },
+  {
+    "section": "AMC",
+    "desc": "Scenario B (partial recognition): cancellation still discloses the REMAINING deferred balance, does not touch already-recognized revenue",
+    "ok": true,
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "amc": {
+        "id": "AMC-0002",
+        "amcNo": "AMC/2026-27/0002",
+        "customerId": "CUST-2",
+        "projectId": "PRJ-2",
+        "site": "PHASE22-TEST Site B",
+        "coveredSystems": "Electrical",
+        "startDate": "2026-08-01",
+        "endDate": "2027-07-31",
+        "contractValue": 120000,
+        "billingTerms": "",
+        "serviceFrequencyMonths": 3,
+        "coverage": "",
+        "exclusions": "",
+        "sla": "",
+        "status": "CANCELLED",
+        "createdBy": "U-FIN1",
+        "createdAt": "2026-08-27T15:19:55.133Z",
+        "activatedBy": "U-FIN1",
+        "recognizedPeriods": [
+          "2026-08"
+        ],
+        "cancelReason": "PHASE22-TEST cancellation after partial recognition"
+      },
+      "deferredBalanceAtCancellation": 110000,
+      "disclosure": "BUSINESS POLICY REQUIRED: ₹110000 remains deferred (billed but not yet recognized as revenue) as of cancellation — no refund/write-off policy is approved, so no accounting entry has been posted for this balance. A human must decide whether to refund the customer, write off the balance, or recognize it immediately, and that decision has not been made here."
+    }
+  },
+  {
+    "section": "AMC",
+    "desc": "Scenario C (customer paid in full): cancellation still requires a human decision on the paid-but-undelivered balance, does not auto-refund",
+    "ok": "BUSINESS POLICY REQUIRED: ₹60000 remains deferred (billed but not yet recognized as revenue) as of cancellation — no refund/write-off policy is approved, so no accounting entry has been posted for this balance. A human must decide whether to refund the customer, write off the balance, or recognize it immediately, and that decision has not been made here.",
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "amc": {
+        "id": "AMC-0003",
+        "amcNo": "AMC/2026-27/0003",
+        "customerId": "CUST-3",
+        "projectId": "PRJ-3",
+        "site": "PHASE22-TEST Site C",
+        "coveredSystems": "Plumbing",
+        "startDate": "2026-08-01",
+        "endDate": "2027-07-31",
+        "contractValue": 60000,
+        "billingTerms": "",
+        "serviceFrequencyMonths": 6,
+        "coverage": "",
+        "exclusions": "",
+        "sla": "",
+        "status": "CANCELLED",
+        "createdBy": "U-FIN1",
+        "createdAt": "2026-08-27T15:19:55.249Z",
+        "activatedBy": "U-FIN1",
+        "cancelReason": "PHASE22-TEST cancellation, customer already fully paid"
+      },
+      "deferredBalanceAtCancellation": 60000,
+      "disclosure": "BUSINESS POLICY REQUIRED: ₹60000 remains deferred (billed but not yet recognized as revenue) as of cancellation — no refund/write-off policy is approved, so no accounting entry has been posted for this balance. A human must decide whether to refund the customer, write off the balance, or recognize it immediately, and that decision has not been made here."
+    }
+  },
+  {
+    "section": "AMC",
+    "desc": "Scenario D (customer unpaid): cancellation still discloses the outstanding position, no accounting treatment invented",
+    "ok": "BUSINESS POLICY REQUIRED: ₹90000 remains deferred (billed but not yet recognized as revenue) as of cancellation — no refund/write-off policy is approved, so no accounting entry has been posted for this balance. A human must decide whether to refund the customer, write off the balance, or recognize it immediately, and that decision has not been made here.",
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "amc": {
+        "id": "AMC-0004",
+        "amcNo": "AMC/2026-27/0004",
+        "customerId": "CUST-4",
+        "projectId": "PRJ-4",
+        "site": "PHASE22-TEST Site D",
+        "coveredSystems": "HVAC",
+        "startDate": "2026-08-01",
+        "endDate": "2027-07-31",
+        "contractValue": 90000,
+        "billingTerms": "",
+        "serviceFrequencyMonths": 4,
+        "coverage": "",
+        "exclusions": "",
+        "sla": "",
+        "status": "CANCELLED",
+        "createdBy": "U-FIN1",
+        "createdAt": "2026-08-27T15:19:55.365Z",
+        "activatedBy": "U-FIN1",
+        "cancelReason": "PHASE22-TEST cancellation, customer never paid"
+      },
+      "deferredBalanceAtCancellation": 90000,
+      "disclosure": "BUSINESS POLICY REQUIRED: ₹90000 remains deferred (billed but not yet recognized as revenue) as of cancellation — no refund/write-off policy is approved, so no accounting entry has been posted for this balance. A human must decide whether to refund the customer, write off the balance, or recognize it immediately, and that decision has not been made here."
+    }
+  },
+  {
+    "section": "Integrity",
+    "desc": "Whole-ledger Trial Balance still balances after all self-test activity",
+    "ok": true,
+    "detail": {
+      "dr": 1511100,
+      "cr": 1511100
+    }
+  }
+]

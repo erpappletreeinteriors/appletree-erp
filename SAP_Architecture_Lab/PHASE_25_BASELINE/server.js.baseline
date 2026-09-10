@@ -1,0 +1,1854 @@
+'use strict';
+// ============================================================
+// Phase 6A — Application/API Server (the trusted authorization layer)
+// ============================================================
+// Every sensitive read and every mutation is authorized HERE, server-side,
+// before the domain layer (domain.js) is ever called. The client (client_secure/
+// index.html) is a thin presentation layer — it holds no DB, filters nothing
+// itself, and cannot bypass any check below by editing its own JavaScript,
+// because none of the enforcement logic runs in the browser.
+//
+// No framework (Express etc.) — Node's built-in http module only, per §4's
+// "simplest architecture that provides genuine enforcement" instruction, and
+// to keep this dependency-free / fully offline-capable (no npm install needed).
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const url = require('url');
+const D = require('./domain');
+const A = require('./auth');
+
+const PORT = 4001;
+const CLIENT_DIR = path.join(__dirname, '..', 'client_secure');
+
+// ---------- helpers ----------
+function readBody(req){
+  return new Promise((resolve,reject)=>{
+    let data='';
+    req.on('data', c=>{ data+=c; if(data.length>2_000_000) req.destroy(); });
+    req.on('end', ()=>{ try{ resolve(data?JSON.parse(data):{}); }catch(e){ resolve({}); } });
+    req.on('error', reject);
+  });
+}
+function sendJson(res, status, obj){
+  const body = JSON.stringify(obj);
+  res.writeHead(status, {'Content-Type':'application/json; charset=utf-8', 'Content-Length':Buffer.byteLength(body)});
+  res.end(body);
+}
+function parseCookies(req){
+  const h = req.headers.cookie || '';
+  const out = {};
+  h.split(';').forEach(p=>{ const i=p.indexOf('='); if(i>-1) out[p.slice(0,i).trim()] = decodeURIComponent(p.slice(i+1).trim()); });
+  return out;
+}
+function getActor(req){
+  const token = parseCookies(req).sid;
+  const s = A.getSession(token);
+  if(!s) return null;
+  A.touchSession(token);
+  const user = D.DB.users.find(u=>u.id===s.userId && u.active);
+  if(!user) return null;
+  // Phase 15 §8 DEFECT FOUND & FIXED: `assignedBranches` was never included here, so
+  // `D.branchAllowed(actor, branchId)` would always see `undefined` and silently permit every
+  // branch regardless of what was actually set on the user record — the restriction was
+  // structurally unreachable, not merely unused.
+  return { id:user.id, username:user.username, role:user.role, name:user.name, assignedProjects:user.assignedProjects, assignedCustomers:user.assignedCustomers, assignedBranches:user.assignedBranches, token };
+}
+function can(actor, action){ return !!(D.ROLE_ACTIONS[actor.role] && D.ROLE_ACTIONS[actor.role][action]); }
+function isGLVisible(actor){ return D.GL_VISIBLE_ROLES.has(actor.role) || actor.role==='Viewer'; }
+// A ProjectManager is "assigned" to a project via EITHER the Phase-6A static seed list
+// (assignedProjects on the user record — used for the two pre-seeded test projects) OR the
+// real, dynamic assignment set on the project itself during Won (Phase 6B). Checking only the
+// static list was a real bug (found via testing) — a PM assigned to a brand-new project via
+// wonTransition() would be wrongly denied access to their own project.
+function isProjectManagerOf(actor, projectId){
+  if(actor.role!=='ProjectManager') return false;
+  if((actor.assignedProjects||[]).includes(projectId)) return true;
+  const p = D.DB.projects.find(x=>x.id===projectId);
+  return !!(p && p.projectManagerId===actor.id);
+}
+function deny(res, code, reason, ctx){
+  D.logAudit({type:'AccessDenied', reason, ...ctx});
+  sendJson(res, code, {ok:false, error:reason});
+}
+// Phase 9B §7/§8 fix: mirrors the Material Requirement / Production Order CREATE gate
+// (Admin/CEO or the project's assigned PM — deliberately NOT Purchase, since Purchase has no
+// role in running production) so the same rule can be re-applied to lifecycle actions that
+// take only a document ID (submit/issue-material/complete/hold/resume/cancel/close), which were
+// found during Phase 9B security testing to have NO authorization gate at all.
+function pmOrAdminCeo(actor, projectId){ return ['Admin','CEO'].includes(actor.role) || isProjectManagerOf(actor, projectId); }
+
+// Phase 9B §17 — real server-side pagination for the highest-volume lists (Journal Register,
+// Audit Log, Inventory Movements — the ones the brief names first). page/pageSize are OPTIONAL
+// query params; omitting them returns everything unpaginated (unchanged behavior — no existing
+// caller, test, or UI screen breaks). A safe page/limit design, not cursor pagination — the
+// brief explicitly allows this ("if cursor pagination is not justified, use safe page/limit").
+function paginate(rows, query){
+  if(!query.page && !query.pageSize) return {rows, total: rows.length, paginated:false};
+  const pageSize = Math.min(Math.max(parseInt(query.pageSize,10)||50, 1), 500);
+  const page = Math.max(parseInt(query.page,10)||1, 1);
+  const total = rows.length;
+  const start = (page-1)*pageSize;
+  return { rows: rows.slice(start, start+pageSize), total, page, pageSize, hasMore: start+pageSize<total, paginated:true };
+}
+
+// ---------- static client (thin — no business logic) ----------
+function serveStatic(req, res, pathname){
+  let file = pathname==='/' ? '/index.html' : pathname;
+  const full = path.join(CLIENT_DIR, file);
+  if(!full.startsWith(CLIENT_DIR)){ res.writeHead(403); res.end(); return; }
+  fs.readFile(full, (err, data)=>{
+    if(err){ res.writeHead(404); res.end('Not found'); return; }
+    const ext = path.extname(full);
+    const ctype = ext==='.html'?'text/html':ext==='.js'?'application/javascript':ext==='.css'?'text/css':'application/octet-stream';
+    res.writeHead(200, {'Content-Type':ctype});
+    res.end(data);
+  });
+}
+
+// ---------- request log (for concurrency evidence) ----------
+let requestSeq = 0;
+
+// DEFECT FOUND & FIXED (Phase 20 §34 Final Security Audit — found by code review, not a test):
+// the entire route-dispatch if-chain ran directly inside this async request-listener callback
+// with NO surrounding try/catch anywhere in the file, and no process-level
+// uncaughtException/unhandledRejection handler either. Node's `http` module does not catch a
+// rejected promise from a request listener — an unhandled exception from any single malformed
+// request (e.g. a domain function throwing on unexpected input) would either leave that request
+// hanging forever (no res.end() ever called) or, in newer Node versions that treat unhandled
+// rejections as fatal, crash the ENTIRE process — taking the server down for every user over one
+// bad request. Neither failure mode is acceptable for a handover-ready build. Fixed with two
+// layers: (1) every request is now wrapped in try/catch, logging the REAL error server-side only
+// (console.error — never sent to the client) and returning a generic, safe 500 JSON response with
+// no stack trace, internal path, or exception message exposed; (2) process-level safety nets so a
+// truly unexpected error anywhere else can never silently kill the whole server for other users.
+process.on('uncaughtException', (err) => { console.error('[FATAL] Uncaught exception (server stays up):', err); });
+process.on('unhandledRejection', (err) => { console.error('[FATAL] Unhandled rejection (server stays up):', err); });
+
+const server = http.createServer(async (req, res) => {
+  try {
+    await handleRequest(req, res);
+  } catch (err) {
+    console.error('[REQUEST ERROR]', req.method, req.url, err);
+    if(!res.headersSent) sendJson(res, 500, {ok:false, error:'An unexpected error occurred while processing this request. Please try again; if the problem persists, contact your system administrator.'});
+  }
+});
+async function handleRequest(req, res){
+  const parsed = url.parse(req.url, true);
+  const pathname = parsed.pathname;
+  const reqId = ++requestSeq;
+
+  if(req.method==='GET' && !pathname.startsWith('/api/')){ return serveStatic(req, res, pathname); }
+
+  if(!pathname.startsWith('/api/')){ res.writeHead(404); return res.end(); }
+
+  let body = {};
+  if(req.method==='POST') body = await readBody(req);
+
+  // ---------- AUTH endpoints (no session required) ----------
+  if(pathname==='/api/login' && req.method==='POST'){
+    const {username, password} = body;
+    const user = D.DB.users.find(u=>u.username===username);
+    const loginRecord = {username, at:new Date().toISOString(), reqId};
+    if(!user || !user.active){
+      D.DB.loginHistory.push({...loginRecord, result:'DENY', reason:'unknown or inactive user'}); D.save();
+      return sendJson(res, 401, {ok:false, error:'Invalid username or password.'});
+    }
+    if(user.lockedUntil && Date.now() < user.lockedUntil){
+      D.DB.loginHistory.push({...loginRecord, result:'DENY', reason:'account locked'}); D.save();
+      return sendJson(res, 423, {ok:false, error:`Account locked until ${new Date(user.lockedUntil).toISOString()} after repeated failed logins.`});
+    }
+    if(!D.verifyPassword(password||'', user.passwordHash, user.passwordSalt)){
+      user.failedLoginCount = (user.failedLoginCount||0)+1;
+      if(user.failedLoginCount>=5){ user.lockedUntil = Date.now()+15*60*1000; user.failedLoginCount=0; }
+      D.save();
+      D.DB.loginHistory.push({...loginRecord, result:'DENY', reason:'bad password'}); D.save();
+      return sendJson(res, 401, {ok:false, error:'Invalid username or password.'});
+    }
+    user.failedLoginCount = 0; user.lockedUntil = null; D.save();
+    const token = A.createSession(user);
+    D.DB.loginHistory.push({...loginRecord, result:'PASS', userId:user.id, role:user.role}); D.save();
+    res.setHeader('Set-Cookie', `sid=${token}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${A.SESSION_TTL_MS/1000}`);
+    return sendJson(res, 200, {ok:true, user:{id:user.id, username:user.username, name:user.name, role:user.role, mustChangePassword:!!user.mustChangePassword}});
+  }
+  if(pathname==='/api/logout' && req.method==='POST'){
+    const token = parseCookies(req).sid;
+    // Phase 17 §12 DEFECT FOUND & FIXED: Login was already tracked via loginHistory, but Logout
+    // had no audit coverage at all — resolve the user BEFORE destroying the session so who/when
+    // is recorded, same as every other audited action.
+    if(token){
+      const s = A.getSession(token);
+      if(s){ const u = D.DB.users.find(x=>x.id===s.userId); if(u) D.DB.loginHistory.push({at:new Date().toISOString(), userId:u.id, role:u.role, result:'LOGOUT'}); }
+      A.destroySession(token);
+      D.save();
+    }
+    res.setHeader('Set-Cookie', `sid=; Path=/; Max-Age=0`);
+    return sendJson(res, 200, {ok:true});
+  }
+
+  // ---------- everything below requires a valid session ----------
+  const actor = getActor(req);
+  if(!actor){
+    D.logAudit({type:'AccessDenied', reason:'no valid session', path:pathname, method:req.method, reqId});
+    return sendJson(res, 401, {ok:false, error:'Not authenticated. Please log in.'});
+  }
+
+  if(pathname==='/api/me' && req.method==='GET') return sendJson(res, 200, {ok:true, actor});
+
+  // ---------- Masters (RBAC + data-scope + field-level security) ----------
+  if(pathname==='/api/customers' && req.method==='GET'){
+    if(actor.role==='Purchase') return deny(res, 403, 'Purchase role cannot view customer master.', {userId:actor.id, role:actor.role, path:pathname});
+    let rows = D.DB.customers;
+    if(actor.role==='Sales') rows = rows.filter(c=>(actor.assignedCustomers||[]).includes(c.id));
+    const financialEligible = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
+    const out = rows.map(c=>{
+      const base = {...c};
+      if(financialEligible.has(actor.role) || actor.role==='Sales'){
+        base.outstandingBalance = Math.round(D.customerOpenItems(c.id).reduce((s,i)=>s+i.open,0)*100)/100;
+      } // else: field genuinely omitted from the JSON, not just hidden client-side
+      return base;
+    });
+    return sendJson(res, 200, {ok:true, customers: out});
+  }
+  // Phase 19 §5 — Customer GSTIN is OPTIONAL master-data metadata, never mandatory; changes are
+  // specifically audited (CustomerGSTINChanged), not just folded into a generic edit event.
+  if(pathname.match(/^\/api\/customers\/[^/]+\/gstin$/) && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot set a customer's GSTIN.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.setCustomerGSTIN({customerId:pathname.split('/')[3], gstin:body.gstin, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/vendors' && req.method==='GET'){
+    const allowed = new Set(['Admin','CEO','Accountant','FinanceManager','Purchase','Viewer']);
+    if(!allowed.has(actor.role)) return deny(res, 403, `Role "${actor.role}" cannot view vendor master.`, {userId:actor.id, role:actor.role, path:pathname});
+    const out = D.DB.vendors.map(v=>({...v, outstandingBalance: Math.round(D.supplierOpenItems(v.id).reduce((s,i)=>s+i.open,0)*100)/100}));
+    return sendJson(res, 200, {ok:true, vendors: out});
+  }
+  if(pathname==='/api/projects' && req.method==='GET'){
+    let rows = D.DB.projects;
+    if(actor.role==='ProjectManager') rows = rows.filter(p=>isProjectManagerOf(actor,p.id));
+    return sendJson(res, 200, {ok:true, projects: rows});
+  }
+  if(pathname==='/api/accounts' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res, 403, `Role "${actor.role}" cannot view the Chart of Accounts.`, {userId:actor.id, role:actor.role, path:pathname});
+    return sendJson(res, 200, {ok:true, accounts: D.DB.accounts});
+  }
+  if(pathname==='/api/tax-codes' && req.method==='GET') return sendJson(res, 200, {ok:true, taxCodes: D.DB.taxCodes});
+  // Phase 19 §24 — Payment Methods master (metadata-only, never redirects the GL account).
+  if(pathname==='/api/payment-methods' && req.method==='GET') return sendJson(res, 200, {ok:true, paymentMethods: D.DB.paymentMethods});
+  // §11 Project Accounting Dimensions — `costCentreId` has been a line-level dimension since
+  // Phase 4/5, but DEFECT FOUND & FIXED this phase: no API route ever exposed the master list,
+  // so no UI could ever let a user pick one. Real gap, now closed.
+  if(pathname==='/api/cost-centres' && req.method==='GET') return sendJson(res, 200, {ok:true, costCentres: D.DB.costCentres});
+  if(pathname==='/api/doc-types' && req.method==='GET') return sendJson(res, 200, {ok:true, docTypes: D.DB.glDocumentTypes});
+
+  // ---------- GL / Financial statements ----------
+  if(pathname==='/api/journal-entries' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res, 403, `Role "${actor.role}" cannot view the Journal Register / GL.`, {userId:actor.id, role:actor.role, path:pathname});
+    let rows = D.DB.journalEntries;
+    const q = parsed.query;
+    if(q.search){ const s = q.search.toLowerCase(); rows = rows.filter(e=>(e.voucherNo||'').toLowerCase().includes(s) || (e.narration||'').toLowerCase().includes(s)); }
+    if(q.docCategory) rows = rows.filter(e=>e.docCategory===q.docCategory);
+    if(q.dateFrom) rows = rows.filter(e=>e.date>=q.dateFrom);
+    if(q.dateTo) rows = rows.filter(e=>e.date<=q.dateTo);
+    const p = paginate([...rows].reverse(), q);
+    return sendJson(res, 200, {ok:true, journalEntries: p.rows, total:p.total, page:p.page, pageSize:p.pageSize, hasMore:p.hasMore, paginated:p.paginated});
+  }
+  if(pathname==='/api/document' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res, 403, `Role "${actor.role}" cannot view accounting documents.`, {userId:actor.id, role:actor.role, path:pathname});
+    const id = parsed.query.id;
+    const je = D.DB.journalEntries.find(e=>e.id===id);
+    if(!je) return sendJson(res, 404, {ok:false, error:'Document not found.'});
+    const draft = D.DB.jeDrafts.find(d=>d.postedEntryId===id);
+    const clearings = D.DB.clearings.filter(c=>c.invoiceEntryId===id || c.paymentEntryId===id);
+    return sendJson(res, 200, {ok:true, entry:je, draft, clearings});
+  }
+  if(pathname==='/api/trial-balance' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res, 403, `Role "${actor.role}" cannot view the Trial Balance.`, {userId:actor.id, role:actor.role, path:pathname});
+    const lines = D.allLines();
+    const byAccount = {};
+    lines.forEach(l=>{ byAccount[l.account]=byAccount[l.account]||{debit:0,credit:0}; byAccount[l.account].debit+=l.debit; byAccount[l.account].credit+=l.credit; });
+    return sendJson(res, 200, {ok:true, byAccount, accounts:D.DB.accounts});
+  }
+  if(pathname==='/api/reconciliation' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res, 403, `Role "${actor.role}" cannot view financial reconciliation.`, {userId:actor.id, role:actor.role, path:pathname});
+    // Phase 21 §17 — Tax (Output/Input) and Customer Advance reconciliation added to the SAME
+    // existing report, alongside AR/AP, rather than a new separate endpoint — closing the audit's
+    // disclosed "no dedicated reconciliation tool for Tax/Advances" gap without fragmenting where
+    // an accountant looks for reconciliation evidence.
+    return sendJson(res, 200, {ok:true, ar:D.reconcileAR(), ap:D.reconcileAP(), outputTax:D.reconcileOutputTax(), inputTax:D.reconcileInputTax(), customerAdvances:D.reconcileCustomerAdvances()});
+  }
+
+  // ---------- Project P&L / Committed Cost (margin-sensitive) ----------
+  if(pathname==='/api/project-pl' && req.method==='GET'){
+    const pid = parsed.query.projectId;
+    const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
+    if(!fullAccess.has(actor.role)){
+      if(isProjectManagerOf(actor, pid)){ /* allowed, own project only */ }
+      else return deny(res, 403, `Role "${actor.role}" cannot view project profitability for ${pid}.`, {userId:actor.id, role:actor.role, path:pathname, projectId:pid});
+    }
+    return sendJson(res, 200, {ok:true, pl: D.projectPL(pid)});
+  }
+
+  // ---------- AR ----------
+  if(pathname==='/api/ar/open-items' && req.method==='GET'){
+    const cid = parsed.query.customerId;
+    const scoped = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
+    if(!scoped.has(actor.role)){
+      if(actor.role==='Sales' && (actor.assignedCustomers||[]).includes(cid)){ /* ok */ }
+      else return deny(res, 403, `Role "${actor.role}" cannot view AR open items for ${cid}.`, {userId:actor.id, role:actor.role, path:pathname, customerId:cid});
+    }
+    return sendJson(res, 200, {ok:true, items: D.customerOpenItems(cid)});
+  }
+  if(pathname==='/api/ar/ageing' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res, 403, `Role "${actor.role}" cannot view the full AR Ageing report (aggregate across all customers).`, {userId:actor.id, role:actor.role, path:pathname});
+    return sendJson(res, 200, {ok:true, ageing: D.customerAgeing(), buckets: D.AGE_BUCKETS});
+  }
+  if(pathname==='/api/ar/invoice' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res, 403, `Role "${actor.role}" cannot create a customer invoice.`, {userId:actor.id, role:actor.role, path:pathname});
+    if(actor.role==='Sales' && body.customerId && !(actor.assignedCustomers||[]).includes(body.customerId)){
+      return deny(res, 403, `Sales user is not assigned to customer ${body.customerId}.`, {userId:actor.id, role:actor.role, path:pathname, customerId:body.customerId});
+    }
+    const r = D.draftCustomerInvoice({...body, createdByUserId:actor.id, createdByRole:actor.role});
+    return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/ar/receipt' && req.method==='POST'){
+    if(!can(actor,'clear')) return deny(res, 403, `Role "${actor.role}" cannot post a customer receipt / clear AR.`, {userId:actor.id, role:actor.role, path:pathname});
+    const r = D.postCustomerReceipt({...body, actor});
+    return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---------- AP ----------
+  if(pathname==='/api/ap/open-items' && req.method==='GET'){
+    const vid = parsed.query.vendorId;
+    const scoped = new Set(['Admin','CEO','Accountant','FinanceManager','Purchase','Viewer']);
+    if(!scoped.has(actor.role)) return deny(res, 403, `Role "${actor.role}" cannot view AP open items.`, {userId:actor.id, role:actor.role, path:pathname, vendorId:vid});
+    return sendJson(res, 200, {ok:true, items: D.supplierOpenItems(vid)});
+  }
+  if(pathname==='/api/ap/ageing' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res, 403, `Role "${actor.role}" cannot view the full AP Ageing report.`, {userId:actor.id, role:actor.role, path:pathname});
+    return sendJson(res, 200, {ok:true, ageing: D.supplierAgeing(), buckets: D.AGE_BUCKETS});
+  }
+  if(pathname==='/api/ap/invoice' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res, 403, `Role "${actor.role}" cannot create a supplier bill.`, {userId:actor.id, role:actor.role, path:pathname});
+    const r = D.draftSupplierInvoice({...body, createdByUserId:actor.id, createdByRole:actor.role});
+    return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/ap/payment' && req.method==='POST'){
+    if(!can(actor,'pay')) return deny(res, 403, `Role "${actor.role}" is not authorized to make supplier payments.`, {userId:actor.id, role:actor.role, path:pathname});
+    const r = D.postSupplierPayment({...body, actor});
+    return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---------- Journal Voucher / Document Workflow ----------
+  if(pathname==='/api/journal-drafts' && req.method==='GET'){
+    return sendJson(res, 200, {ok:true, drafts: D.DB.jeDrafts});
+  }
+  if(pathname==='/api/journal/draft' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res, 403, `Role "${actor.role}" cannot create documents.`, {userId:actor.id, role:actor.role, path:pathname});
+    if(body.branchId && !D.branchAllowed(actor, body.branchId)) return deny(res, 403, `Role "${actor.role}" is not authorized to post to branch "${body.branchId}".`, {userId:actor.id, role:actor.role, path:pathname});
+    const r = D.createDraft({...body, createdByUserId:actor.id, createdByRole:actor.role});
+    return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/journal\/[^/]+\/submit$/) && req.method==='POST'){
+    if(!can(actor,'submit')) return deny(res, 403, `Role "${actor.role}" cannot submit documents.`, {userId:actor.id, role:actor.role, path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.submitDraft(id, actor);
+    return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/journal\/[^/]+\/approve$/) && req.method==='POST'){
+    if(!can(actor,'approve')) return deny(res, 403, `Role "${actor.role}" cannot approve documents.`, {userId:actor.id, role:actor.role, path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.approveDraft(id, actor);
+    // Phase 9B fix: 403 is reserved for the can()/deny() authorization gate immediately above.
+    // Once that gate passes, any failure returned by the domain function (wrong document status,
+    // SoD self-approval, etc.) is a per-resource BUSINESS/STATE outcome, not a blanket
+    // role-authorization denial — it belongs on 400, matching how ~30 other routes in this file
+    // already treat the identical create/submit/reject pattern. Conflating the two under 403
+    // made a retried "approve" on an already-approved document indistinguishable from "you can
+    // never do this" — misleading to API consumers and to any security-matrix classification
+    // that (correctly) treats 403 as the authorization signal.
+    return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/journal\/[^/]+\/reject$/) && req.method==='POST'){
+    if(!can(actor,'approve')) return deny(res, 403, `Role "${actor.role}" cannot reject documents.`, {userId:actor.id, role:actor.role, path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.rejectDraft(id, body.reason, actor);
+    return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/journal\/[^/]+\/post$/) && req.method==='POST'){
+    if(!can(actor,'post')) return deny(res, 403, `Role "${actor.role}" cannot post documents.`, {userId:actor.id, role:actor.role, path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.postDraft(id, actor, body.overrideReason);
+    return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/journal\/[^/]+\/cancel$/) && req.method==='POST'){
+    if(!can(actor,'edit')) return deny(res, 403, `Role "${actor.role}" cannot cancel documents.`, {userId:actor.id, role:actor.role, path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.cancelDraft(id, actor);
+    return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/journal\/[^/]+\/reverse$/) && req.method==='POST'){
+    if(!can(actor,'reverse')) return deny(res, 403, `Role "${actor.role}" is not authorized to reverse postings.`, {userId:actor.id, role:actor.role, path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.reverseEntry(id, body.reason, actor);
+    return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---------- Audit / Export ----------
+  if(pathname==='/api/audit-log' && req.method==='GET'){
+    if(!(actor.role==='Admin' || actor.role==='CEO')) return deny(res, 403, `Role "${actor.role}" cannot view the audit log.`, {userId:actor.id, role:actor.role, path:pathname});
+    let rows = D.DB.auditLog;
+    const q = parsed.query;
+    if(q.search){ const s = q.search.toLowerCase(); rows = rows.filter(a=>(a.type||'').toLowerCase().includes(s) || (a.reason||'').toLowerCase().includes(s) || (a.userId||'').toLowerCase().includes(s)); }
+    const p = paginate([...rows].reverse(), q);
+    // Phase 22 §22 — clarity fix (Phase 21's DR drill found this endpoint's name creates a false
+    // impression of exhaustiveness). This log covers administrative/security/configuration/
+    // exception events only (master data changes, period/future-date overrides, backups, self-
+    // approval attempts, etc.). Every routine document's own Created/Submitted/Approved/Posted
+    // lifecycle — the vast majority of daily activity — lives on that document's own `history[]`
+    // array instead (see GET /api/journal-drafts, or the `history` field on any individual draft).
+    // Both are real, both are complete for what they cover; this note exists so nobody has to
+    // discover the distinction the hard way, as this engagement's own DR drill did.
+    return sendJson(res, 200, {ok:true, auditLog: p.rows, total:p.total, page:p.page, pageSize:p.pageSize, hasMore:p.hasMore, paginated:p.paginated, loginHistory: D.DB.loginHistory,
+      scopeNote: 'This log contains administrative/security/configuration/exception events only. For a routine transaction\'s own Created/Submitted/Approved/Posted history, see that document\'s own "history" field (GET /api/journal-drafts).'});
+  }
+  // Phase 13 POL-12: real export handling lives further down (after PROC_VIEW_ROLES/AS_VIEW_ROLES/
+  // isProjectManagerOf/ticketAllowed have all actually executed in this request's top-to-bottom
+  // pass — those are per-request `const`s, so a route check up here would hit a temporal-dead-
+  // zone error even though the function containing them is hoisted). See the Phase 13 block
+  // further down, placed alongside the other Phase 10/11/13 routes for the same reason.
+
+  // ============================================================
+  // Phase 6B — Lead → Estimation → Quotation → Won → Customer → Project → Baseline → Design
+  // ============================================================
+  const CRM_ROLES = new Set(['Admin','CEO','Sales']);
+
+  if(pathname==='/api/leads' && req.method==='GET'){
+    if(!(CRM_ROLES.has(actor.role) || actor.role==='Viewer')) return deny(res,403,`Role "${actor.role}" cannot view Leads.`,{userId:actor.id,role:actor.role,path:pathname});
+    let rows = D.DB.leads;
+    if(actor.role==='Sales') rows = rows.filter(l=>l.salesOwnerId===actor.id);
+    return sendJson(res,200,{ok:true, leads:rows, statuses:D.LEAD_STATUSES});
+  }
+  if(pathname==='/api/leads' && req.method==='POST'){
+    if(!(CRM_ROLES.has(actor.role) && can(actor,'create'))) return deny(res,403,`Role "${actor.role}" cannot create Leads.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createLead({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/leads\/[^/]+\/activities$/) && req.method==='POST'){
+    const leadId = pathname.split('/')[3];
+    const lead = D.DB.leads.find(l=>l.id===leadId);
+    if(!lead) return sendJson(res,404,{ok:false,error:'Lead not found.'});
+    if(!D.canSeeLead(lead, actor)) return deny(res,403,`Role "${actor.role}" cannot access lead ${leadId} (not owner/not authorized scope).`,{userId:actor.id,role:actor.role,path:pathname,leadId});
+    const r = D.addLeadActivity({leadId, ...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/leads\/[^/]+\/status$/) && req.method==='POST'){
+    const leadId = pathname.split('/')[3];
+    const lead = D.DB.leads.find(l=>l.id===leadId);
+    if(!lead) return sendJson(res,404,{ok:false,error:'Lead not found.'});
+    if(!D.canSeeLead(lead, actor)) return deny(res,403,`Role "${actor.role}" cannot access lead ${leadId}.`,{userId:actor.id,role:actor.role,path:pathname,leadId});
+    if(!can(actor,'edit')) return deny(res,403,`Role "${actor.role}" cannot change lead status.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.changeLeadStatus({leadId, newStatus:body.newStatus, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  const EST_VIEW_ROLES = new Set(['Admin','CEO','Estimator','Sales']);
+  if(pathname==='/api/estimation-requests' && req.method==='GET'){
+    if(!(EST_VIEW_ROLES.has(actor.role) || actor.role==='Viewer')) return deny(res,403,`Role "${actor.role}" cannot view Estimation Requests.`,{userId:actor.id,role:actor.role,path:pathname});
+    let rows = D.DB.estimationRequests;
+    if(actor.role==='Sales') rows = rows.filter(e=>{ const l=D.DB.leads.find(x=>x.id===e.leadId); return l && l.salesOwnerId===actor.id; });
+    return sendJson(res,200,{ok:true, estimationRequests:rows, statuses:D.ESTIMATION_STATUSES});
+  }
+  if(pathname==='/api/estimation-requests' && req.method==='POST'){
+    if(!(EST_VIEW_ROLES.has(actor.role) && can(actor,'create'))) return deny(res,403,`Role "${actor.role}" cannot create Estimation Requests.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createEstimationRequest({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/estimation-requests\/[^/]+\/status$/) && req.method==='POST'){
+    if(!can(actor,'edit')) return deny(res,403,`Role "${actor.role}" cannot change estimation status.`,{userId:actor.id,role:actor.role,path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.setEstimationStatus({id, status:body.status, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname==='/api/costing-versions' && req.method==='GET'){
+    if(!(EST_VIEW_ROLES.has(actor.role) || actor.role==='FinanceManager' || actor.role==='Viewer')) return deny(res,403,`Role "${actor.role}" cannot view Costing.`,{userId:actor.id,role:actor.role,path:pathname});
+    const erId = parsed.query.estimationRequestId;
+    let rows = D.DB.costingVersions.filter(c=>!erId || c.estimationRequestId===erId);
+    // Field-level security (§11): Sales gets sellingPrice only, never the internal cost breakdown.
+    if(actor.role==='Sales'){
+      rows = rows.map(c=>({id:c.id, estimationRequestId:c.estimationRequestId, version:c.version, sellingPrice:c.sellingPrice, createdAt:c.createdAt}));
+    }
+    return sendJson(res,200,{ok:true, costingVersions:rows});
+  }
+  if(pathname==='/api/costing-versions' && req.method==='POST'){
+    if(!(['Admin','CEO','Estimator'].includes(actor.role) && can(actor,'create'))) return deny(res,403,`Role "${actor.role}" cannot create costing.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createCostingVersion({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  const QTN_VIEW_ROLES = new Set(['Admin','CEO','FinanceManager','Accountant','Estimator','Sales']);
+  if(pathname==='/api/quotations' && req.method==='GET'){
+    if(!(QTN_VIEW_ROLES.has(actor.role) || actor.role==='Viewer')) return deny(res,403,`Role "${actor.role}" cannot view Quotations.`,{userId:actor.id,role:actor.role,path:pathname});
+    let rows = D.DB.quotations;
+    if(actor.role==='Sales') rows = rows.filter(q=>{ const l=D.DB.leads.find(x=>x.id===q.leadId); return l && l.salesOwnerId===actor.id; });
+    return sendJson(res,200,{ok:true, quotations:rows, statuses:D.QUOTATION_STATUSES});
+  }
+  if(pathname==='/api/quotations' && req.method==='POST'){
+    if(!(CRM_ROLES.has(actor.role) && can(actor,'create'))) return deny(res,403,`Role "${actor.role}" cannot create Quotations.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createQuotation({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/quotations\/[^/]+\/submit$/) && req.method==='POST'){
+    if(!can(actor,'submit')) return deny(res,403,`Role "${actor.role}" cannot submit quotations.`,{userId:actor.id,role:actor.role,path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.submitQuotation({id, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/quotations\/[^/]+\/approve-discount$/) && req.method==='POST'){
+    if(!can(actor,'approve')) return deny(res,403,`Role "${actor.role}" cannot approve discounts.`,{userId:actor.id,role:actor.role,path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.approveQuotationDiscount({id, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/quotations\/[^/]+\/revise$/) && req.method==='POST'){
+    if(!can(actor,'edit')) return deny(res,403,`Role "${actor.role}" cannot revise quotations.`,{userId:actor.id,role:actor.role,path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.reviseQuotation({id, changes:body.changes||{}, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/quotations\/[^/]+\/acceptance$/) && req.method==='POST'){
+    if(!(CRM_ROLES.has(actor.role) && can(actor,'edit'))) return deny(res,403,`Role "${actor.role}" cannot record acceptance.`,{userId:actor.id,role:actor.role,path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.recordAcceptance({quotationId:id, ...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/quotations\/[^/]+\/won$/) && req.method==='POST'){
+    if(!(['Admin','CEO','FinanceManager'].includes(actor.role))) return deny(res,403,`Role "${actor.role}" cannot execute the Won transition (requires commercial authority).`,{userId:actor.id,role:actor.role,path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.wonTransition({quotationId:id, ...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname==='/api/discount-approval-rules' && req.method==='GET'){
+    return sendJson(res,200,{ok:true, rules: D.DB.discountApprovalRules});
+  }
+
+  if(pathname.match(/^\/api\/projects\/[^/]+\/advance-requirement$/) && req.method==='POST'){
+    if(!(['Admin','CEO','FinanceManager'].includes(actor.role))) return deny(res,403,`Role "${actor.role}" cannot set advance requirements.`,{userId:actor.id,role:actor.role,path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.setProjectAdvanceRequirement({projectId:id, amount:body.amount, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/projects\/[^/]+\/financial-readiness$/) && req.method==='GET'){
+    const id = pathname.split('/')[3];
+    const p = D.DB.projects.find(x=>x.id===id);
+    if(!p) return sendJson(res,404,{ok:false,error:'Project not found.'});
+    const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
+    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor, id)){
+      return deny(res,403,`Role "${actor.role}" cannot view financial readiness for ${id}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:id});
+    }
+    return sendJson(res,200,{ok:true, readiness: D.projectFinancialReadiness(id)});
+  }
+  if(pathname==='/api/advances' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot record advances.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.draftCustomerAdvance({...body, createdByUserId:actor.id, createdByRole:actor.role}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname==='/api/designs' && req.method==='POST'){
+    // Design submission is a project/operational document, not a financial one — deliberately
+    // NOT gated by the generic 'create' action (which correctly denies ProjectManager for
+    // financial documents but would incorrectly deny them here too). Gated instead by project
+    // assignment (business-rule authorization, per §28), same discipline as financial-readiness.
+    if(!(['Admin','CEO'].includes(actor.role) || isProjectManagerOf(actor, body.projectId))){
+      return deny(res,403,`Role "${actor.role}" cannot submit a design for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:body.projectId});
+    }
+    const r = D.submitDesign({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/designs' && req.method==='GET'){
+    const pid = parsed.query.projectId;
+    let rows = D.DB.designs.filter(d=>!pid || d.projectId===pid);
+    if(actor.role==='ProjectManager') rows = rows.filter(d=>isProjectManagerOf(actor,d.projectId));
+    else if(!['Admin','CEO','Estimator','Viewer'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view designs.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, designs:rows, statuses:D.DESIGN_STATUSES});
+  }
+  if(pathname.match(/^\/api\/designs\/[^/]+\/review$/) && req.method==='POST'){
+    if(!(['Admin','CEO','ProjectManager'].includes(actor.role))) return deny(res,403,`Role "${actor.role}" cannot review/approve designs.`,{userId:actor.id,role:actor.role,path:pathname});
+    const id = pathname.split('/')[3];
+    const design = D.DB.designs.find(x=>x.id===id);
+    if(design && actor.role==='ProjectManager' && !isProjectManagerOf(actor, design.projectId)){
+      return deny(res,403,`ProjectManager not assigned to project ${design.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    }
+    const r = D.reviewDesign({designId:id, status:body.status, remarks:body.remarks, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname==='/api/change-requests' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot create change requests.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createChangeRequest({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/change-requests\/[^/]+\/approve$/) && req.method==='POST'){
+    if(!(['Admin','CEO','FinanceManager'].includes(actor.role))) return deny(res,403,`Role "${actor.role}" cannot approve change requests.`,{userId:actor.id,role:actor.role,path:pathname});
+    const id = pathname.split('/')[3];
+    const r = D.approveChangeRequest({id, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname==='/api/customers' && req.method==='POST' && parsed.query.mode==='find-or-create'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot create customers.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.findOrCreateCustomer({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ============================================================
+  // Phase 7 — Procurement → Inventory → Supplier Bill → AP → Payment → Manufacturing
+  // ============================================================
+  const PROC_CREATE_ROLES = new Set(['Admin','CEO','Purchase']);
+  const PROC_VIEW_ROLES = new Set(['Admin','CEO','Purchase','FinanceManager','Accountant','Viewer']);
+
+  // ---- Materials / Warehouses (master data, field-security on cost fields for unauthorized roles) ----
+  if(pathname==='/api/materials' && req.method==='GET'){
+    const costEligible = new Set(['Admin','CEO','Purchase','FinanceManager','Accountant','Estimator','Viewer']);
+    const rows = D.DB.materials.map(m => costEligible.has(actor.role) ? m : {id:m.id, code:m.code, description:m.description, category:m.category, uom:m.uom, active:m.active});
+    return sendJson(res,200,{ok:true, materials:rows});
+  }
+  // Phase 19 §4 — HSN is OPTIONAL master-data metadata on a material, never mandatory.
+  if(pathname.match(/^\/api\/materials\/[^/]+\/hsn$/) && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot set a material's HSN code.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.setMaterialHSN({materialId:pathname.split('/')[3], hsnCode:body.hsnCode, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/warehouses' && req.method==='GET'){ return sendJson(res,200,{ok:true, warehouses:D.DB.warehouses}); }
+  if(pathname==='/api/vendors/detail' && req.method==='GET'){
+    // Bank details — a distinct, more sensitive field-security tier than the general vendor list (§38).
+    const bankEligible = new Set(['Admin','CEO','FinanceManager','Accountant','Purchase','Viewer']);
+    const rows = D.DB.vendors.map(v => bankEligible.has(actor.role) ? v : {id:v.id, name:v.name, category:v.category});
+    return sendJson(res,200,{ok:true, vendors:rows});
+  }
+
+  // ---- Material Requirement ----
+  if(pathname==='/api/material-requirements' && req.method==='GET'){
+    let rows = D.DB.materialRequirements;
+    if(actor.role==='ProjectManager') rows = rows.filter(r=>isProjectManagerOf(actor,r.projectId));
+    else if(!PROC_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view Material Requirements.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, requirements:rows});
+  }
+  if(pathname==='/api/material-requirements' && req.method==='POST'){
+    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor, body.projectId)) && !['Admin','CEO'].includes(actor.role)){
+      return deny(res,403,`Role "${actor.role}" cannot create a Material Requirement for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    }
+    const r = D.createMaterialRequirement({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/material-requirements\/[^/]+\/submit$/) && req.method==='POST'){
+    const target = D.DB.materialRequirements.find(x=>x.id===pathname.split('/')[3]);
+    const authorized = target ? pmOrAdminCeo(actor, target.projectId) : ['Admin','CEO','ProjectManager'].includes(actor.role);
+    if(!authorized) return deny(res,403,`Role "${actor.role}" cannot submit this Material Requirement.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.submitMaterialRequirement({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/material-requirements\/[^/]+\/approve$/) && req.method==='POST'){
+    if(!can(actor,'approve')) return deny(res,403,`Role "${actor.role}" cannot approve Material Requirements.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.approveMaterialRequirement({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---- Material Request ----
+  if(pathname==='/api/material-requests' && req.method==='GET'){
+    if(!PROC_VIEW_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view Material Requests.`,{userId:actor.id,role:actor.role,path:pathname});
+    let rows = D.DB.materialRequests;
+    if(actor.role==='ProjectManager') rows = rows.filter(r=>isProjectManagerOf(actor,r.projectId));
+    return sendJson(res,200,{ok:true, materialRequests:rows, statuses:D.MR_STATUSES});
+  }
+  if(pathname==='/api/material-requests' && req.method==='POST'){
+    if(!PROC_CREATE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create Material Requests.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createMaterialRequest({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/material-requests\/[^/]+\/submit$/) && req.method==='POST'){
+    if(!PROC_CREATE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot submit Material Requests.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.submitMaterialRequest({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/material-requests\/[^/]+\/approve$/) && req.method==='POST'){
+    if(!can(actor,'approve')) return deny(res,403,`Role "${actor.role}" cannot approve Material Requests.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.approveMaterialRequest({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/material-requests\/[^/]+\/reject$/) && req.method==='POST'){
+    if(!can(actor,'approve')) return deny(res,403,`Role "${actor.role}" cannot reject Material Requests.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.rejectMaterialRequest({id:pathname.split('/')[3], reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---- RFQ / Supplier Quotation / Comparison ----
+  if(pathname==='/api/rfqs' && req.method==='GET'){
+    if(!PROC_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view RFQs.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, rfqs:D.DB.rfqs});
+  }
+  if(pathname==='/api/rfqs' && req.method==='POST'){
+    if(!PROC_CREATE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create RFQs.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createRFQ({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/supplier-quotations' && req.method==='GET'){
+    if(!PROC_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view Supplier Quotations.`,{userId:actor.id,role:actor.role,path:pathname});
+    const rfqId = parsed.query.rfqId;
+    return sendJson(res,200,{ok:true, supplierQuotations:D.DB.supplierQuotations.filter(q=>!rfqId||q.rfqId===rfqId)});
+  }
+  if(pathname==='/api/supplier-quotations' && req.method==='POST'){
+    if(!PROC_CREATE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot record Supplier Quotations.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.recordSupplierQuotation({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/supplier-comparisons' && req.method==='GET'){
+    if(!PROC_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view Supplier Comparisons.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, comparisons:D.DB.supplierComparisons});
+  }
+  if(pathname==='/api/supplier-comparisons' && req.method==='POST'){
+    if(!PROC_CREATE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create Supplier Comparisons.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createSupplierComparison({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/supplier-comparisons\/[^/]+\/approve$/) && req.method==='POST'){
+    if(!can(actor,'approve')) return deny(res,403,`Role "${actor.role}" cannot approve Supplier Comparisons.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.approveSupplierComparison({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---- Purchase Order ----
+  if(pathname==='/api/purchase-orders' && req.method==='GET'){
+    let rows = D.DB.purchaseOrders;
+    if(actor.role==='ProjectManager') rows = rows.filter(p=>isProjectManagerOf(actor,p.projectId));
+    else if(!PROC_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view Purchase Orders.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, purchaseOrders:rows, statuses:D.PO_STATUSES});
+  }
+  if(pathname==='/api/purchase-orders' && req.method==='POST'){
+    if(!PROC_CREATE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create Purchase Orders.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createPurchaseOrder({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/purchase-orders\/[^/]+\/submit$/) && req.method==='POST'){
+    if(!can(actor,'submit')) return deny(res,403,`Role "${actor.role}" cannot submit Purchase Orders.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.submitPurchaseOrder({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/purchase-orders\/[^/]+\/approve$/) && req.method==='POST'){
+    if(!can(actor,'approve')) return deny(res,403,`Role "${actor.role}" cannot approve Purchase Orders.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.approvePurchaseOrder({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/purchase-orders\/[^/]+\/reject$/) && req.method==='POST'){
+    if(!can(actor,'approve')) return deny(res,403,`Role "${actor.role}" cannot reject Purchase Orders.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.rejectPurchaseOrder({id:pathname.split('/')[3], reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  // Phase 24 Part C7 — cancel an ALREADY-APPROVED PO (releases its commitment). Same 'approve'
+  // permission tier as reject/approve above — no new security concept.
+  if(pathname.match(/^\/api\/purchase-orders\/[^/]+\/cancel$/) && req.method==='POST'){
+    if(!can(actor,'approve')) return deny(res,403,`Role "${actor.role}" cannot cancel an approved Purchase Order.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.cancelApprovedPurchaseOrder({id:pathname.split('/')[3], reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  // Phase 24 Part C — Commitment view, project-linked, read-only (operational, not accounting).
+  if(pathname==='/api/commitments' && req.method==='GET'){
+    if(!isGLVisible(actor) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view commitments.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, ...D.projectCommitments(parsed.query.projectId||null)});
+  }
+
+  // ---- GRN ----
+  if(pathname==='/api/grns' && req.method==='GET'){
+    if(!PROC_VIEW_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view GRNs.`,{userId:actor.id,role:actor.role,path:pathname});
+    let rows = D.DB.grns;
+    if(actor.role==='ProjectManager') rows = rows.filter(g=>isProjectManagerOf(actor,g.projectId));
+    return sendJson(res,200,{ok:true, grns:rows});
+  }
+  if(pathname==='/api/grns' && req.method==='POST'){
+    if(!PROC_CREATE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create GRNs.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createGRN({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---- Inventory ----
+  if(pathname==='/api/inventory/stock' && req.method==='GET'){
+    const materialId = parsed.query.materialId, warehouseId = parsed.query.warehouseId;
+    return sendJson(res,200,{ok:true, stock: D.getStockLevel(materialId, warehouseId), movingAverageRate: D.getMovingAverageRate(materialId, warehouseId)});
+  }
+  if(pathname==='/api/inventory/movements' && req.method==='GET'){
+    if(!PROC_VIEW_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view inventory movements.`,{userId:actor.id,role:actor.role,path:pathname});
+    let rows = D.DB.inventoryMovements;
+    if(actor.role==='ProjectManager') rows = rows.filter(m=>m.projectId && isProjectManagerOf(actor,m.projectId));
+    const materialId = parsed.query.materialId;
+    if(materialId) rows = rows.filter(m=>m.materialId===materialId);
+    if(parsed.query.warehouseId) rows = rows.filter(m=>m.warehouseId===parsed.query.warehouseId);
+    if(parsed.query.projectId) rows = rows.filter(m=>m.projectId===parsed.query.projectId);
+    if(parsed.query.search){ const s = parsed.query.search.toLowerCase(); rows = rows.filter(m=>(m.sourceId||'').toLowerCase().includes(s) || (m.sourceType||'').toLowerCase().includes(s)); }
+    const p = paginate([...rows].reverse(), parsed.query);
+    return sendJson(res,200,{ok:true, movements:p.rows, total:p.total, page:p.page, pageSize:p.pageSize, hasMore:p.hasMore, paginated:p.paginated});
+  }
+
+  // ---- Supplier Invoice (3-way matched) ----
+  if(pathname==='/api/ap/invoice-from-po' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot create supplier invoices.`,{userId:actor.id,role:actor.role,path:pathname});
+    if(body.authorizedException && !['Admin','CEO','FinanceManager'].includes(actor.role)){
+      return deny(res,403,`Role "${actor.role}" cannot authorize a three-way-match exception.`,{userId:actor.id,role:actor.role,path:pathname});
+    }
+    const r = D.draftSupplierInvoiceFromPO({...body, createdByUserId:actor.id, createdByRole:actor.role});
+    return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/purchase-returns' && req.method==='POST'){
+    if(!PROC_CREATE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create Purchase Returns.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createPurchaseReturn({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/supplier-credit-notes' && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager','Accountant'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create Supplier Credit Notes.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createSupplierCreditNote({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  // Phase 24 Part B — Supplier Debit Note. SAME permission gate as Supplier Credit Note above —
+  // no new security framework, per instruction.
+  if(pathname==='/api/supplier-debit-notes/reasons' && req.method==='GET'){
+    return sendJson(res,200,{ok:true, reasons:D.SUPPLIER_DEBIT_NOTE_REASONS});
+  }
+  if(pathname==='/api/supplier-debit-notes' && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager','Accountant'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create Supplier Debit Notes.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createSupplierDebitNote({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---- Material Issue ----
+  if(pathname==='/api/material-issues' && req.method==='POST'){
+    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor, body.projectId)) && !PROC_CREATE_ROLES.has(actor.role)){
+      return deny(res,403,`Role "${actor.role}" cannot issue material for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    }
+    const r = D.createMaterialIssue({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---- Project Cost Breakdown (Committed/Received/Invoiced/Paid/Consumed) ----
+  if(pathname.match(/^\/api\/projects\/[^/]+\/cost-breakdown$/) && req.method==='GET'){
+    const id = pathname.split('/')[3];
+    const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
+    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor, id)) return deny(res,403,`Role "${actor.role}" cannot view cost breakdown for ${id}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:id});
+    return sendJson(res,200,{ok:true, breakdown: D.projectCostBreakdown(id)});
+  }
+  // Phase 11 §4 — Project Financial 360, same access tier as cost-breakdown (it's a superset).
+  if(pathname.match(/^\/api\/projects\/[^/]+\/financial-360$/) && req.method==='GET'){
+    const id = pathname.split('/')[3];
+    const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
+    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor, id)) return deny(res,403,`Role "${actor.role}" cannot view the financial 360 for ${id}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:id});
+    const r = D.projectFinancial360(id);
+    return sendJson(res, r.ok?200:404, r);
+  }
+
+  // ---- BOM / Production Order ----
+  if(pathname==='/api/boms' && req.method==='GET'){ return sendJson(res,200,{ok:true, boms:D.DB.boms}); }
+  if(pathname==='/api/boms' && req.method==='POST'){
+    if(!['Admin','CEO','Estimator'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create BOMs.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createBOM({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/boms\/[^/]+\/approve$/) && req.method==='POST'){
+    if(!can(actor,'approve')) return deny(res,403,`Role "${actor.role}" cannot approve BOMs.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.approveBOM({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/production-orders' && req.method==='GET'){ return sendJson(res,200,{ok:true, productionOrders:D.DB.productionOrders}); }
+  if(pathname==='/api/production-orders' && req.method==='POST'){
+    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor, body.projectId)) && !['Admin','CEO'].includes(actor.role)){
+      return deny(res,403,`Role "${actor.role}" cannot create a Production Order for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    }
+    const r = D.createProductionOrder({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  // Phase 9B fix: issue-material/complete/hold/resume/cancel/close had NO authorization gate at
+  // all — any authenticated role could call them on any real production order (issue-material
+  // in particular posts a real GL entry and consumes real inventory). Each now requires the
+  // same Admin/CEO-or-assigned-PM rule the order's own creation already required.
+  function prodOrderAllowed(actor, id){ const prod = D.DB.productionOrders.find(x=>x.id===id); return prod ? pmOrAdminCeo(actor, prod.projectId) : ['Admin','CEO','ProjectManager'].includes(actor.role); }
+  if(pathname.match(/^\/api\/production-orders\/[^/]+\/issue-material$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!prodOrderAllowed(actor, id)) return deny(res,403,`Role "${actor.role}" cannot issue material for this production order.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.issueProductionMaterial({productionOrderId:id, warehouseId:body.warehouseId, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/production-orders\/[^/]+\/labour-cost$/) && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot post production labour cost.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.postProductionLabourCost({productionOrderId:pathname.split('/')[3], amount:body.amount, actor, overrideReason:body.overrideReason}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/production-orders\/[^/]+\/complete$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!prodOrderAllowed(actor, id)) return deny(res,403,`Role "${actor.role}" cannot complete this production order.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.completeProductionOrder({id, actualQty:body.actualQty, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname==='/api/po-approval-rules' && req.method==='GET'){ return sendJson(res,200,{ok:true, rules:D.DB.poApprovalRules}); }
+
+  // ---- Production Order lifecycle extensions ----
+  if(pathname.match(/^\/api\/production-orders\/[^/]+\/hold$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!prodOrderAllowed(actor, id)) return deny(res,403,`Role "${actor.role}" cannot hold this production order.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.holdProductionOrder({id, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/production-orders\/[^/]+\/resume$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!prodOrderAllowed(actor, id)) return deny(res,403,`Role "${actor.role}" cannot resume this production order.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.resumeProductionOrder({id, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/production-orders\/[^/]+\/cancel$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!prodOrderAllowed(actor, id)) return deny(res,403,`Role "${actor.role}" cannot cancel this production order.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.cancelProductionOrder({id, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/production-orders\/[^/]+\/close$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!prodOrderAllowed(actor, id)) return deny(res,403,`Role "${actor.role}" cannot close this production order.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.closeProductionOrder({id, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ============================================================
+  // Phase 8 — Dispatch → Delivery → Installation → QC → Snag → Handover → Billing → AR
+  // ============================================================
+  const EXEC_CREATE_ROLES = new Set(['Admin','CEO','Purchase']);
+  function execAllowed(actor, projectId){ return EXEC_CREATE_ROLES.has(actor.role) || (actor.role==='ProjectManager' && isProjectManagerOf(actor, projectId)); }
+
+  if(pathname==='/api/dispatches' && req.method==='GET'){
+    let rows = D.DB.dispatches;
+    if(actor.role==='ProjectManager') rows = rows.filter(d=>isProjectManagerOf(actor,d.projectId));
+    else if(!PROC_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view Dispatches.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, dispatches:rows, statuses:D.DISPATCH_STATUSES});
+  }
+  if(pathname==='/api/dispatches' && req.method==='POST'){
+    if(!execAllowed(actor, body.projectId)) return deny(res,403,`Role "${actor.role}" cannot create a dispatch for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createDispatch({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  // Phase 9B fix: /ready and /dispatch had NO authorization gate at all — any authenticated
+  // role could mark any dispatch Ready or Dispatched. /approve was already correctly gated
+  // (finance-tier sign-off, intentionally not project-scoped) and is unchanged.
+  function dispatchAllowed(actor, id){ const dsp = D.DB.dispatches.find(x=>x.id===id); return dsp ? execAllowed(actor, dsp.projectId) : (EXEC_CREATE_ROLES.has(actor.role) || actor.role==='ProjectManager'); }
+  if(pathname.match(/^\/api\/dispatches\/[^/]+\/ready$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!dispatchAllowed(actor, id)) return deny(res,403,`Role "${actor.role}" cannot mark this dispatch ready.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.markDispatchReady({id, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/dispatches\/[^/]+\/approve$/) && req.method==='POST'){
+    if(!can(actor,'approve')) return deny(res,403,`Role "${actor.role}" cannot approve dispatches.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.approveDispatch({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/dispatches\/[^/]+\/dispatch$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!dispatchAllowed(actor, id)) return deny(res,403,`Role "${actor.role}" cannot mark this dispatch Dispatched.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.markDispatched({id, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname==='/api/deliveries' && req.method==='GET'){
+    let rows = D.DB.deliveries;
+    if(actor.role==='ProjectManager') rows = rows.filter(d=>isProjectManagerOf(actor,d.projectId));
+    return sendJson(res,200,{ok:true, deliveries:rows});
+  }
+  if(pathname==='/api/deliveries' && req.method==='POST'){
+    const dsp = D.DB.dispatches.find(x=>x.id===body.dispatchId);
+    if(!dsp || !execAllowed(actor, dsp.projectId)) return deny(res,403,`Role "${actor.role}" cannot confirm this delivery.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createDelivery({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname==='/api/installations' && req.method==='GET'){
+    let rows = D.DB.installations;
+    if(actor.role==='ProjectManager') rows = rows.filter(i=>isProjectManagerOf(actor,i.projectId));
+    return sendJson(res,200,{ok:true, installations:rows, statuses:D.INSTALLATION_STATUSES});
+  }
+  if(pathname==='/api/installations' && req.method==='POST'){
+    if(!execAllowed(actor, body.projectId)) return deny(res,403,`Role "${actor.role}" cannot create an installation for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createInstallation({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/installations\/[^/]+\/progress$/) && req.method==='POST'){
+    const inst = D.DB.installations.find(x=>x.id===pathname.split('/')[3]);
+    if(!inst || !execAllowed(actor, inst.projectId)) return deny(res,403,`Role "${actor.role}" cannot update this installation.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.updateInstallationProgress({id:pathname.split('/')[3], ...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  // Phase 15 §2 — Installation Cost, mirrors the existing Production Labour Cost route exactly.
+  if(pathname.match(/^\/api\/installations\/[^/]+\/labour-cost$/) && req.method==='POST'){
+    const inst = D.DB.installations.find(x=>x.id===pathname.split('/')[3]);
+    if(!inst || !execAllowed(actor, inst.projectId)) return deny(res,403,`Role "${actor.role}" cannot post installation labour cost.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.postInstallationLabourCost({installationId:pathname.split('/')[3], amount:body.amount, actor, overrideReason:body.overrideReason}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname==='/api/qc-checklists' && req.method==='GET'){
+    let rows = D.DB.qcChecklists;
+    if(actor.role==='ProjectManager') rows = rows.filter(q=>isProjectManagerOf(actor,q.projectId));
+    return sendJson(res,200,{ok:true, qcChecklists:rows});
+  }
+  if(pathname==='/api/qc-checklists' && req.method==='POST'){
+    if(!execAllowed(actor, body.projectId)) return deny(res,403,`Role "${actor.role}" cannot create a QC checklist for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createQCChecklist({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/qc-checklists\/[^/]+\/result$/) && req.method==='POST'){
+    const qc = D.DB.qcChecklists.find(x=>x.id===pathname.split('/')[3]);
+    if(!qc || !execAllowed(actor, qc.projectId)) return deny(res,403,`Role "${actor.role}" cannot submit this QC result.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.submitQCResult({id:pathname.split('/')[3], items:body.items, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname==='/api/snags' && req.method==='GET'){
+    let rows = D.DB.snags;
+    if(actor.role==='ProjectManager') rows = rows.filter(s=>isProjectManagerOf(actor,s.projectId));
+    return sendJson(res,200,{ok:true, snags:rows, statuses:D.SNAG_STATUSES, severities:D.SNAG_SEVERITIES});
+  }
+  if(pathname==='/api/snags' && req.method==='POST'){
+    if(!execAllowed(actor, body.projectId)) return deny(res,403,`Role "${actor.role}" cannot create a snag for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createSnag({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  // Phase 9B fix: assign/resolve/verify/close had NO authorization gate at all — any
+  // authenticated role could manipulate any project's snag lifecycle. verifySnag's own
+  // internal self-verification SoD check is unrelated and untouched; this adds the missing
+  // baseline "do you have execution authority on this project at all" check underneath it.
+  // Snag governance also allows any role with organizational approval authority (Admin/CEO/
+  // FinanceManager, via can(actor,'approve')) in addition to execAllowed — this preserves the
+  // Phase 8 design intent that snag VERIFICATION is meant to be done by someone independent of
+  // the execution chain (Phase 8's own tests use FinanceManager as that independent verifier,
+  // deliberately outside Purchase/PM). Narrowing this to execAllowed-only would have silently
+  // broken that already-tested, already-correct behavior while fixing the real gap (any role
+  // at all, with zero relationship to the project, could act) — found via regression after the
+  // initial fix, not shipped without re-testing.
+  function snagAllowed(actor, id){ const s = D.DB.snags.find(x=>x.id===id); const pid = s ? s.projectId : null; return s ? (execAllowed(actor, pid) || can(actor,'approve')) : (EXEC_CREATE_ROLES.has(actor.role) || actor.role==='ProjectManager' || can(actor,'approve')); }
+  if(pathname.match(/^\/api\/snags\/[^/]+\/assign$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!snagAllowed(actor, id)) return deny(res,403,`Role "${actor.role}" cannot assign this snag.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.assignSnag({id, assignedTo:body.assignedTo, dueDate:body.dueDate, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/snags\/[^/]+\/resolve$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!snagAllowed(actor, id)) return deny(res,403,`Role "${actor.role}" cannot resolve this snag.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.resolveSnag({id, resolution:body.resolution, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/snags\/[^/]+\/verify$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!snagAllowed(actor, id)) return deny(res,403,`Role "${actor.role}" cannot verify this snag.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.verifySnag({id, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/snags\/[^/]+\/close$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!snagAllowed(actor, id)) return deny(res,403,`Role "${actor.role}" cannot close this snag.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.closeSnag({id, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname==='/api/handovers' && req.method==='GET'){
+    let rows = D.DB.handovers;
+    if(actor.role==='ProjectManager') rows = rows.filter(h=>isProjectManagerOf(actor,h.projectId));
+    return sendJson(res,200,{ok:true, handovers:rows});
+  }
+  if(pathname==='/api/handovers' && req.method==='POST'){
+    if(!execAllowed(actor, body.projectId)) return deny(res,403,`Role "${actor.role}" cannot create a handover for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createHandover({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname==='/api/billing-milestones' && req.method==='GET'){
+    let rows = D.DB.billingMilestones;
+    if(actor.role==='ProjectManager') rows = rows.filter(m=>isProjectManagerOf(actor,m.projectId));
+    else if(!['Admin','CEO','FinanceManager','Accountant','Sales','Viewer'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view billing milestones.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, milestones:rows, types:D.MILESTONE_TYPES});
+  }
+  if(pathname==='/api/billing-milestones' && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager','Accountant','Sales'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create billing milestones.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createBillingMilestone({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/billing-milestones\/[^/]+\/ready$/) && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot confirm a milestone is ready to bill.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.markMilestoneReady({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/ar/invoice-from-milestone' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot create invoices.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.draftCustomerInvoiceFromMilestone({...body, createdByUserId:actor.id, createdByRole:actor.role}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  if(pathname.match(/^\/api\/projects\/[^/]+\/closure-readiness$/) && req.method==='GET'){
+    const id = pathname.split('/')[3];
+    const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
+    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor, id)) return deny(res,403,`Role "${actor.role}" cannot view closure readiness for ${id}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:id});
+    return sendJson(res,200,{ok:true, readiness: D.projectClosureReadiness(id)});
+  }
+  if(pathname.match(/^\/api\/projects\/[^/]+\/close$/) && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot close a project.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.closeProject({projectId:pathname.split('/')[3], actor, override:body.override, overrideReason:body.overrideReason}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ============================================================
+  // Phase 10 — After-Sales: Warranty → Complaint → Ticket → Visit → Diagnosis →
+  // Material/Labour → Chargeable Billing / AMC → CAPA
+  // ============================================================
+  // Reuses EVERY existing security primitive above (can/deny/isProjectManagerOf/execAllowed) —
+  // no new role, no new numbering, no new posting path. Per the Phase 9B lesson (14 lifecycle
+  // endpoints were found completely ungated), EVERY mutating action below — not just creation —
+  // has its own explicit gate from the start.
+  const AS_VIEW_ROLES = new Set(['Admin','CEO','FinanceManager','Accountant','Sales','Viewer']);
+  const AS_SUPERVISE_ROLES = new Set(['Admin','CEO','FinanceManager']); // triage/classification/CAPA judgment tier
+  // Operational execution tier for after-sales (visit/material/ticket work) — deliberately
+  // Admin/CEO/PM-assigned only (no Purchase): unlike procurement/dispatch, after-sales service
+  // work belongs to the project's own team, not the procurement function. Named distinctly from
+  // execAllowed (Phase 8) since the eligible role SET is genuinely different, not a duplicate.
+  function afterSalesAllowed(actor, projectId){ return ['Admin','CEO'].includes(actor.role) || (actor.role==='ProjectManager' && isProjectManagerOf(actor, projectId)); }
+  function customerVisible(actor, customerId){
+    if(AS_VIEW_ROLES.has(actor.role)){
+      if(actor.role==='Sales') return (actor.assignedCustomers||[]).includes(customerId);
+      return true;
+    }
+    if(actor.role==='ProjectManager'){ const p = D.DB.projects.find(x=>x.customerId===customerId); return p && isProjectManagerOf(actor, p.id); }
+    return false;
+  }
+
+  // ---- Warranty ----
+  if(pathname==='/api/warranties' && req.method==='GET'){
+    let rows = D.DB.warranties;
+    if(actor.role==='ProjectManager') rows = rows.filter(w=>isProjectManagerOf(actor,w.projectId));
+    else if(actor.role==='Sales') rows = rows.filter(w=>(actor.assignedCustomers||[]).includes(w.customerId));
+    else if(!AS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view warranties.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, warranties: rows.map(w=>({...w, effectiveStatus:D.warrantyEffectiveStatus(w)}))});
+  }
+  if(pathname==='/api/warranties' && req.method==='POST'){
+    if(!afterSalesAllowed(actor, body.projectId) && !['FinanceManager'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create a warranty for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createWarranty({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/warranties\/[^/]+\/void$/) && req.method==='POST'){
+    const r = D.voidWarranty({id:pathname.split('/')[3], reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/warranties\/[^/]+\/cancel$/) && req.method==='POST'){
+    const r = D.cancelWarranty({id:pathname.split('/')[3], reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/warranties/eligibility' && req.method==='POST'){
+    if(!AS_VIEW_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot check warranty eligibility.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.warrantyEligibility({...body}); return sendJson(res,200,{ok:true, ...r});
+  }
+
+  // ---- Complaint ----
+  if(pathname==='/api/complaints' && req.method==='GET'){
+    let rows = D.DB.complaints;
+    if(actor.role==='ProjectManager') rows = rows.filter(c=>c.projectId && isProjectManagerOf(actor,c.projectId));
+    else if(actor.role==='Sales') rows = rows.filter(c=>(actor.assignedCustomers||[]).includes(c.customerId));
+    else if(!AS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view complaints.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, complaints:rows, statuses:D.COMPLAINT_STATUSES});
+  }
+  if(pathname==='/api/complaints' && req.method==='POST'){
+    const allowed = ['Admin','CEO','Sales'].includes(actor.role) || (actor.role==='ProjectManager' && isProjectManagerOf(actor, body.projectId));
+    if(!allowed) return deny(res,403,`Role "${actor.role}" cannot create a complaint.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createComplaint({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/complaints\/[^/]+\/triage$/) && req.method==='POST'){
+    if(!AS_SUPERVISE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot triage complaints — a classification decision requires supervisory authority.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.triageComplaint({id:pathname.split('/')[3], classification:body.classification, notes:body.notes, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/complaints\/[^/]+\/status$/) && req.method==='POST'){
+    const cmp = D.DB.complaints.find(c=>c.id===pathname.split('/')[3]);
+    const allowed = cmp && (['Admin','CEO','FinanceManager','Sales'].includes(actor.role) || (actor.role==='ProjectManager' && isProjectManagerOf(actor, cmp.projectId)));
+    if(!allowed) return deny(res,403,`Role "${actor.role}" cannot change this complaint's status.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.changeComplaintStatus({id:pathname.split('/')[3], newStatus:body.newStatus, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---- Service Ticket ----
+  if(pathname==='/api/service-tickets' && req.method==='GET'){
+    let rows = D.DB.serviceTickets;
+    if(actor.role==='ProjectManager') rows = rows.filter(t=>t.projectId && isProjectManagerOf(actor,t.projectId));
+    else if(actor.role==='Sales') rows = rows.filter(t=>(actor.assignedCustomers||[]).includes(t.customerId));
+    else if(!AS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view service tickets.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, tickets:rows, classifications:D.TICKET_CLASSIFICATIONS, statuses:D.TICKET_STATUSES});
+  }
+  if(pathname==='/api/service-tickets' && req.method==='POST'){
+    if(!afterSalesAllowed(actor, body.projectId) && !AS_SUPERVISE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create a service ticket for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createServiceTicket({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  function ticketAllowed(actor, id){ const t = D.DB.serviceTickets.find(x=>x.id===id); return t ? (afterSalesAllowed(actor, t.projectId) || AS_SUPERVISE_ROLES.has(actor.role)) : (AS_SUPERVISE_ROLES.has(actor.role) || actor.role==='ProjectManager'); }
+  if(pathname.match(/^\/api\/service-tickets\/[^/]+\/assign$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!ticketAllowed(actor,id)) return deny(res,403,`Role "${actor.role}" cannot assign this ticket.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.assignServiceTicket({id, assignedTo:body.assignedTo, dueDate:body.dueDate, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/service-tickets\/[^/]+\/escalate$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!ticketAllowed(actor,id)) return deny(res,403,`Role "${actor.role}" cannot escalate this ticket.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.escalateServiceTicket({id, escalateTo:body.escalateTo, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/service-tickets\/[^/]+\/classification$/) && req.method==='POST'){
+    if(!AS_SUPERVISE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot classify a service ticket.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.setTicketClassification({id:pathname.split('/')[3], classification:body.classification, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/service-tickets\/[^/]+\/close$/) && req.method==='POST'){
+    if(!AS_SUPERVISE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot close a service ticket.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.closeServiceTicket({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/service-tickets\/[^/]+\/reject$/) && req.method==='POST'){
+    if(!AS_SUPERVISE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot reject a service ticket.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.rejectServiceTicket({id:pathname.split('/')[3], reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/service-tickets\/[^/]+\/closure-readiness$/) && req.method==='GET'){
+    const id = pathname.split('/')[3];
+    if(!ticketAllowed(actor,id)) return deny(res,403,`Role "${actor.role}" cannot view closure readiness for this ticket.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, readiness: D.serviceTicketClosureReadiness(id)});
+  }
+  if(pathname.match(/^\/api\/service-tickets\/[^/]+\/cost-breakdown$/) && req.method==='GET'){
+    const id = pathname.split('/')[3];
+    if(!AS_VIEW_ROLES.has(actor.role) && !ticketAllowed(actor,id)) return deny(res,403,`Role "${actor.role}" cannot view cost breakdown for this ticket.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, breakdown: D.serviceTicketCostBreakdown(id)});
+  }
+
+  // ---- Service Visit ----
+  // §40: Service Visits carry internal diagnosis/technician detail — deliberately narrower than
+  // AS_VIEW_ROLES (excludes Sales, unlike Warranty/Complaint/Ticket/AMC which are customer-facing
+  // status Sales legitimately needs); Sales still sees the parent ticket's status/classification.
+  if(pathname==='/api/service-visits' && req.method==='GET'){
+    let rows = D.DB.serviceVisits;
+    if(actor.role==='ProjectManager') rows = rows.filter(v=>v.projectId && isProjectManagerOf(actor,v.projectId));
+    else if(!['Admin','CEO','FinanceManager','Accountant','Viewer'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view service visits.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, visits:rows, statuses:D.VISIT_STATUSES});
+  }
+  if(pathname==='/api/service-visits' && req.method==='POST'){
+    if(!ticketAllowed(actor, body.ticketId)) return deny(res,403,`Role "${actor.role}" cannot create a visit for this ticket.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createServiceVisit({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  function visitAllowed(actor, id){ const v = D.DB.serviceVisits.find(x=>x.id===id); return v ? afterSalesAllowed(actor, v.projectId) : (['Admin','CEO'].includes(actor.role) || actor.role==='ProjectManager'); }
+  if(pathname.match(/^\/api\/service-visits\/[^/]+\/start$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!visitAllowed(actor,id)) return deny(res,403,`Role "${actor.role}" cannot start this visit.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.startServiceVisit({id, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/service-visits\/[^/]+\/diagnosis$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!visitAllowed(actor,id)) return deny(res,403,`Role "${actor.role}" cannot record diagnosis for this visit.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.recordDiagnosis({id, ...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/service-visits\/[^/]+\/complete$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!visitAllowed(actor,id)) return deny(res,403,`Role "${actor.role}" cannot complete this visit.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.completeServiceVisit({id, ...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/service-visits\/[^/]+\/cancel$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!visitAllowed(actor,id)) return deny(res,403,`Role "${actor.role}" cannot cancel this visit.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.cancelServiceVisit({id, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/service-visits\/[^/]+\/material-issue$/) && req.method==='POST'){
+    const id = pathname.split('/')[3];
+    if(!(visitAllowed(actor,id) || PROC_CREATE_ROLES.has(actor.role))) return deny(res,403,`Role "${actor.role}" cannot issue material for this visit.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.issueServiceMaterial({visitId:id, materialId:body.materialId, qty:body.qty, warehouseId:body.warehouseId, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/service-visits\/[^/]+\/labour-cost$/) && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot post service labour cost.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.postServiceLabourCost({visitId:pathname.split('/')[3], technicianId:body.technicianId, hours:body.hours, rate:body.rate, amount:body.amount, actor, overrideReason:body.overrideReason}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---- Chargeable Service Billing ----
+  if(pathname==='/api/service-invoice' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot create service invoices.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.draftServiceInvoice({...body, createdByUserId:actor.id, createdByRole:actor.role}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---- AMC ----
+  if(pathname==='/api/amc-contracts' && req.method==='GET'){
+    let rows = D.DB.amcContracts;
+    if(actor.role==='ProjectManager') rows = rows.filter(a=>a.projectId && isProjectManagerOf(actor,a.projectId));
+    else if(actor.role==='Sales') rows = rows.filter(a=>(actor.assignedCustomers||[]).includes(a.customerId));
+    else if(!AS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view AMC contracts.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, contracts:rows, statuses:D.AMC_STATUSES});
+  }
+  if(pathname==='/api/amc-contracts' && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager','Sales'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create an AMC contract.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createAMCContract({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/amc-contracts\/[^/]+\/activate$/) && req.method==='POST'){
+    const r = D.activateAMCContract({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/amc-contracts\/[^/]+\/cancel$/) && req.method==='POST'){
+    const r = D.cancelAMCContract({id:pathname.split('/')[3], reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/amc-contracts\/[^/]+\/renew$/) && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager','Sales'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot renew an AMC contract.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.renewAMCContract({id:pathname.split('/')[3], startDate:body.startDate, endDate:body.endDate, contractValue:body.contractValue, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/amc-schedules' && req.method==='GET'){
+    if(!AS_VIEW_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view AMC schedules.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, schedules:D.DB.amcSchedules});
+  }
+  if(pathname==='/api/amc-schedules' && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create an AMC schedule entry.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createAMCScheduleEntry({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/amc-schedules\/[^/]+\/link-ticket$/) && req.method==='POST'){
+    if(!afterSalesAllowed(actor, null) && !AS_SUPERVISE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot link an AMC schedule entry to a ticket.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.linkAMCScheduleToTicket({scheduleId:pathname.split('/')[3], ticketId:body.ticketId, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/amc-billing-invoice' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot create AMC billing invoices.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.draftAMCBillingInvoice({...body, createdByUserId:actor.id, createdByRole:actor.role}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---- CAPA ----
+  // §40: CAPA root-cause/corrective-action detail is internal quality investigation material —
+  // deliberately excludes Sales (and Purchase/Estimator), unlike the customer-facing AS_VIEW_ROLES set.
+  if(pathname==='/api/capa' && req.method==='GET'){
+    if(!['Admin','CEO','FinanceManager','Accountant','Viewer'].includes(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view CAPA cases.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, cases:D.DB.capaCases, statuses:D.CAPA_STATUSES, triggers:D.CAPA_TRIGGERS});
+  }
+  if(pathname==='/api/capa' && req.method==='POST'){
+    if(!AS_SUPERVISE_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot create a CAPA case.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createCAPACase({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  function capaAllowed(actor){ return AS_SUPERVISE_ROLES.has(actor.role) || actor.role==='ProjectManager'; }
+  if(pathname.match(/^\/api\/capa\/[^/]+\/analysis$/) && req.method==='POST'){
+    if(!capaAllowed(actor)) return deny(res,403,`Role "${actor.role}" cannot record CAPA root-cause analysis.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.recordCAPAAnalysis({id:pathname.split('/')[3], rootCause:body.rootCause, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/capa\/[^/]+\/action$/) && req.method==='POST'){
+    if(!capaAllowed(actor)) return deny(res,403,`Role "${actor.role}" cannot define CAPA corrective/preventive action.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.recordCAPAAction({id:pathname.split('/')[3], ...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/capa\/[^/]+\/verify$/) && req.method==='POST'){
+    if(!AS_SUPERVISE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot verify a CAPA action.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.recordCAPAVerification({id:pathname.split('/')[3], evidence:body.evidence, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/capa\/[^/]+\/effectiveness$/) && req.method==='POST'){
+    if(!AS_SUPERVISE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot record a CAPA effectiveness check.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.recordCAPAEffectivenessCheck({id:pathname.split('/')[3], effectivenessCheck:body.effectivenessCheck, effectivenessResult:body.effectivenessResult, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/capa\/[^/]+\/close$/) && req.method==='POST'){
+    if(!AS_SUPERVISE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot close a CAPA case.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.closeCAPACase({id:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---- Repeat Complaint History / Customer 360 (§25/§4) ----
+  if(pathname==='/api/repeat-complaint-history' && req.method==='GET'){
+    if(!AS_VIEW_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view repeat-complaint history.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, ...D.repeatComplaintHistory({customerId:parsed.query.customerId, projectId:parsed.query.projectId, product:parsed.query.product})});
+  }
+  if(pathname.match(/^\/api\/customers\/[^/]+\/after-sales-summary$/) && req.method==='GET'){
+    const customerId = pathname.split('/')[3];
+    if(!customerVisible(actor, customerId)) return deny(res,403,`Role "${actor.role}" cannot view after-sales summary for ${customerId}.`,{userId:actor.id,role:actor.role,path:pathname,customerId});
+    return sendJson(res,200,{ok:true, summary: D.customerAfterSalesSummary(customerId)});
+  }
+  // Phase 11 §8/§9 — company-wide After-Sales summary for Management/Finance dashboards.
+  if(pathname==='/api/after-sales-summary' && req.method==='GET'){
+    if(!['Admin','CEO','FinanceManager','Accountant','Viewer'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view the company-wide after-sales summary.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, summary: D.companyAfterSalesSummary()});
+  }
+  // Phase 11 §7 — Customer Profitability carries cost/margin figures (internal financial data,
+  // §40) — deliberately NARROWER than customerVisible (which includes Sales for status-only data).
+  if(pathname.match(/^\/api\/customers\/[^/]+\/profitability$/) && req.method==='GET'){
+    const customerId = pathname.split('/')[3];
+    const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
+    const pmOwnsAny = actor.role==='ProjectManager' && D.DB.projects.some(p=>p.customerId===customerId && isProjectManagerOf(actor, p.id));
+    if(!fullAccess.has(actor.role) && !pmOwnsAny) return deny(res,403,`Role "${actor.role}" cannot view profitability for ${customerId}.`,{userId:actor.id,role:actor.role,path:pathname,customerId});
+    return sendJson(res,200,{ok:true, profitability: D.customerProfitability(customerId)});
+  }
+
+  // ============================================================
+  // Phase 13 — Approved Policy Implementation
+  // ============================================================
+  // Placed here (after PROC_VIEW_ROLES/AS_VIEW_ROLES/isProjectManagerOf/ticketAllowed have all
+  // actually executed earlier in this request's pass) so every reference below is safe.
+
+  // POL-12 (approved: all 8 reports, CSV). Every export re-checks the SAME data-scope gate its
+  // live screen already uses — no export bypasses what the equivalent screen would deny. Every
+  // attempt (allowed or denied) is audited with user/date/time/report/filters/record-count/type.
+  if(pathname==='/api/export' && req.method==='POST'){
+    if(!can(actor,'export')) return deny(res, 403, `Role "${actor.role}" does not have export permission.`, {userId:actor.id, role:actor.role, path:pathname});
+    const report = body.report, filters = body.filters||{};
+    const glTierReports = new Set(['gl','ar','ap','project-pl']);
+    if(glTierReports.has(report) && !isGLVisible(actor)) return deny(res, 403, `Role "${actor.role}" cannot export "${report}" — GL-tier visibility required.`, {userId:actor.id, role:actor.role, path:pathname, report});
+    if(report==='inventory' && !PROC_VIEW_ROLES.has(actor.role)) return deny(res, 403, `Role "${actor.role}" cannot export inventory data.`, {userId:actor.id, role:actor.role, path:pathname, report});
+    if(report==='financial-360'){
+      const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
+      if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor, filters.projectId)) return deny(res, 403, `Role "${actor.role}" cannot export the Financial 360 for ${filters.projectId}.`, {userId:actor.id, role:actor.role, path:pathname, report});
+    }
+    if(report==='customer-profitability'){
+      const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
+      const pmOwnsAny = actor.role==='ProjectManager' && D.DB.projects.some(p=>p.customerId===filters.customerId && isProjectManagerOf(actor, p.id));
+      if(!fullAccess.has(actor.role) && !pmOwnsAny) return deny(res, 403, `Role "${actor.role}" cannot export profitability for ${filters.customerId}.`, {userId:actor.id, role:actor.role, path:pathname, report});
+    }
+    if(report==='after-sales' && !['Admin','CEO','FinanceManager','Accountant','Viewer'].includes(actor.role)) return deny(res, 403, `Role "${actor.role}" cannot export the after-sales summary.`, {userId:actor.id, role:actor.role, path:pathname, report});
+    const r = D.generateExport(report, filters, actor);
+    D.logAudit({type:'Export', report, filters, recordCount:r.recordCount||0, success:r.ok, userId:actor.id, role:actor.role});
+    return sendJson(res, r.ok?200:400, r);
+  }
+
+  // POL-06: Service Labour Rate Card (§19 — admin/management change, technicians view-only)
+  if(pathname==='/api/config/service-labour-rates' && req.method==='GET'){
+    return sendJson(res,200,{ok:true, rates:D.DB.serviceLabourRates});
+  }
+  if(pathname==='/api/config/service-labour-rates' && req.method==='POST'){
+    if(!['Admin','CEO'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot configure service labour rates — admin/management only.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.setServiceLabourRate({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/service-labour-rate' && req.method==='GET'){
+    return sendJson(res,200,{ok:true, ...D.getServiceLabourRate({technicianLevel:parsed.query.technicianLevel, skill:parsed.query.skill, location:parsed.query.location})});
+  }
+
+  // POL-07: Diagnosis Approval (₹10,000 threshold, approved)
+  if(pathname.match(/^\/api\/service-visits\/[^/]+\/diagnosis-approval$/) && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot approve a diagnosis — manager tier required.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.approveDiagnosis({visitId:pathname.split('/')[3], decision:body.decision, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // POL-08: Service SLA (Response=4h, Visit=72h, approved; Resolution NOT configured)
+  if(pathname.match(/^\/api\/service-tickets\/[^/]+\/sla$/) && req.method==='GET'){
+    const id = pathname.split('/')[3];
+    if(!ticketAllowed(actor,id)) return deny(res,403,`Role "${actor.role}" cannot view SLA status for this ticket.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, sla: D.ticketSlaStatus(id)});
+  }
+
+  // §14: Policy Configuration (admin/CEO only to change; broad read for visibility)
+  if(pathname==='/api/config/policies' && req.method==='GET'){
+    if(!['Admin','CEO','FinanceManager','Accountant','Viewer'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view policy configuration.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, policyConfig: D.DB.policyConfig, fixed: { grnTolerancePct:0, inventoryValuationMethod:'MovingAverage', amcRecognitionMethod:'Deferred/Monthly (Option B — approved)', roleModel:D.ROLES }});
+  }
+  if(pathname==='/api/config/policies' && req.method==='POST'){
+    if(!['Admin','CEO'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot change policy configuration — admin/management only.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.setPolicyConfig({key:body.key, value:body.value, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // POL-01: Rebill after a milestone-sourced invoice was reversed (Option B, approved)
+  if(pathname.match(/^\/api\/billing-milestones\/[^/]+\/rebill$/) && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager','Accountant','Sales'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create a rebill milestone.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createRebillMilestone({originalMilestoneId:pathname.split('/')[3], amount:body.amount, triggerNote:body.triggerNote, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // POL-05: AMC Deferred Revenue Recognition (Option B, approved)
+  if(pathname.match(/^\/api\/amc-contracts\/[^/]+\/revenue-schedule$/) && req.method==='GET'){
+    if(!AS_VIEW_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view AMC revenue schedule.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, schedule: D.amcRevenueSchedule(pathname.split('/')[3])});
+  }
+  if(pathname.match(/^\/api\/amc-contracts\/[^/]+\/recognize-revenue$/) && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager','Accountant'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot recognize AMC revenue.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.recognizeAMCRevenue({amcId:pathname.split('/')[3], periodDate:body.periodDate, actor, overrideReason:body.overrideReason}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // POL-10: Company-Wide Project Profitability (approved)
+  if(pathname==='/api/company-project-profitability' && req.method==='GET'){
+    if(!['Admin','CEO','FinanceManager','Accountant','Viewer'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view company-wide project profitability.`,{userId:actor.id,role:actor.role,path:pathname});
+    const q = parsed.query;
+    return sendJson(res,200,{ok:true, profitability: D.companyProjectProfitability({dateFrom:q.dateFrom, dateTo:q.dateTo, projectId:q.projectId, customerId:q.customerId, projectManagerId:q.projectManagerId, status:q.status})});
+  }
+
+  // ============================================================
+  // Phase 14 — SAP-Style Accounting Entry Architecture
+  // ============================================================
+  // §18 Branches
+  if(pathname==='/api/branches' && req.method==='GET'){
+    return sendJson(res,200,{ok:true, branches:D.DB.branches});
+  }
+  if(pathname==='/api/branches' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot manage branches.`,{userId:actor.id,role:actor.role,path:pathname});
+    if(!body.code || !body.name) return sendJson(res,400,{ok:false, error:'code and name are required.'});
+    const b = {id:'BR-'+body.code.toUpperCase(), code:body.code.toUpperCase(), name:body.name, active:true};
+    if(D.DB.branches.find(x=>x.id===b.id)) return sendJson(res,400,{ok:false, error:'Branch code already exists.'});
+    D.DB.branches.push(b); D.save();
+    D.logAudit({type:'BranchCreated', branchId:b.id, userId:actor.id, role:actor.role});
+    return sendJson(res,200,{ok:true, branch:b});
+  }
+
+  // §4 Customer Credit Note / Debit Note
+  if(pathname==='/api/customer-credit-notes' && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager','Accountant'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create Customer Credit Notes.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createCustomerCreditNote({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/customer-debit-notes' && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager','Accountant'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create Customer Debit Notes.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createCustomerDebitNote({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // #17/#18 Inventory Transfer / Adjustment
+  if(pathname==='/api/inventory-transfers' && req.method==='GET'){
+    if(!PROC_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view inventory transfers.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, transfers:D.DB.inventoryTransfers});
+  }
+  if(pathname==='/api/inventory-transfers' && req.method==='POST'){
+    if(!PROC_CREATE_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create inventory transfers.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createInventoryTransfer({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/inventory-adjustments' && req.method==='GET'){
+    if(!PROC_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view inventory adjustments.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, adjustments:D.DB.inventoryAdjustments});
+  }
+  if(pathname==='/api/inventory-adjustments' && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create inventory adjustments — manager tier required.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createInventoryAdjustment({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // §13 Attachments — generic, usable against any entityType/entityId
+  if(pathname==='/api/attachments' && req.method==='GET'){
+    if(!parsed.query.entityType || !parsed.query.entityId) return sendJson(res,400,{ok:false, error:'entityType and entityId query params are required.'});
+    return sendJson(res,200,{ok:true, attachments:D.listAttachments(parsed.query.entityType, parsed.query.entityId)});
+  }
+  if(pathname==='/api/attachments' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot upload attachments.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.attachFile({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/attachments\/[^/]+\/download$/) && req.method==='GET'){
+    const att = D.getAttachment(pathname.split('/')[3]);
+    if(!att) return sendJson(res,404,{ok:false, error:'Attachment not found.'});
+    return sendJson(res,200,{ok:true, filename:att.filename, mimeType:att.mimeType, base64Data:att.base64Data});
+  }
+  if(pathname.match(/^\/api\/attachments\/[^/]+$/) && req.method==='DELETE'){
+    if(!can(actor,'edit')) return deny(res,403,`Role "${actor.role}" cannot delete attachments.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.deleteAttachment(pathname.split('/')[3], actor); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // §14/§15 Journal Templates & Recurring Entries — creating a template/recurring rule needs
+  // masterData-tier authorization; INSTANTIATING one still goes through the normal 'create' gate,
+  // since it only ever produces a Draft, identical in authority to a hand-typed journal.
+  if(pathname==='/api/journal-templates' && req.method==='GET'){
+    return sendJson(res,200,{ok:true, templates:D.listJournalTemplates()});
+  }
+  if(pathname==='/api/journal-templates' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot create journal templates.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createJournalTemplate({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/journal-templates/instantiate' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot create journal entries.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createDraftFromTemplate({...body, createdByUserId:actor.id, createdByRole:actor.role}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/recurring-entries' && req.method==='GET'){
+    return sendJson(res,200,{ok:true, recurring:D.listRecurringEntries()});
+  }
+  if(pathname==='/api/recurring-entries' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot create recurring entries.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createRecurringEntry({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/recurring-entries/generate-due' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot generate recurring entries.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.generateDueRecurringDrafts({asOfDate:body.asOfDate, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // §16 Controlled CSV Import — validates and produces a Draft only, never a direct post.
+  if(pathname==='/api/import/journal-csv' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot import journal entries.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.importJournalCSV({...body, createdByUserId:actor.id, createdByRole:actor.role}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // §36 Entry-Type Catalogue — live, code-derived matrix of every accounting-relevant transaction
+  // type actually observed in posted data (not hand-maintained prose that could drift).
+  if(pathname==='/api/accounting/entry-types' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view the entry-type catalogue.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, entryTypes:D.entryTypeCatalogue()});
+  }
+
+  // ============================================================
+  // Phase 15 — Gap Closure
+  // ============================================================
+  // §3 Profit Centre
+  if(pathname==='/api/profit-centres' && req.method==='GET'){
+    return sendJson(res,200,{ok:true, profitCentres:D.listProfitCentres()});
+  }
+  if(pathname==='/api/profit-centres' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot manage profit centres.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createProfitCentre({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  // §5 Bank Reconciliation
+  if(pathname==='/api/bank-accounts' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view bank accounts.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, bankAccounts:D.listBankAccounts()});
+  }
+  if(pathname==='/api/bank-accounts' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot manage bank accounts.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createBankAccount({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  // Phase 24 Part A8 — per-account GL balances (Bank A/B, Cash A/B individually, not commingled).
+  if(pathname==='/api/bank-accounts/balances' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view bank/cash account balances.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, balances:D.bankAccountBalances()});
+  }
+  // Phase 24 Part A6 — Bank/Cash Transfer, still routed through the ONE central postJournalEntry().
+  if(pathname==='/api/bank-transfer' && req.method==='POST'){
+    if(!can(actor,'pay')) return deny(res,403,`Role "${actor.role}" is not authorized to transfer between bank/cash accounts.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createBankTransfer({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/bank-statement/import' && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager','Accountant'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot import bank statements.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.importBankStatement({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/bank-statement\/[^/]+\/match$/) && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager','Accountant'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot match bank statement lines.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.matchBankStatementLine({lineId:pathname.split('/')[3], entryId:body.entryId, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/bank-statement\/[^/]+\/unmatch$/) && req.method==='POST'){
+    if(!['Admin','CEO','FinanceManager'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot unmatch bank statement lines.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.unmatchBankStatementLine({lineId:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/bank-reconciliation' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view bank reconciliation.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, reconciliation:D.bankReconciliationStatus(parsed.query.bankAccountId)});
+  }
+  // §8 Branch — set a project's default branch (masterData-tier, mirrors other master-data gates)
+  if(pathname.match(/^\/api\/projects\/[^/]+\/branch$/) && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot set a project's branch.`,{userId:actor.id,role:actor.role,path:pathname});
+    if(body.branchId && !D.branchAllowed(actor, body.branchId)) return deny(res,403,`Role "${actor.role}" is not authorized to assign branch "${body.branchId}".`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.setProjectBranch({projectId:pathname.split('/')[3], branchId:body.branchId, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ============================================================
+  // Phase 17 §4 — Backup / Restore. Admin/CEO only; restore is the single most destructive
+  // action in this Lab, gated identically to `masterData` but checked explicitly here (not just
+  // via `can(actor,'masterData')`) so the intent is unambiguous in the route table itself.
+  // ============================================================
+  if(pathname==='/api/admin/backup' && req.method==='POST'){
+    if(!['Admin','CEO'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create a backup.`,{userId:actor.id,role:actor.role,path:pathname});
+    const meta = D.createBackup({label:body.label, actor});
+    return sendJson(res,200,{ok:true, backup:meta});
+  }
+  if(pathname==='/api/admin/backups' && req.method==='GET'){
+    if(!['Admin','CEO'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view backups.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, backups:D.listBackups()});
+  }
+  if(pathname==='/api/admin/restore' && req.method==='POST'){
+    if(!['Admin','CEO'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot restore a backup.`,{userId:actor.id,role:actor.role,path:pathname});
+    if(!body.filename) return sendJson(res,400,{ok:false, error:'filename is required.'});
+    const r = D.restoreBackup({filename:body.filename, actor});
+    return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ============================================================
+  // ============================================================
+  // Phase 19 §26/§27 — Fixed Assets. Create/Capitalize/Depreciate/Dispose need financial posting
+  // authority (`post`, same tier as approving/posting any other document); Transfer is a lighter
+  // register-only action gated at `edit`; View is masterData-adjacent but kept at GL-visible
+  // since this is genuine financial detail (asset cost, depreciation), same tier as Trial Balance.
+  // ============================================================
+  if(pathname==='/api/fixed-assets' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view the Fixed Asset register.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, assets:D.listFixedAssets()});
+  }
+  if(pathname==='/api/fixed-assets' && req.method==='POST'){
+    if(!can(actor,'create')) return deny(res,403,`Role "${actor.role}" cannot register a fixed asset.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createFixedAsset({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/fixed-assets\/[^/]+\/capitalize$/) && req.method==='POST'){
+    if(!can(actor,'post')) return deny(res,403,`Role "${actor.role}" cannot capitalize a fixed asset.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.capitalizeFixedAsset({...body, assetId:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/fixed-assets\/[^/]+\/depreciate$/) && req.method==='POST'){
+    if(!can(actor,'post')) return deny(res,403,`Role "${actor.role}" cannot post asset depreciation.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.postAssetDepreciation({...body, assetId:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/fixed-assets\/[^/]+\/transfer$/) && req.method==='POST'){
+    if(!can(actor,'edit')) return deny(res,403,`Role "${actor.role}" cannot transfer a fixed asset.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.transferFixedAsset({...body, assetId:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/fixed-assets\/[^/]+\/dispose$/) && req.method==='POST'){
+    if(!can(actor,'post')) return deny(res,403,`Role "${actor.role}" cannot dispose a fixed asset.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.disposeFixedAsset({...body, assetId:pathname.split('/')[3], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/fixed-assets/reconciliation' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view the Fixed Asset reconciliation.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, reconciliation:D.reconcileFixedAssets()});
+  }
+
+  // ============================================================
+  // Phase 20 §3/§4 — Master Data Import Framework. masterData-tier (Admin/CEO only), same gate
+  // as every other master-data action in this Lab (Branches/Profit Centres/Bank Accounts).
+  // ============================================================
+  if(pathname==='/api/master-import' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot import master data.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.importMasterData({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/master-import/types' && req.method==='GET'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot view master import types.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, types:Object.keys(D.MASTER_IMPORT_SPECS)});
+  }
+  if(pathname==='/api/master-import/batches' && req.method==='GET'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot view master import history.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, batches:D.DB.masterImportBatches});
+  }
+  // Single-record master creators — same masterData gate, used by both a future single-entry UI
+  // and internally by the import framework's per-row createRow().
+  if(pathname==='/api/masters/vendor' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot create a vendor.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createVendorMaster({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/masters/material' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot create a material.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createMaterialMaster({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/masters/project' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot create a project.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createProjectMaster({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/masters/cost-centre' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot create a cost centre.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createCostCentreMaster({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/masters/tax-code' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot create a tax code.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createTaxCodeMaster({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/masters/payment-method' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot create a payment method.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createPaymentMethodMaster({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/masters/account' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot create a GL account.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createAccountMaster({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ============================================================
+  // Phase 21 §5/§6 — Master Data Edit/Deactivate. Same 'masterData' gate (Admin/CEO only) as the
+  // single-record creators immediately above — not a new permission concept. Direct API access
+  // with a tampered/unknown ID is handled inside the domain functions themselves (record-not-found
+  // is a 400, never a silent success), consistent with every other ID-tamper defense in this file.
+  // ============================================================
+  if(pathname.match(/^\/api\/masters\/customer\/[^/]+\/edit$/) && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot edit a customer.`,{userId:actor.id,role:actor.role,path:pathname});
+    const customerId = pathname.split('/')[4];
+    const r = D.editCustomer({customerId, changes:body.changes, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/masters\/customer\/[^/]+\/active$/) && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot activate/deactivate a customer.`,{userId:actor.id,role:actor.role,path:pathname});
+    const customerId = pathname.split('/')[4];
+    const r = D.setCustomerActive({customerId, active:body.active, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/masters\/vendor\/[^/]+\/edit$/) && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot edit a vendor.`,{userId:actor.id,role:actor.role,path:pathname});
+    const vendorId = pathname.split('/')[4];
+    const r = D.editVendorMaster({vendorId, changes:body.changes, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/masters\/vendor\/[^/]+\/active$/) && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot activate/deactivate a vendor.`,{userId:actor.id,role:actor.role,path:pathname});
+    const vendorId = pathname.split('/')[4];
+    const r = D.setVendorActive({vendorId, active:body.active, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/masters\/material\/[^/]+\/edit$/) && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot edit a material.`,{userId:actor.id,role:actor.role,path:pathname});
+    const materialId = pathname.split('/')[4];
+    const r = D.editMaterialMaster({materialId, changes:body.changes, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/masters\/material\/[^/]+\/active$/) && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot activate/deactivate a material.`,{userId:actor.id,role:actor.role,path:pathname});
+    const materialId = pathname.split('/')[4];
+    const r = D.setMaterialActive({materialId, active:body.active, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  // Phase 21 §7/§8 — UoM Conversion configuration.
+  if(pathname.match(/^\/api\/masters\/material\/[^/]+\/uom-conversion$/) && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot configure UoM conversion.`,{userId:actor.id,role:actor.role,path:pathname});
+    const materialId = pathname.split('/')[4];
+    const r = D.setMaterialUomConversion({materialId, purchaseUom:body.purchaseUom, purchaseConversionFactor:body.purchaseConversionFactor, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ============================================================
+  // Phase 20 §7-§10 — Opening Balance Engine. Import is masterData-tier (creates DRAFTS only);
+  // the resulting drafts then go through the EXISTING Document Workflow Submit/Approve/Post
+  // gates (`submit`/`approve`/`post` permissions), unchanged, for real SoD.
+  // ============================================================
+  if(pathname==='/api/opening-balance/import' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot import opening balances.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.importOpeningBalance({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/opening-balance/types' && req.method==='GET'){
+    if(!can(actor,'masterData')) return deny(res,403,`Role "${actor.role}" cannot view opening balance types.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, types:Object.keys(D.OPENING_BALANCE_SPECS)});
+  }
+  if(pathname==='/api/opening-balance/batches' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view opening balance batches.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, batches:D.DB.openingBalanceBatches, lines:D.DB.openingBalanceLines});
+  }
+  if(pathname.match(/^\/api\/opening-balance\/drafts\/[^/]+\/post$/) && req.method==='POST'){
+    if(!can(actor,'post')) return deny(res,403,`Role "${actor.role}" cannot post an opening balance entry.`,{userId:actor.id,role:actor.role,path:pathname});
+    // Deliberately the SAME D.postDraft() the generic /api/journal/:id/post route calls (§16) —
+    // this dedicated route exists only for the Opening Balance screen's convenience, not as a
+    // separate posting path; the inventory-movement side-effect lives inside postDraft() itself
+    // so it fires identically no matter which route reaches it.
+    const r = D.postDraft(pathname.split('/')[4], actor, body.overrideReason); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/opening-balance/reconciliation' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view the opening balance reconciliation.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, reconciliation:D.reconcileOpeningBalances()});
+  }
+
+  // ============================================================
+  // Phase 19 §7-19 — ICICI Bank Import. Bank data is financial data (§32) — every route here is
+  // gated at least GL-visible; posting-adjacent actions (Match/Exclude/Return/Allocate/Reconcile)
+  // require `clear` (the same tier already used for AR/AP clearing), matching the existing
+  // reconciliation-authority model rather than inventing a new one.
+  // ============================================================
+  if(pathname==='/api/bank-import/batches' && req.method==='POST'){
+    if(!can(actor,'clear')) return deny(res,403,`Role "${actor.role}" cannot import a bank statement.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createBankImportBatch({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/bank-import/lines' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view bank import lines.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, lines:D.listBankImportLines(parsed.query)});
+  }
+  if(pathname.match(/^\/api\/bank-import\/lines\/[^/]+\/match$/) && req.method==='POST'){
+    if(!can(actor,'clear')) return deny(res,403,`Role "${actor.role}" cannot match a bank import line.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.matchBankImportLine({lineId:pathname.split('/')[4], entryId:body.entryId, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/bank-import\/lines\/[^/]+\/unmatch$/) && req.method==='POST'){
+    if(!can(actor,'clear')) return deny(res,403,`Role "${actor.role}" cannot unmatch a bank import line.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.unmatchBankImportLine({lineId:pathname.split('/')[4], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/bank-import\/lines\/[^/]+\/exclude$/) && req.method==='POST'){
+    if(!can(actor,'clear')) return deny(res,403,`Role "${actor.role}" cannot exclude a bank import line.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.excludeBankImportLine({lineId:pathname.split('/')[4], reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/bank-import\/lines\/[^/]+\/mark-returned$/) && req.method==='POST'){
+    if(!can(actor,'clear')) return deny(res,403,`Role "${actor.role}" cannot mark a bank import line as returned.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.markBankImportLineReturned({lineId:pathname.split('/')[4], returnOfLineId:body.returnOfLineId, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/bank-import\/lines\/[^/]+\/post$/) && req.method==='POST'){
+    if(!can(actor,'post')) return deny(res,403,`Role "${actor.role}" cannot post a bank import line to the GL.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.postBankImportLine({...body, lineId:pathname.split('/')[4], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/bank-import\/lines\/[^/]+\/reconcile$/) && req.method==='POST'){
+    if(!can(actor,'clear')) return deny(res,403,`Role "${actor.role}" cannot reconcile a bank import line.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.reconcileBankImportLine({lineId:pathname.split('/')[4], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/bank-import/reconciliation-summary' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view the bank reconciliation summary.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, summary:D.bankImportReconciliationSummary(parsed.query.bankAccountId)});
+  }
+  if(pathname==='/api/bank-import/batches' && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view bank import batches.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, batches:D.DB.bankImportBatches});
+  }
+
+  // Phase 18 §2/§3 — Financial Period Control. Create/Close/Reopen are gated inside
+  // domain.js itself (PERIOD_MANAGEMENT_ROLES / PERIOD_OVERRIDE_CONFIG_ROLES) — checked again
+  // here too, same belt-and-braces pattern as every other route, so a 403 is returned instead of
+  // a generic 400 when the role itself is wrong.
+  // ============================================================
+  if(pathname==='/api/financial-periods' && req.method==='GET'){
+    if(!can(actor,'view')) return deny(res,403,`Role "${actor.role}" cannot view financial periods.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, periods:D.listFinancialPeriods()});
+  }
+  if(pathname==='/api/financial-periods' && req.method==='POST'){
+    if(!['FinanceManager','CEO','Admin'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot create a financial period.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.createFinancialPeriod({name:body.name, startDate:body.startDate, endDate:body.endDate, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/financial-periods\/[^/]+\/close$/) && req.method==='POST'){
+    if(!['FinanceManager','CEO','Admin'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot close a financial period.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.closeFinancialPeriod({periodId:pathname.split('/')[3], reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/financial-periods\/[^/]+\/reopen$/) && req.method==='POST'){
+    if(!['FinanceManager','CEO','Admin'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot reopen a financial period.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.reopenFinancialPeriod({periodId:pathname.split('/')[3], reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/financial-periods\/[^/]+\/override-role$/) && req.method==='POST'){
+    if(!['CEO','Admin'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot configure a financial period's override role.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.setPeriodOverrideRole({periodId:pathname.split('/')[3], role:body.role, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/financial-periods\/[^/]+\/reconciliation$/) && req.method==='GET'){
+    if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view period-close reconciliation.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.periodCloseReconciliation(pathname.split('/')[3]); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---------- Admin: user/session management ----------
+  if(pathname==='/api/admin/users' && req.method==='GET'){
+    if(!can(actor,'masterData')) return deny(res, 403, `Role "${actor.role}" cannot view user administration.`, {userId:actor.id, role:actor.role, path:pathname});
+    return sendJson(res, 200, {ok:true, users: D.DB.users.map(u=>({id:u.id, username:u.username, name:u.name, role:u.role, active:u.active, assignedProjects:u.assignedProjects, assignedCustomers:u.assignedCustomers, lockedUntil:u.lockedUntil}))});
+  }
+  if(pathname==='/api/admin/sessions' && req.method==='GET'){
+    if(!can(actor,'masterData')) return deny(res, 403, `Role "${actor.role}" cannot view session administration.`, {userId:actor.id, role:actor.role, path:pathname});
+    return sendJson(res, 200, {ok:true, activeSessions: A.sessionCount()});
+  }
+  // Phase 19 §28 — Password Security. Create User / Authorized Recovery are masterData-tier
+  // (Admin/CEO only, same gate as every other user-administration action); Change Password is
+  // available to any authenticated user for their OWN account only (actor.id, never a body-
+  // supplied userId — cannot be used to change someone else's password).
+  if(pathname==='/api/admin/users' && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res, 403, `Role "${actor.role}" cannot create users.`, {userId:actor.id, role:actor.role, path:pathname});
+    const r = D.createUser({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/admin\/users\/[^/]+\/reset-password$/) && req.method==='POST'){
+    if(!can(actor,'masterData')) return deny(res, 403, `Role "${actor.role}" cannot reset another user's password.`, {userId:actor.id, role:actor.role, path:pathname});
+    const r = D.resetUserPassword({userId:pathname.split('/')[4], newPassword:body.newPassword, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname==='/api/change-password' && req.method==='POST'){
+    const r = D.changeOwnPassword({actor, currentPassword:body.currentPassword, newPassword:body.newPassword}); return sendJson(res, r.ok?200:400, r);
+  }
+
+  // ---------- Test-only: reset DB to fresh seed (used by the test harness, never by real users) ----------
+  if(pathname==='/api/test/reset' && req.method==='POST'){
+    if(!(actor.role==='Admin')) return deny(res, 403, 'Only Admin may reset test data.', {userId:actor.id, role:actor.role, path:pathname});
+    D.resetToFreshSeed();
+    return sendJson(res, 200, {ok:true});
+  }
+  // Test-only: backdate a ticket's SLA-relevant timestamps so the SLA engine's exact hour
+  // boundaries (4h/72h) can be verified without waiting real hours. Mirrors /api/test/reset —
+  // Admin-only, clearly test-infrastructure, never exposed to or usable by a real user role. NO
+  // ordinary endpoint anywhere accepts a caller-supplied SLA due date (POL-08's own requirement)
+  // — this exists solely so automated tests can verify the boundary math, not to let anyone
+  // manipulate a real ticket's SLA outcome.
+  if(pathname==='/api/test/backdate-ticket' && req.method==='POST'){
+    if(!(actor.role==='Admin')) return deny(res, 403, 'Only Admin may backdate test data.', {userId:actor.id, role:actor.role, path:pathname});
+    const tkt = D.DB.serviceTickets.find(t=>t.id===body.ticketId);
+    if(!tkt) return sendJson(res,404,{ok:false, error:'Ticket not found.'});
+    if(body.createdAt) tkt.createdAt = body.createdAt;
+    if(body.firstRespondedAt!==undefined) tkt.firstRespondedAt = body.firstRespondedAt;
+    D.save();
+    return sendJson(res, 200, {ok:true, ticket:tkt});
+  }
+  if(pathname==='/api/test/backdate-visit' && req.method==='POST'){
+    if(!(actor.role==='Admin')) return deny(res, 403, 'Only Admin may backdate test data.', {userId:actor.id, role:actor.role, path:pathname});
+    const vis = D.DB.serviceVisits.find(v=>v.id===body.visitId);
+    if(!vis) return sendJson(res,404,{ok:false, error:'Visit not found.'});
+    if(body.startTime!==undefined) vis.startTime = body.startTime;
+    D.save();
+    return sendJson(res, 200, {ok:true, visit:vis});
+  }
+
+  D.logAudit({type:'AccessDenied', reason:'no matching route', path:pathname, method:req.method, userId:actor.id, role:actor.role});
+  sendJson(res, 404, {ok:false, error:'Not found.'});
+}
+
+server.listen(PORT, ()=>{ console.log(`[Phase 6A] Appletree SAP Lab secure server listening on http://localhost:${PORT}`); });

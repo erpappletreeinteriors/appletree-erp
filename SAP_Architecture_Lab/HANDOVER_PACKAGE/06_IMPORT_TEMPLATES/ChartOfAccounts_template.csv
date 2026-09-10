@@ -1,0 +1,2 @@
+accountCode,accountName,accountType,parentAccount,controlAccount,taxRelevant,projectRelevant,costCentreRelevant,profitCentreRelevant
+TEST9001,TEST Suspense Account,Asset,,,,,,,

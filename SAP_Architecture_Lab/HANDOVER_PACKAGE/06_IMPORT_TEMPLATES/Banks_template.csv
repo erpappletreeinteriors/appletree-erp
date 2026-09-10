@@ -1,0 +1,2 @@
+bankName,accountName,accountNumberLast4,glAccount
+TEST Bank,TEST Account,,REPLACE-WITH-A-REAL-DISTINCT-GL-ACCOUNT-CODE
