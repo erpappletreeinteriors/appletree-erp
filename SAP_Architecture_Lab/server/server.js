@@ -560,7 +560,29 @@ const server = http.createServer(async (req, res) => {
     // this phase — they get zero benefit from an extra outer snapshot. Only requests NOT already
     // covered by a modern route (the genuinely legacy ~215) pay this wrapper's cost now.
     const isModernRoute = !!matchMutationRoute(req.method, pathnameForDispatch);
-    if(!MUTATING_METHODS.has(req.method) || isModernRoute){
+    // ERP-059 FIX (Phase ERP-059A, Option A from the forensic report) — /api/login is
+    // authentication/security bookkeeping, not a GL/inventory business transaction, but it was
+    // still being routed through this legacy-dispatch withTransaction() wrapper below like every
+    // other mutating legacy route. withTransaction()'s own rollback-on-ok:false rule — correct for
+    // ordinary business rejections, which validate before their first mutation — was silently
+    // erasing failedLoginCount/lockedUntil/loginHistory on every failed login, because a failed
+    // login INTENTIONALLY mutates that bookkeeping as the entire point of returning ok:false.
+    // Live-reproduced and root-caused in the ERP-059 forensic gate (see
+    // docs/erp-remediation/phases/PHASE-01-CLOSURE-ERP059-GATE-REPORT.md) — account lockout never
+    // actually triggered, no matter how many wrong passwords were sent.
+    //
+    // Fix: exclude /api/login from this wrapper entirely, mirroring the EXISTING isModernRoute
+    // bypass immediately below — not a new mechanism, just recognizing that login was never a fit
+    // for this boundary's intended purpose to begin with. login's own handler
+    // (handleRequest -> the /api/login if-block) already performs its own explicit D.save() calls
+    // for every branch (success, unknown/inactive user, locked, bad password) — nothing about how
+    // login persists its own state changes, and nothing about what it returns to the client, is
+    // duplicated or changed by this fix. All other legacy routes (including the ~22 other
+    // "logAudit(...Rejected); return {ok:false}" call sites the blast-radius report identified)
+    // remain wrapped exactly as before — this fix is deliberately scoped to login only, per the
+    // Phase ERP-059A brief's explicit "do not over-remediate" instruction.
+    const isLoginRoute = pathnameForDispatch === '/api/login' && req.method === 'POST';
+    if(!MUTATING_METHODS.has(req.method) || isModernRoute || isLoginRoute){
       handleRequest(req, res, body);
       return;
     }
