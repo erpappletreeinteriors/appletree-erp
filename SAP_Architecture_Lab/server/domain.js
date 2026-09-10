@@ -6921,11 +6921,20 @@ function createAMCContract({customerId, projectId, site, coveredSystems, startDa
   // when a projectId was also supplied its OWNERSHIP (project.customerId === customerId) was never
   // verified — live-proven by the audit: an AMC could reference a phantom customer, or a real
   // project belonging to a DIFFERENT customer than the one on the contract.
+  //
+  // PHASE 1 CLOSURE GATE FIX (regression found by the historical suite, amc_tests.js) — the FIRST
+  // version of this fix rejected a project whenever `_proj.customerId !== customerId`, which also
+  // fires when `_proj.customerId` is simply null/unset. Checked against real production data
+  // (server/db.json): 50 of 246 real projects have no customerId set at all (legacy/pre-linkage
+  // projects, e.g. PRJ-1) — the fresh test seed's PRJ-1..PRJ-5 are ALL like this. The original fix
+  // would have blocked AMC creation for roughly one in five real projects, a genuine regression,
+  // not a false positive in the test. An unset project.customerId is an ABSENCE of data, not proof
+  // of a mismatch — only a project that HAS a customerId AND it disagrees is a genuine conflict.
   if(!DB.customers.find(c=>c.id===customerId)) return {ok:false, error:`Unknown customer "${customerId}".`};
   if(projectId){
     const _proj = DB.projects.find(p=>p.id===projectId);
     if(!_proj) return {ok:false, error:`Unknown project "${projectId}".`};
-    if(_proj.customerId!==customerId) return {ok:false, error:`Project "${projectId}" belongs to customer "${_proj.customerId}", not "${customerId}" — an AMC contract's project must belong to the same customer.`};
+    if(_proj.customerId && _proj.customerId!==customerId) return {ok:false, error:`Project "${projectId}" belongs to customer "${_proj.customerId}", not "${customerId}" — an AMC contract's project must belong to the same customer.`};
   }
   if(!(+contractValue>0)) return {ok:false, error:'BUSINESS POLICY REQUIRED: AMC contract value must be explicitly specified — no default AMC price exists in this Lab.'};
   if(!serviceFrequencyMonths || +serviceFrequencyMonths<=0) return {ok:false, error:'BUSINESS POLICY REQUIRED: AMC service frequency (months between visits) must be explicitly specified.'};
@@ -9965,7 +9974,17 @@ const MASTER_IMPORT_SPECS = {
     createRow(row, actor){ return setServiceLabourRate({...row, actor}); }
   },
   Projects: {
-    requiredFields: ['name'],
+    // PHASE 1 CLOSURE GATE FIX (drift found by the historical suite's own reconciliation run,
+    // via this closure gate's ERP-044 regression test) — createProjectMaster() has always
+    // required a non-empty `migrationReason` (this IS the direct/administrative project-creation
+    // path, not the normal quotation pipeline — see its own header comment), but this spec's
+    // validateRow() never checked for it. Under the OLD, non-atomic importMasterData() engine this
+    // was merely a confusing single-row REJECTED result; under the Phase-1-then-Phase-2 atomic
+    // engine (ERP-017 fix) a row that passes Phase 1 but fails at Phase 2's createRow() call rolls
+    // back the ENTIRE batch — so this drift needed to be closed here, at its source, rather than
+    // surfacing as a misleading "should not happen" rollback error. Mirrors createProjectMaster's
+    // own exact requirement and message so the two can never drift again silently.
+    requiredFields: ['name', 'migrationReason'],
     validateRow(row){
       const errs = [];
       if(row.customerId && !DB.customers.find(c=>c.id===row.customerId)) errs.push(`Unknown customer "${row.customerId}".`);

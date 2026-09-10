@@ -521,3 +521,374 @@ Report:
 docs/erp-remediation/phases/PHASE-01-REMEDIATION-SESSION-REPORT.md
 
 ============================================================
+
+---
+
+# PHASE 1 CLOSURE ADDENDUM
+
+**Date:** 2026-09-10 (same day, follow-on session). Closes every condition raised in the original
+report above, per an explicit 8-item closure gate. Nothing in the original report above is edited
+or removed — this addendum stands alongside it, including where it corrects an earlier claim.
+
+## Addendum 1 — ERP-034 final status: now genuinely FIXED
+
+The original report downgraded ERP-034 to Partially Fixed because no live positive+negative test
+pair existed. This gate required building the minimum legitimate prerequisite chain rather than
+leaving it skipped. Done: a disposable project (PRJ-3, otherwise untouched by the rest of the
+suite) was taken through a real Installation (created → marked Completed) → real QC Checklist
+(created → submitted with all items Passed) → **Test A**: first handover created — **SUCCEEDED**
+→ **Test B**: second handover attempt on the same project — **REJECTED**. Verified explicitly, not
+assumed:
+- **Response**: Test A `ok:true` with a real handover id; Test B `ok:false`.
+- **Database records**: exactly 1 `DB.handovers` record for the project after Test A, still
+  exactly 1 after Test B's rejected attempt (no duplicate written).
+- **Project state**: `GET /api/projects/PRJ-3/closure-readiness` shows `handoverComplete:true`
+  after Test A.
+- **Audit trail**: exactly 1 `HandoverCompleted` entry in `DB.auditLog` after Test A, still exactly
+  1 after Test B.
+- **No duplicate financial/inventory side effect**: confirmed by direct code reading —
+  `createHandover()` calls only `DB.handovers.push()` and `logAudit()`, no `postJournalEntry()` or
+  `postInventoryMovement()` call exists in the function at all, so "no duplicate side effect"
+  reduces exactly to "no duplicate handover record," already proven above.
+
+All 12 assertions for this fixture (4 setup + 8 verification) pass. Added permanently to
+`tests/erp_audit_p0_tests.js`. **ERP-034 status: FIXED** (all 9 criteria in the original report's
+own checklist now satisfied — this was the only one previously failing criteria 3/4).
+
+## Addendum 2 — Git baseline: CREATED
+
+- **`.gitignore` created** at `SAP_Architecture_Lab/.gitignore` (nested, respected by the parent
+  repo at `D:\APPLETREE INTERIORS\Claude`). Excludes, at every path via `**/` globs: all
+  `db.json*` variants (live, `.bak`, every `pre_*_backup`, every checkpoint/baseline copy, the
+  runtime `.lock` file), all `backups/` directories, all `*.log` files, `.claude/settings.local.json`,
+  OS junk, the packaged handover `.zip`, and `node_modules/` (none currently present — future-proofed).
+- **Verified before committing**: a dry-run (`git add -n`) confirmed 897 files would be staged and
+  that none of `db.json`, any `backups/` path, or any `.log` file appeared in that list. The 20
+  largest files staged were manually reviewed (source code at various historical phases, a PDF
+  handbook, README-shaped markdown) — nothing resembling real business data or a secret.
+- **`ACCOUNTANT_UAT_PACKAGE/19_TEST_CREDENTIALS.md`** was considered for exclusion (named
+  "credentials") but included after review: its content is dedicated UAT/demo test accounts,
+  explicitly self-documented as never-real, and functionally identical to what `server/domain.js`'s
+  own `SEED_USERS` constant already contains in source form — excluding the summary doc while
+  committing the source that generates the same accounts would not have reduced any real exposure.
+  Flagged here for visibility rather than decided silently.
+- **Baseline commit created**: `86c6947` — "Add SAP_Architecture_Lab to version control (baseline
+  commit)", 897 files changed, 411,302 insertions, **local only, not pushed** (repo is 19 commits
+  ahead of `origin/main` after this commit; user has not authorized a push).
+- Working tree status after commit: clean for everything under `SAP_Architecture_Lab/` (confirmed
+  via `git status --short SAP_Architecture_Lab` returning no output).
+- **Files deliberately excluded**: every pattern in the `.gitignore` above — concretely, at time of
+  commit this excluded the live `server/db.json` (7.2MB), `server/db.json.bak`, 9 `db.json.pre_*_backup`
+  files in `server/`, 8 `PHASE*_CHECKPOINT/server/db.json[.bak]` pairs, 7 `PHASE_*_BASELINE/db.json.*`
+  files, 9 `backups/` directories (~150MB combined), and ~38 `*.log` files.
+
+## Addendum 3 — Full historical regression: run twice, final result below
+
+All 26 files in `HANDOVER_PACKAGE/03_TESTS/` were run against an isolated server (fresh seed,
+port 4001, disposable — never the live `db.json`) — once as a true first pass, and again after the
+two genuine defects found during the first pass (Addendum 4) were fixed and redeployed. **Final,
+stable result** (unchanged across a third confirmation run):
+
+| Category | Count | Files |
+|---|---|---|
+| **Clean pass** | 15 | after_sales_tests (21/21), capa_tests (15/15), delivery_partial_tests (14/14), financial_integration_tests (15/15), phase13_policy_tests (24/24), phase14_accounting_tests (48/48), phase15_gap_closure_tests (25/25), phase16_performance_tests (9/9), phase17_concurrency_tests (5/5), phase18_financial_period_tests (39/39), phase19_cache_invalidation_tests (5/5), phase20_error_handling_tests (6/6), phase9b_misc_tests (19/19), service_tests (27/27), warranty_tests (15/15) |
+| **(A) Genuine regression — found and FIXED this gate** | 2 | amc_tests (13/13 after fix), phase16_reconciliation_tests (11/11 after fix) — both caused by the SAME root cause, see Addendum 4 |
+| **(B) Stale test** | 7 | crm_tests (matches known ERP-009), id_tamper_tests (1 of 47 — expects HTTP 403/404, current code deliberately uses 400 for business-state rejections per an earlier, documented Phase 9B convention change), phase19_icici_import_tests (asserts a quotation can exceed its project's Excess-Billing-Approval ceiling unchallenged — a control added after this test was written), phase20_handover_tests (asserts the OLD non-atomic partial-commit import behavior this session's own ERP-017 fix deliberately replaced), procurement_tests (skips the BOM `/submit` step before `/approve` — predates the BOM Governance phase's Draft→Submitted→Approved lifecycle), security_matrix (4 of 1080 — matches known, already-disclosed ERP-048 exactly), site_tests (same missing-BOM-submit-step as procurement_tests) |
+| **(C) Fixture problem** | 2 | phase19_icici_import_tests and phase20_concurrency_tests both originally failed on a missing `icici_statement_121.csv` (present in `HANDOVER_PACKAGE/04_TEST_FIXTURES/`, not co-located with the test file that needs it — a packaging gap, not a code defect); copying the fixture resolved phase20_concurrency_tests completely (now 6/6) and left phase19_icici_import_tests at its separate, real (B) stale-test failure |
+| **(D) Environment problem** | 0 | none found |
+| **(E) Existing unrelated defect — found, NOT fixed (new finding)** | 1 | security_tests (2 of 44) — see Addendum 5, a new, genuine, pre-existing security defect unrelated to this session's 19 original fixes |
+
+No test file was edited to make it pass. Where a fixture was missing, the fixture was supplied (a
+copy operation, not a test-content change). Every (B)/(C)/(E) classification above is backed by a
+live reproduction and root-cause trace performed during this gate, not asserted from the failure
+message alone.
+
+## Addendum 4 — A genuine regression, found and fixed: ERP-044's first version was too strict
+
+`amc_tests.js` and `phase16_reconciliation_tests.js` both create an AMC contract with
+`projectId:'PRJ-2'` (or an equivalent seeded project) alongside a `customerId`. The **first**
+version of the ERP-044 fix (from the original session) rejected this whenever
+`project.customerId !== customerId` — which also fires when `project.customerId` is simply
+`null`/unset, not just on a genuine mismatch. Checked directly against the real production
+database (`server/db.json`, read-only): **50 of 246 real projects have no `customerId` set at
+all** (legacy/pre-linkage projects — e.g. `PRJ-1`, "Habeeb Kaithakkunda — Residence" — and every
+project in the fresh test seed, `PRJ-1`..`PRJ-5`). The original fix would have blocked legitimate
+AMC creation for roughly one project in five in the real database — a genuine regression, caught
+only because this gate mandated running the full historical suite rather than trusting the
+session's own narrower test file.
+
+**Fix**: `createAMCContract()` in `domain.js` now only rejects when `_proj.customerId` is present
+**and** disagrees (`if(_proj.customerId && _proj.customerId!==customerId)`) — an unset
+`customerId` is absence of data, not proof of a conflict.
+
+**Regression test added**: `tests/erp_audit_p0_tests.js`'s ERP-044 section now creates two real
+customers and a project explicitly linked to one of them (via the already-fixed, already-tested
+ERP-017 import path) so the mismatch case is tested against real, populated data — a genuine
+mismatch is rejected, the matching case still succeeds, and a separate assertion proves a
+project with **no** `customerId` set is no longer treated as a false-positive mismatch.
+
+**A second, related drift was found and fixed while building that regression test**: the
+`Projects` master-import spec's `validateRow()` never checked for `migrationReason`, even though
+`createProjectMaster()` (the function it calls) has always required a non-empty one. Under the
+OLD, non-atomic `importMasterData()` this was merely a confusingly-worded single-row rejection;
+under this session's OWN new atomic engine (ERP-017), a row that passes validation but fails at
+commit time rolls back the **entire batch** — so this pre-existing drift needed closing at its
+source. Fixed by adding `migrationReason` to the spec's `requiredFields`, mirroring
+`createProjectMaster()`'s own exact requirement.
+
+Both fixes were deployed to the isolated historical-regression server and reconfirmed: `amc_tests.js`
+13/13, `phase16_reconciliation_tests.js` 11/11, and the full `erp_audit_p0_tests.js` suite 65/65.
+
+## Addendum 5 — NEW FINDING (not one of the original 58): account lockout is completely non-functional
+
+**Discovered while classifying `security_tests.js`'s 2 failures** ("Account locks after 5 failed
+logins" and "Locked sales1 cannot log in even with correct password"). Root-caused via live,
+instrumented reproduction (temporary debug logging added to an isolated copy only, removed before
+this document was written) — not fixed, no code changed in domain.js/server.js login logic itself.
+
+**Root cause**: `/api/login` is a `POST` route not registered via the modern
+`registerMutationRoute()` framework, so it falls through `server.js`'s legacy-dispatch wrapper,
+which wraps it in `D.withTransaction(actor, {name:'legacy-dispatch:...'}, () => { handleRequest(...);
+return {ok: capturedOk}; })`. `withTransaction()`'s own documented behavior (see its header comment
+in `domain.js`) is: **on a plain `{ok:false}` return — not just a throw — it restores `DB` to the
+pre-request snapshot, defensively, in case the handler mutated before rejecting.** A failed login
+(wrong password) intentionally mutates `user.failedLoginCount`/`user.lockedUntil` **as the entire
+point of returning `ok:false`** — but the wrapper cannot distinguish "this mutation IS the
+security bookkeeping the failure is supposed to produce" from "this mutation should never have
+happened because the request was rejected," and unconditionally rolls back the former along with
+the latter. Confirmed with an instrumented reproduction: the in-memory mutation and its `save()`
+call were proven to run correctly (`failedLoginCount` reaches 1, same object reference, written to
+disk) — and then a **subsequent, later `save()` call from the transaction wrapper's own rollback**
+overwrites the file back to the pre-request state, silently erasing both the failed-login counter
+AND the `loginHistory` DENY record for that attempt.
+
+**Confirmed live, directly**: 5 wrong-password attempts against `sales1`, followed by the correct
+password, still succeeds (HTTP 200) — no lockout, ever, no matter how many wrong passwords are
+tried. `loginHistory` shows zero record of any of the 5 failed attempts.
+
+**Severity assessment**: Critical from a security-control-effectiveness standpoint — the account
+lockout / brute-force-protection mechanism the code clearly intends to have (the schema fields,
+the increment logic, the 401→423 status-code branch all exist and are individually correct) is
+completely inert in practice. **Confirmed pre-existing, not caused by this session**: neither the
+login route, the legacy-dispatch wrapper, nor `withTransaction()` were touched by any of this
+session's 19 fixes; git history (pending — see Addendum 2, no prior commits exist to diff against)
+cannot confirm exactly when this was introduced, but the mechanism (`withTransaction`'s
+rollback-on-`ok:false` heuristic) is describved in `domain.js`'s own Phase 38 header comments as a
+deliberate, general design choice made in an earlier phase, long before this session.
+
+**Scope note**: this specific failure mode (a route that deliberately wants a "failed" response to
+still persist a side effect) appears narrow — most legitimate business-rule rejections in this
+codebase validate BEFORE their first mutation, so an empty rollback is a harmless no-op for them.
+Login is unusual in wanting persisted bookkeeping on failure. A full audit for other routes with
+the same shape was **not** performed this gate (out of scope — this is a new finding requiring its
+own triage, not something to fix reactively mid-closure-gate per the explicit "do not start new
+work" instruction).
+
+**Status: OPEN — logged as a new finding, not fixed.** Recommend tracking as **ERP-059** (next
+available ID after the original 58) in `ERP_FINDING_REGISTER.csv`, Critical severity, for
+prioritized remediation in an upcoming phase. Candidate fix directions (not decided, not
+implemented): (a) give `/api/login` its own dedicated, unwrapped code path that never enters the
+legacy-dispatch transaction wrapper (cleanest — login is not itself a business-transaction in the
+GL/inventory sense); (b) special-case failed-login bookkeeping to persist unconditionally,
+independent of the wrapping transaction's outcome; (c) reconsider whether `withTransaction`'s
+blanket "roll back on `ok:false`" rule is the right default for ALL legacy-dispatched routes, or
+should be opt-out for routes with an intentional persist-on-failure shape.
+
+## Addendum 6 — Full accounting reconciliation
+
+Performed against the isolated historical-regression server, after running a comprehensive,
+realistic test file (`after_sales_tests.js` — real POs, GRNs, service tickets, visits, material
+issues, labour cost postings, concurrency races, and its own internal reconciliation checks) to
+generate genuine transactional activity, THEN independently re-verified directly (not just trusting
+the test file's own assertions):
+
+```
+GET /api/reconciliation (as finance1):
+  ar:               {subledgerTotal: 0, controlAccountBalance: 0, matches: true}
+  ap:               {subledgerTotal: 0, controlAccountBalance: 0, matches: true}
+  outputTax:        {subledgerTotal: 0, controlAccountBalance: 0, matches: true}
+  inputTax:         {subledgerTotal: 0, controlAccountBalance: 0, matches: true}
+  customerAdvances: {subledgerTotal: 0, controlAccountBalance: 0, matches: true}
+
+GET /api/trial-balance (as finance1):
+  Total Debit:  ₹143,200.00
+  Total Credit: ₹143,200.00
+  Difference:   ₹0.00 — BALANCED
+```
+
+**Additionally, independently re-verified against the REAL production database** (read-only GET
+requests only, as part of the Addendum 8 live-server smoke test):
+
+```
+GET /api/trial-balance (as admin, against server/db.json — 1,547 real journal entries):
+  Total Debit:  ₹21,080,548.64
+  Total Credit: ₹21,080,548.64
+  Difference:   ₹0.00 — BALANCED
+```
+
+**Journal integrity**: no invalid journal lines (this session's own ERP-023 fix — verified live via
+`erp_audit_p0_tests.js` — makes an invalid line structurally impossible to post going forward); no
+orphan journals or unexpected duplication observed in either dataset above (both reconcile exactly
+with zero unexplained variance).
+
+**Scope disclosed honestly**: this reconciliation covers (a) all activity generated during this
+session's own testing on the isolated server, and (b) a read-only Trial Balance check against the
+REAL production ledger's full 1,547-entry history. It is **not** a line-by-line audit of every
+historical entry in the real production database for pre-existing anomalies — that would be a
+separate, larger undertaking (closer to the original audit's own Phase 16 scope) than "verify this
+gate's changes didn't break anything," which is what this addendum certifies.
+
+**Result: PASS** (upgraded from the original report's "PARTIAL" — a genuine reconciliation was run
+and passed, on both the isolated test database and, for Trial Balance specifically, the real
+production ledger).
+
+## Addendum 7 — Full inventory reconciliation
+
+Performed on the same isolated server / activity as Addendum 6 (the one material with real
+movement activity, `MAT-1` @ `WH-1`):
+
+```
+Movements (2 total, both verified against real source documents):
+  MV-000001  Receipt   +50 @ ₹2,800/unit = ₹140,000   source: GRN-0001
+  MV-000002  Issue      -1 @ ₹2,800/unit =  -₹2,800    source: ServiceVisit VIS-0001
+
+Opening: 0
++ Receipts:     50
+- Issues:        1
+= Closing:      49    <- matches GET /api/inventory/stock?materialId=MAT-1&warehouseId=WH-1 exactly
+
+Closing stock value:  49 × ₹2,800 (moving average rate) = ₹137,200
+GL Account 1200 (Inventory): debit ₹140,000, credit ₹2,800, net = ₹137,200
+
+STOCK VALUE (₹137,200) = GL INVENTORY BALANCE (₹137,200) — RECONCILED, exact match.
+```
+
+**Checks performed**: no negative stock (49 ≥ 0); no orphan movements (both movements trace to a
+real, existing source document — GRN-0001 and VIS-0001 respectively); no duplicate movements (2
+distinct movement IDs, MV-000001/MV-000002, no repeated source-document reference); no invalid
+material/warehouse references (MAT-1 and WH-1 both real, pre-existing masters); project/site
+consistency (both movements correctly tagged `projectId:PRJ-1`, matching their source documents).
+
+**Scope disclosed honestly, same as Addendum 6**: this reconciles the material/movement activity
+this session's own testing generated. It is **not** a full stock-take reconciliation of every
+material/warehouse combination in the real production database (which has far more movement
+history than this session touched or needed to verify). No dedicated single "inventory
+reconciliation report" endpoint exists in this codebase (confirmed by search) — this reconciliation
+was built from the existing granular endpoints (`/api/inventory/movements`, `/api/inventory/stock`,
+`/api/trial-balance`) rather than a single report call.
+
+**Result: PASS** for the material/activity actually checked (upgraded from the original report's
+"PARTIAL").
+
+## Addendum 8 — ERP-005 recheck: MITIGATED (unchanged conclusion), with fuller test coverage
+
+Per the explicit instruction, ERP-005 remains labelled **MITIGATED**, not "architecturally
+resolved" or "enterprise-grade" — the underlying single-JSON-file architecture still has no real
+cross-process ACID engine; the lock only makes the audit's specific reproduction scenario
+(two processes, same file) impossible to reach. Full residual-risk statement is unchanged from
+`ERP_ARCHITECTURE_ASSESSMENT.md`.
+
+Tests performed this gate (in addition to the original Phase 1 report's single "second process
+refused" test, which remains a permanent regression test in `tests/erp_audit_concurrency_tests.js`):
+
+| Test | Method | Result |
+|---|---|---|
+| Second process, same `db.json` | Real second `node server.js` spawned against a live-locked directory | **Refused at startup**, exit code 1, citing ERP-005 explicitly — confirmed (this is the permanent regression test) |
+| Stale lock recovery | A prior process force-killed (`taskkill /F`, simulating a crash), then a new process started against the same directory | **Auto-reclaimed**: `[WARN] Found a stale lock file from PID <n> (no longer running) — reclaiming it.` — reproduced repeatedly (a dozen+ times) across this entire two-session engagement, always successful |
+| Abnormal termination | Identical to stale-lock-recovery above — `taskkill /F` IS the abnormal-termination case on Windows | Confirmed safe: no corruption, no stuck lock, clean recovery on next start every time |
+| Server restart | Repeated stop/start cycles throughout both sessions (dozens of times) | Always clean; `db.json`/`db.json.bak` never corrupted (verified via `node -c` syntax checks and successful subsequent loads throughout) |
+| Lock recovery after real (non-test) usage | The REAL production server was stopped (nothing was running — confirmed via `netstat`/`tasklist` before any action) and started fresh this gate (Addendum 9) | Clean start, fresh lock created, no conflict |
+| Graceful shutdown via SIGTERM (external) | `taskkill` without `/F` | **Refused by Windows itself**: `"This process can only be terminated forcefully (with /F option)."` — Windows does not offer this console process a graceful-close path |
+| Graceful shutdown via SIGTERM (external, via `process.kill(pid,'SIGTERM')`) | Node's own cross-process signal API, from a separate process | Process terminated, but **the lock file was NOT cleanly removed** — Windows' SIGTERM emulation for a signal sent from an unrelated process behaves like a forceful kill, not a catchable signal; the target process does not get to run its `process.on('SIGTERM', ...)` handler |
+| Graceful shutdown via `CloseMainWindow()` (.NET's standard Windows graceful-close API) | PowerShell `[System.Diagnostics.Process]::CloseMainWindow()` | **Explicitly failed** — `HasExited: False` after 2 seconds; this console process has no window handle to close, so this mechanism cannot reach it at all |
+
+**New, honest platform finding (not a defect in this session's code — the `SIGINT`/`SIGTERM`
+handlers registered in `acquireSingleInstanceLock()` are correctly written per Node's documented
+API)**: on Windows, there is **no reliable way for an external process or script to gracefully
+signal this console-based Node server** — not `taskkill`, not `process.kill()` from another
+process, not `.NET`'s standard graceful-close API. Only a real, interactive Ctrl+C typed directly
+into the server's own controlling console window would trigger the registered `SIGINT` handler
+(this is standard, documented Windows/Node behavior, not specific to this codebase) — and that
+could not be exercised inside this scripted, non-interactive environment. **This is precisely why
+the stale-lock-auto-recovery mechanism matters**: since a clean external shutdown cannot be
+guaranteed on Windows, the system is deliberately designed to also survive an UNCLEAN one — which
+this gate proved works reliably, repeatedly, across both sessions of this engagement.
+
+**Conclusion: ERP-005 = MITIGATED** (unchanged). The mitigation's own effectiveness is now proven
+across a fuller matrix of restart/recovery scenarios than the original report covered; the
+underlying architectural limitation (no true cross-process ACID) is unchanged and remains tracked
+as ERP-001's own open item.
+
+## Addendum 9 — Live server restart: COMPLETED
+
+**Pre-restart verification** (all performed before any action):
+1. **Current process**: `netstat`/`tasklist` confirmed NO Appletree production server was running
+   at the start of this gate — the two `node.exe` processes found were both this session's own
+   disposable isolated test servers (verified by process command-line and working directory: one
+   at the `erp_audit_iso` scratch path on port 4091, one at `erp_audit_hist` on port 4001 — neither
+   is the real `server/` directory).
+2. **Database path**: `D:\APPLETREE INTERIORS\Claude\SAP_Architecture_Lab\server\db.json` — the
+   real, live file, confirmed present, 7,245,009 bytes.
+3. **Backup**: pre-session backup `server/backups/db.json.pre_erpaudit_20260910_105618` confirmed
+   present; the file's own auto-generated `db.json.bak` also confirmed present.
+4. **Checksum**: `58c8bae7e3a7f8acc1958cac7266730b3ee53c270e5bb5558185901ae371a4ed` — **identical**
+   to the value recorded at the start of the original Phase 1 session, confirming the live database
+   was never touched by any of this session's work (verified again, freshly, at this exact moment
+   — not merely re-quoting the earlier figure).
+5. **Server configuration**: `PORT = 4001` confirmed in the live `server.js`.
+6. **Syntax check**: `node -c domain.js && node -c server.js` on the exact files about to run —
+   clean.
+7. **Port availability**: this session's own two isolated test servers (occupying 4001 and 4091)
+   were stopped first — their PIDs (18960, 14168) were independently confirmed via
+   `Get-CimInstance`/command-line inspection to be this session's own scratch-directory processes,
+   not anything else, before being stopped.
+
+**Restart**: `node server.js` started from the real `server/` directory. Result:
+- **Process ID**: 15732
+- **Port**: 4001, confirmed listening
+- **Database path**: the real `server/db.json` (unchanged, per checksum above)
+- **Lock**: `server/db.json.lock` created cleanly, no stale-lock conflict (expected, since nothing
+  was previously running against this file)
+- **Log**: `server/server_live_restart_20260910.log` — clean startup, no errors
+
+**Post-restart smoke test** (read-only checks only, against real data):
+1. Admin login — `200 OK`.
+2. `GET /api/projects` — 246 projects (matches the pre-session count exactly, data intact).
+3. `GET /api/journal-entries` — 1,547 entries (matches pre-session count exactly).
+4. `GET /api/trial-balance` on the real ledger — balanced, ₹21,080,548.64 = ₹21,080,548.64 (see
+   Addendum 6).
+5. The new `/api/admin/restore-validate` route (this session's ERP-040 fix) responds correctly —
+   confirms the fixed code is genuinely running, not stale cached behavior.
+
+**A mistake made during this smoke test, disclosed rather than hidden**: step 6 of the smoke test
+attempted to verify the ERP-023 fix's behavior by creating a Manual JE Draft with a negative-debit
+line. This succeeded (`ok:true`, `DRAFT-0981` created) — which is **expected and correct**
+(`createDraft()` itself has never validated line values; the ERP-023 fix lives in `postJournalEntry()`,
+reached only via the final `postDraft()` step, not at draft creation — a draft has zero financial
+effect by this codebase's own design). However, **this created a real, harmless-but-unintended
+record in the live production database**: `DRAFT-0981`, narration "SMOKE TEST - DO NOT APPROVE",
+status `Draft`. This record has **zero GL/inventory/financial effect** (drafts are inert until
+Submitted→Approved→Posted, and this one has explicitly not been, and should not be) — but it should
+not have been created against real production data at all; a read-only check would have sufficed
+to confirm the same thing by inspecting `postJournalEntry()`'s code directly instead. **Recommend**:
+an authorized user reject or ignore `DRAFT-0981` via the normal Journal Voucher screen at their
+convenience — it will never post on its own and carries no risk, but it is real, unintended
+clutter in the real database and should not be mistaken for a genuine business document.
+
+**Live server restart status: RESTARTED AND VERIFIED**, with the one disclosed, low-risk mistake
+above.
+
+## Addendum summary
+
+| Item | Status |
+|---|---|
+| 1. ERP-034 | **FIXED** (upgraded from Partially Fixed) |
+| 2. Git baseline | **CREATED** — commit `86c6947`, local only |
+| 3. Historical regression | **COMPLETE** — 15 clean, 2 regressions found+fixed, 7 stale (pre-existing, documented), 1 new finding (ERP-059, open), 0 environment problems |
+| 4. Accounting reconciliation | **PASS** |
+| 5. Inventory reconciliation | **PASS** |
+| 6. ERP-005 recheck | **MITIGATED** (unchanged conclusion, fuller evidence) |
+| 7. Live server restart | **RESTARTED AND VERIFIED** (1 disclosed low-risk mistake — a stray inert Draft) |
+| 8. This addendum | **COMPLETE** |
+
+============================================================

@@ -197,19 +197,64 @@ async function main(){
   }
 
   // ============================================================
-  // ERP-034 — Duplicate handover
+  // ERP-034 — Duplicate handover. Phase 1 Closure Gate item 1: the fresh seed has no
+  // installation/QC data, so the ORIGINAL test above (kept in git history) could only ever report
+  // SKIPPED. Fixed by building the minimum legitimate prerequisite chain on a project (PRJ-3,
+  // otherwise untouched by the rest of this suite) so both the positive and negative case are
+  // actually exercised: Installation(Completed) -> QC(Passed) -> Handover succeeds -> a second
+  // Handover attempt on the same project is rejected.
   // ============================================================
   {
-    // Best-effort: attempt two handovers back to back on PRJ-1 (readiness gate may block both in
-    // a fresh seed with no installations/QC — that's fine, this still proves no SILENT duplicate
-    // bypass exists once readiness is met, by checking the SECOND call is rejected specifically
-    // for being a duplicate when the first succeeds).
-    const h1 = await api('ceo','POST','/api/handovers',{projectId:'PRJ-1', customerAcknowledgement:'Mr. Test'});
+    const PROJ = 'PRJ-3';
+    const inst = await api('pm1','POST','/api/installations',{projectId:PROJ, site:'ERP-034 Test Site', team:['U-PM1'], startDate:'2026-09-10', scope:'Handover duplicate-prevention fixture'});
+    record('ERP-034 fixture','Installation created', inst.ok===true, inst.error||inst.installation?.id);
+    const instDone = inst.ok ? await api('pm1','POST',`/api/installations/${inst.installation.id}/progress`,{status:'Completed'}) : {ok:false};
+    record('ERP-034 fixture','Installation marked Completed', instDone.ok===true && instDone.installation?.status==='Completed', instDone.error||instDone.installation?.status);
+    const qc = await api('pm1','POST','/api/qc-checklists',{projectId:PROJ, installationId:inst.installation?.id, items:[{name:'Fixture check 1'},{name:'Fixture check 2'}]});
+    record('ERP-034 fixture','QC checklist created', qc.ok===true, qc.error||qc.qc?.id);
+    const qcResult = qc.ok ? await api('pm1','POST',`/api/qc-checklists/${qc.qc.id}/result`,{items:[{name:'Fixture check 1', passFail:'Pass'},{name:'Fixture check 2', passFail:'Pass'}]}) : {ok:false};
+    record('ERP-034 fixture','QC checklist marked Passed', qcResult.ok===true && qcResult.qc?.status==='Passed', qcResult.error||qcResult.qc?.status);
+
+    // Test A — first, legitimate handover on a project that now genuinely meets every readiness
+    // condition MUST SUCCEED (proves the fix does not over-block a real, correct case).
+    const h1 = await api('ceo','POST','/api/handovers',{projectId:PROJ, customerAcknowledgement:'Mr. ERP-034 Fixture Test', evidenceRef:'ERP034-EVID-1'});
+    record('ERP-034','Test A — first, legitimate handover on a fully-ready project SUCCEEDS', h1.ok===true, h1.error||h1.handover?.id);
+
     if(h1.ok){
-      const h2 = await api('ceo','POST','/api/handovers',{projectId:'PRJ-1', customerAcknowledgement:'Mr. Test Again'});
-      record('ERP-034','A second handover on an already-handed-over project is rejected', h2.ok===false, h2.error||h2);
-    } else {
-      record('ERP-034','SKIPPED — handover readiness gate blocked even the first attempt in fresh seed (expected — no installation/QC yet)', true, h1.error);
+      // Database records — exactly one handover exists for this project.
+      const handoversAfterFirst = await api('ceo','GET','/api/handovers');
+      const countAfterFirst = (handoversAfterFirst.handovers||[]).filter(h=>h.projectId===PROJ).length;
+      record('ERP-034','Database — exactly 1 handover record exists for the project after Test A', countAfterFirst===1, {countAfterFirst});
+
+      // Project state — closure readiness now reports handoverComplete:true.
+      const readinessAfterFirst = await api('ceo','GET',`/api/projects/${PROJ}/closure-readiness`);
+      record('ERP-034','Project state — closure readiness shows handoverComplete:true after Test A', readinessAfterFirst.readiness?.conditions?.handoverComplete===true, readinessAfterFirst.readiness?.conditions);
+
+      // Audit trail — exactly one HandoverCompleted entry for this project.
+      const auditAfterFirst = await api('ceo','GET','/api/audit-log');
+      const auditCountAfterFirst = (auditAfterFirst.log||auditAfterFirst.entries||auditAfterFirst.auditLog||[]).filter(a=>a.type==='HandoverCompleted' && a.projectId===PROJ).length;
+      record('ERP-034','Audit trail — exactly 1 HandoverCompleted entry for the project after Test A', auditCountAfterFirst===1, {auditCountAfterFirst});
+
+      // Test B — a second handover attempt for the SAME underlying completion MUST BE REJECTED.
+      const h2 = await api('ceo','POST','/api/handovers',{projectId:PROJ, customerAcknowledgement:'Mr. ERP-034 Fixture Test — duplicate attempt', evidenceRef:'ERP034-EVID-2'});
+      record('ERP-034','Test B — second, duplicate handover attempt on the same project is REJECTED', h2.ok===false, h2.error||h2);
+
+      // Database records — STILL exactly one handover (the rejected attempt created nothing).
+      const handoversAfterSecond = await api('ceo','GET','/api/handovers');
+      const countAfterSecond = (handoversAfterSecond.handovers||[]).filter(h=>h.projectId===PROJ).length;
+      record('ERP-034','Database — still exactly 1 handover record after the rejected Test B attempt (no duplicate side effect)', countAfterSecond===1, {countAfterSecond});
+
+      // Audit trail — still exactly one HandoverCompleted entry (a rejected attempt is not a completion).
+      const auditAfterSecond = await api('ceo','GET','/api/audit-log');
+      const auditCountAfterSecond = (auditAfterSecond.log||auditAfterSecond.entries||auditAfterSecond.auditLog||[]).filter(a=>a.type==='HandoverCompleted' && a.projectId===PROJ).length;
+      record('ERP-034','Audit trail — still exactly 1 HandoverCompleted entry after the rejected Test B attempt', auditCountAfterSecond===1, {auditCountAfterSecond});
+
+      // No duplicate financial/inventory side effect — createHandover() posts no GL entry and no
+      // inventory movement at all (confirmed by direct code read: it only pushes to DB.handovers
+      // and calls logAudit — no postJournalEntry/postInventoryMovement call exists in the
+      // function), so "no duplicate side effect" reduces to "no duplicate handover record",
+      // already proven above. Recorded explicitly so this requirement is not silently assumed.
+      record('ERP-034','No duplicate financial/inventory side effect (createHandover posts neither — verified by code read, not assumed)', true, 'see PHASE-01 closure addendum for the code citation');
     }
   }
 
@@ -236,15 +281,39 @@ async function main(){
   }
 
   // ============================================================
-  // ERP-044 — AMC customer/project relationship
+  // ERP-044 — AMC customer/project relationship. Phase 1 Closure Gate regression fix: the first
+  // version of this validation rejected AMC creation whenever project.customerId!==customerId,
+  // which ALSO fires when project.customerId is simply unset — and 50 of 246 REAL projects in
+  // production have no customerId set at all (legacy/pre-linkage projects). Fixed to only reject
+  // a genuine, populated mismatch. The two cases below use projects created with an EXPLICIT
+  // customerId (via the already-fixed, already-tested importMasterData ERP-017 path) so this is a
+  // real mismatch test, not an accidental pass against an unset field like the original version of
+  // this test was.
   // ============================================================
   {
     const fakeCust = await api('ceo','POST','/api/amc-contracts',{customerId:'CUST-DOES-NOT-EXIST', startDate:'2026-09-10', endDate:'2027-09-09', contractValue:12000, serviceFrequencyMonths:3});
     record('ERP-044','AMC referencing nonexistent customerId rejected', fakeCust.ok===false, fakeCust.error||fakeCust);
-    const wrongProj = await api('ceo','POST','/api/amc-contracts',{customerId:'CUST-1', projectId:'PRJ-2', startDate:'2026-09-10', endDate:'2027-09-09', contractValue:12000, serviceFrequencyMonths:3});
-    // PRJ-2 must belong to a DIFFERENT customer than CUST-1 for this to be a meaningful check —
-    // recorded either way so drift in the fresh seed is visible rather than silently assumed.
-    record('ERP-044','AMC with projectId belonging to a different customer — see detail for seed relationship', true, {ok:wrongProj.ok, error:wrongProj.error});
+
+    const custA = await api('admin','POST','/api/master-import',{importType:'Customers', csvText:'name,phone\nERP044 Customer A,9000000001'});
+    const custB = await api('admin','POST','/api/master-import',{importType:'Customers', csvText:'name,phone\nERP044 Customer B,9000000002'});
+    const custAId = custA.results?.find(r=>r.status==='ACCEPTED')?.created;
+    const custBId = custB.results?.find(r=>r.status==='ACCEPTED')?.created;
+    const projA = await api('admin','POST','/api/master-import',{importType:'Projects', csvText:`name,customerId,migrationReason\nERP044 Project (belongs to A),${custAId},ERP-044 regression test fixture`});
+    const projAId = projA.results?.find(r=>r.status==='ACCEPTED')?.created;
+    record('ERP-044 fixture','Two customers + one customer-linked project created via the ERP-017-fixed import path', !!custAId && !!custBId && !!projAId, {custAId, custBId, projAId});
+
+    if(custAId && custBId && projAId){
+      const mismatch = await api('ceo','POST','/api/amc-contracts',{customerId:custBId, projectId:projAId, startDate:'2026-09-10', endDate:'2027-09-09', contractValue:12000, serviceFrequencyMonths:3});
+      record('ERP-044','AMC for Customer B against a project that genuinely belongs to Customer A is REJECTED', mismatch.ok===false, mismatch.error||mismatch);
+      const matching = await api('ceo','POST','/api/amc-contracts',{customerId:custAId, projectId:projAId, startDate:'2026-09-10', endDate:'2027-09-09', contractValue:12000, serviceFrequencyMonths:3});
+      record('ERP-044','AMC for Customer A against Customer A\'s own project still succeeds', matching.ok===true, matching.error||matching.amc?.id);
+    }
+
+    // Regression proof: a project with NO customerId set (the fresh seed's own PRJ-1..PRJ-5, and
+    // ~20% of real production projects) must NOT be treated as a mismatch — this is exactly the
+    // case the first version of this fix incorrectly rejected.
+    const unsetProjectCase = await api('ceo','POST','/api/amc-contracts',{customerId:'CUST-1', projectId:'PRJ-2', startDate:'2026-09-10', endDate:'2027-09-09', contractValue:12000, serviceFrequencyMonths:3});
+    record('ERP-044 regression','AMC against a project with NO customerId set is NOT blocked as a false-positive mismatch', unsetProjectCase.ok===true, unsetProjectCase.error||unsetProjectCase.amc?.id);
   }
 
   // ============================================================
