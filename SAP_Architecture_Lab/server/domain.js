@@ -1136,14 +1136,21 @@ function restoreBackup({filename, actor}){
   if(_createdRecord && _createdRecord.checksum){
     const _actualChecksum = crypto.createHash('sha256').update(raw).digest('hex');
     if(_actualChecksum !== _createdRecord.checksum){
-      logAudit({type:'RestoreRejectedChecksumMismatch', filename, expectedChecksum:_createdRecord.checksum, actualChecksum:_actualChecksum, userId:actor.id, role:actor.role});
-      return {ok:false, error:`Checksum mismatch — this backup file has changed since it was created (expected ${_createdRecord.checksum.slice(0,12)}…, found ${_actualChecksum.slice(0,12)}…). Restore aborted, live database untouched.`};
+      // ERP-059B — this rejection is now recorded via `durableFailureAudit` (see
+      // ERP-059B-TRANSACTION-DESIGN.md) instead of a direct logAudit() call, so it survives
+      // withTransaction()'s rollback (this function is reached only via the legacy-dispatch
+      // wrapper, /api/admin/restore, which wraps every call in withTransaction()) — previously
+      // this exact audit entry was silently erased every time, live-confirmed in the ERP-059
+      // forensic gate.
+      return {ok:false, error:`Checksum mismatch — this backup file has changed since it was created (expected ${_createdRecord.checksum.slice(0,12)}…, found ${_actualChecksum.slice(0,12)}…). Restore aborted, live database untouched.`,
+        durableFailureAudit:{type:'RestoreRejectedChecksumMismatch', filename, expectedChecksum:_createdRecord.checksum, actualChecksum:_actualChecksum}};
     }
   }
   const _validation = validateDatabaseSnapshot(restored);
   if(!_validation.ok){
-    logAudit({type:'RestoreRejectedValidationFailed', filename, problems:_validation.problems, userId:actor.id, role:actor.role});
-    return {ok:false, error:'Restore aborted — this snapshot failed validation and the live database was NOT touched: '+_validation.problems.join(' | '), problems:_validation.problems};
+    // ERP-059B — see the comment on the checksum-mismatch branch just above; same fix, same reason.
+    return {ok:false, error:'Restore aborted — this snapshot failed validation and the live database was NOT touched: '+_validation.problems.join(' | '), problems:_validation.problems,
+      durableFailureAudit:{type:'RestoreRejectedValidationFailed', filename, problems:_validation.problems}};
   }
   const beforeJECount = DB.journalEntries.length;
   DB = installWriteGuards(restored);
@@ -1349,6 +1356,19 @@ function withTransaction(actor, options, handler){
   if(result && result.ok === false){
     DB = installWriteGuards(_snapshot);
     _invalidateReportingCaches();
+    // ERP-059B — durable failure audit (see docs/erp-remediation/phases/ERP-059B-TRANSACTION-
+    // DESIGN.md for the full design). A handler MAY attach EXACTLY ONE explicit, named payload to
+    // its ok:false result via `durableFailureAudit` — this is the ONLY thing that can survive the
+    // rollback immediately above: it is written via the SAME logAudit() every other audit trail
+    // in this codebase already uses, AFTER DB has already been restored to its pre-transaction
+    // snapshot — so no business mutation the handler made can ever ride along with it. userId/role
+    // are always taken from the real, authenticated `actor` this function itself received, never
+    // from the handler's payload, exactly like every other audit call in this codebase. A handler
+    // that omits durableFailureAudit behaves exactly as it did before this phase — pure rollback,
+    // nothing survives.
+    if(result.durableFailureAudit && typeof result.durableFailureAudit === 'object'){
+      logAudit({...result.durableFailureAudit, userId: actor && actor.id, role: actor && actor.role});
+    }
     save();
     return result;
   }
@@ -2220,7 +2240,13 @@ function reverseEntry(entryId, reason, actor){
   // all, unlike a permission-denied (403) one. Every rejection path below now logs who attempted
   // what, and why it was refused — a rejected attempt still reveals intent worth being able to see
   // later, exactly as a real user's mistaken-but-blocked action would in any audited system.
-  const rejectReversal = (error, extra) => { logAudit({type:'ReversalRejected', entryId, reason:reason||null, error, ...extra, userId:actor.id, role:actor.role}); return {ok:false, error}; };
+  // ERP-059B — this helper used to call logAudit() directly, which withTransaction()'s rollback
+  // then silently erased on every single call (live-confirmed in the ERP-059 forensic gate — the
+  // Phase 41 fix immediately above had never actually worked). Now attaches the same payload as
+  // `durableFailureAudit` instead, so it survives the rollback (see ERP-059B-TRANSACTION-
+  // DESIGN.md) — every one of this function's rejection paths below still funnels through this
+  // one helper, so all of them are fixed by this single change.
+  const rejectReversal = (error, extra) => ({ok:false, error, durableFailureAudit:{type:'ReversalRejected', entryId, reason:reason||null, error, ...extra}});
   // Phase 24 §7 — same rationale as postDraft(): reversal is a financial posting in its own right
   // and now checks its own base permission internally, not only via the route layer.
   if(!can(actor,'reverse')) return rejectReversal(`Role "${actor.role}" is not authorized to reverse postings.`);
@@ -2723,8 +2749,13 @@ function draftSupplierInvoice({vendorId, projectId, baseAmount, taxCode, date, n
   // (services, rent, transport, commission, etc.), so legitimate non-PO billing is not broken.
   if(vendorRequiresThreeWayMatch(vendorId)){
     const v = DB.vendors.find(x=>x.id===vendorId);
-    logAudit({type:'SupplierBillThreeWayMatchBypassRejected', vendorId, vendorCategory:v?v.category:null, projectId, amount:base, userId:createdByUserId, role:createdByRole});
-    return {ok:false, error:`Vendor "${v?v.name:vendorId}" is a goods-category vendor (${v?v.category:''}) — goods purchases require a Purchase Order and GRN. Use the PO/GRN-matched Supplier Bill (Bill against PO/GRN) instead of this direct, non-PO bill entry.`, requiresPOAndGRN:true};
+    // ERP-059B — durableFailureAudit (see ERP-059B-TRANSACTION-DESIGN.md); withTransaction()
+    // overwrites userId/role with the real authenticated actor automatically, so
+    // createdByUserId/createdByRole are kept under their OWN distinct field names too, to
+    // preserve this function's original attribution (this caller, unlike most others in this
+    // file, receives createdByUserId/createdByRole directly rather than a full actor object).
+    return {ok:false, error:`Vendor "${v?v.name:vendorId}" is a goods-category vendor (${v?v.category:''}) — goods purchases require a Purchase Order and GRN. Use the PO/GRN-matched Supplier Bill (Bill against PO/GRN) instead of this direct, non-PO bill entry.`, requiresPOAndGRN:true,
+      durableFailureAudit:{type:'SupplierBillThreeWayMatchBypassRejected', vendorId, vendorCategory:v?v.category:null, projectId, amount:base, createdByUserId, createdByRole, userId:createdByUserId, role:createdByRole}};
   }
   const tax = taxCode ? calcTax(taxCode, base) : null;
   const lines = [{account:'5000', debit:base, credit:0, vendorId, projectId}];
@@ -4619,9 +4650,10 @@ function createGRN({poId, warehouseId, lines, receivedBy, actor, overrideReason}
       actor, capability:'GRN_RECEIPT', overrideReason });
     if(!glResult.ok){
       // Nothing has been written yet — no GRN record, no stock movement, no PO status change, no
-      // commitment reduction. Audited so a rejected GRN attempt is traceable.
-      logAudit({type:'GRNRejected', poId, totalAcceptedValue, glError:glResult.error, userId:actor.id, role:actor.role});
-      return {ok:false, error:glResult.error};
+      // commitment reduction. Audited (via durableFailureAudit, ERP-059B — see
+      // ERP-059B-TRANSACTION-DESIGN.md — the direct logAudit() call this used to be was silently
+      // erased by withTransaction()'s rollback every time) so a rejected GRN attempt is traceable.
+      return {ok:false, error:glResult.error, durableFailureAudit:{type:'GRNRejected', poId, totalAcceptedValue, glError:glResult.error}};
     }
   }
 
@@ -4863,8 +4895,8 @@ function createPurchaseReturn({grnId, materialId, qty, reason, actor}){
     lines:[ {account:'2050', debit:value, credit:0, vendorId:grn.supplierId, projectId:grn.projectId}, {account:'1200', debit:0, credit:value, vendorId:grn.supplierId, projectId:grn.projectId} ],
     actor, capability:'PURCHASE_RETURN', overrideReason:reason });
   if(!glResult.ok){
-    logAudit({type:'PurchaseReturnRejected', grnId, materialId, qty, value, glError:glResult.error, userId:actor.id, role:actor.role});
-    return {ok:false, error:glResult.error};
+    // ERP-059B — durableFailureAudit, see ERP-059B-TRANSACTION-DESIGN.md.
+    return {ok:false, error:glResult.error, durableFailureAudit:{type:'PurchaseReturnRejected', grnId, materialId, qty, value, glError:glResult.error}};
   }
   // Phase 36 Part J — same defect class as createGRN()/createMaterialIssue() (Phase 35): GL is
   // committed above; an exception before the document push, or between the document push and the
@@ -5444,8 +5476,8 @@ function createMaterialIssue({projectId, materialId, qty, warehouseId, purpose, 
       actor, capability:'MATERIAL_ISSUE', capabilityCtx:{projectId, siteId}, overrideReason });
     if(!glResult.ok){
       // Nothing has been written yet — no movement, no requirement-status change, no stock impact.
-      logAudit({type:'MaterialIssueRejected', projectId, materialId, qty, value, glError:glResult.error, userId:actor.id, role:actor.role});
-      return {ok:false, error:glResult.error};
+      // ERP-059B — durableFailureAudit, see ERP-059B-TRANSACTION-DESIGN.md.
+      return {ok:false, error:glResult.error, durableFailureAudit:{type:'MaterialIssueRejected', projectId, materialId, qty, value, glError:glResult.error}};
     }
   }
   const primaryBomRef = (entitlement.bomRefs && entitlement.bomRefs[0]) || null;
@@ -8093,11 +8125,11 @@ function createInventoryAdjustment({materialId, qty, uom, warehouseId, reason, a
       sourceId:adjId, voucherNo:adjNo, docCategory:'InventoryAdjustment', lines, actor, capability:'INVENTORY_ADJUSTMENT', overrideReason:reason });
     if(!glResult.ok){
       // Nothing has been written yet — DB.inventoryAdjustments, DB.inventoryMovements, and the
-      // document-number counter are all still exactly as they were before this call. Audited so a
-      // rejected inventory-adjustment attempt is traceable, matching the same treatment given to
-      // rejected reversal attempts elsewhere in this file.
-      logAudit({type:'InventoryAdjustmentRejected', materialId, qty, warehouseId, reason, value, glError:glResult.error, userId:actor.id, role:actor.role});
-      return {ok:false, error:glResult.error};
+      // document-number counter are all still exactly as they were before this call. Audited
+      // (via durableFailureAudit, ERP-059B — see ERP-059B-TRANSACTION-DESIGN.md) so a rejected
+      // inventory-adjustment attempt is traceable, matching the same treatment given to rejected
+      // reversal attempts elsewhere in this file.
+      return {ok:false, error:glResult.error, durableFailureAudit:{type:'InventoryAdjustmentRejected', materialId, qty, warehouseId, reason, value, glError:glResult.error}};
     }
   }
   // Phase 36 Part J CRITICAL FIX — the comment above ("not a compensating-rollback design — there
@@ -8965,8 +8997,9 @@ function validatePasswordStrength(password){
 function createUser({username, name, role, password, assignedProjects, assignedCustomers, actor}){
   if(!username || !username.trim()) return {ok:false, error:'Username is required.'};
   if(!ROLES.includes(role)){
-    logAudit({type:'UserCreationRejected', reason:'InvalidRole', attemptedUsername:username, attemptedRole:role, userId:actor.id, role:actor.role});
-    return {ok:false, error:`Unknown role "${role}". Do not invent a new role — must be one of: ${ROLES.join(', ')}.`};
+    // ERP-059B — durableFailureAudit, see ERP-059B-TRANSACTION-DESIGN.md.
+    return {ok:false, error:`Unknown role "${role}". Do not invent a new role — must be one of: ${ROLES.join(', ')}.`,
+      durableFailureAudit:{type:'UserCreationRejected', reason:'InvalidRole', attemptedUsername:username, attemptedRole:role}};
   }
   // Phase 39 CRITICAL FIX — found live: the uniqueness check was case-sensitive only, so "ADMIN"
   // was accepted as a genuinely separate account from the real "admin" — two visually-confusable
@@ -8976,13 +9009,16 @@ function createUser({username, name, role, password, assignedProjects, assignedC
   // fix does not change which account an EXISTING login authenticates as — it only closes the
   // door on creating a new, confusable duplicate going forward.
   if(DB.users.find(u=>u.username.toLowerCase()===username.trim().toLowerCase())){
-    logAudit({type:'UserCreationRejected', reason:'DuplicateUsername', attemptedUsername:username, userId:actor.id, role:actor.role});
-    return {ok:false, error:'Username already exists.'};
+    // ERP-059B — durableFailureAudit, see ERP-059B-TRANSACTION-DESIGN.md.
+    return {ok:false, error:'Username already exists.', durableFailureAudit:{type:'UserCreationRejected', reason:'DuplicateUsername', attemptedUsername:username}};
   }
   const strength = validatePasswordStrength(password);
   if(!strength.valid){
-    logAudit({type:'UserCreationRejected', reason:'WeakPassword', attemptedUsername:username, missing:strength.errors, userId:actor.id, role:actor.role});
-    return {ok:false, error:'Password does not meet the strong-password policy — missing: '+strength.errors.join(', ')+'.'};
+    // ERP-059B — durableFailureAudit. Note: `strength.errors` is a fixed list of policy-rule
+    // names (e.g. "needs a digit") — never the attempted password itself, so this stays compliant
+    // with the "never persist a password" rule the design doc requires.
+    return {ok:false, error:'Password does not meet the strong-password policy — missing: '+strength.errors.join(', ')+'.',
+      durableFailureAudit:{type:'UserCreationRejected', reason:'WeakPassword', attemptedUsername:username, missing:strength.errors}};
   }
   const {hash, salt} = hashPassword(password);
   const user = { id: nextId(DB.users, 'U-', 4), username:username.trim(), name:name||username, role, active:true,
@@ -10070,8 +10106,9 @@ function importMasterData({importType, csvText, actor, dryRun}){
   const invalidRows = validated.filter(v=>!v.valid);
   if(invalidRows.length){
     const results = validated.map(v=>({row:v.row, status:'REJECTED', reason:v.reason||'Batch rejected — see other row(s) for the actual failure(s).', data:v.data}));
-    logAudit({type:'MasterDataImportBatchRejected', importType, rowCount:rows.length, invalidCount:invalidRows.length, userId:actor.id, role:actor.role});
-    return {ok:false, error:`Import rejected — ${invalidRows.length} of ${rows.length} row(s) failed validation. NO records were created (atomic import — fix every row and re-submit the whole file).`, results};
+    // ERP-059B — durableFailureAudit, see ERP-059B-TRANSACTION-DESIGN.md.
+    return {ok:false, error:`Import rejected — ${invalidRows.length} of ${rows.length} row(s) failed validation. NO records were created (atomic import — fix every row and re-submit the whole file).`, results,
+      durableFailureAudit:{type:'MasterDataImportBatchRejected', importType, rowCount:rows.length, invalidCount:invalidRows.length}};
   }
   if(dryRun){
     return {ok:true, dryRun:true, message:`All ${rows.length} row(s) passed validation and are ready to commit. Re-submit without dryRun to actually import.`, results: validated.map(v=>({row:v.row, status:'WOULD_ACCEPT', reason:null, data:v.data}))};
@@ -10845,8 +10882,8 @@ function returnFromSite({siteId, warehouseId, projectId, returnedItems, reason, 
       lines:[ {account:'5300', debit:totalLossValue, credit:0, projectId:projectId||null}, {account:'1200', debit:0, credit:totalLossValue, projectId:projectId||null} ],
       actor, capability:'SITE_RETURN', overrideReason });
     if(!glResult.ok){
-      logAudit({type:'SiteReturnRejected', siteId, warehouseId, glError:glResult.error, userId:actor.id, role:actor.role});
-      return {ok:false, error:glResult.error};
+      // ERP-059B — durableFailureAudit, see ERP-059B-TRANSACTION-DESIGN.md.
+      return {ok:false, error:glResult.error, durableFailureAudit:{type:'SiteReturnRejected', siteId, warehouseId, glError:glResult.error}};
     }
   }
   const _jesLenBeforeReturn = DB.journalEntries.length;
@@ -11266,8 +11303,8 @@ function recordJobWorkScrap({jwoId, lineIndex, qty, disposition, taxHandlingRef,
       actor, capability:'JOB_WORK_SCRAP', overrideReason });
     if(!glResult.ok){
       // Nothing has been written yet — no movement, no scrapQtyByLine change, no scrap record.
-      logAudit({type:'JobWorkScrapRejected', jwoId, lineIndex, disposition, qty, value, glError:glResult.error, userId:actor.id, role:actor.role});
-      return {ok:false, error:glResult.error};
+      // ERP-059B — durableFailureAudit, see ERP-059B-TRANSACTION-DESIGN.md.
+      return {ok:false, error:glResult.error, durableFailureAudit:{type:'JobWorkScrapRejected', jwoId, lineIndex, disposition, qty, value, glError:glResult.error}};
     }
   }
   // Phase 38 migration — replaced with the central withTransaction() primitive.

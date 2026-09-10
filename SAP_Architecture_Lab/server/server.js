@@ -589,13 +589,29 @@ const server = http.createServer(async (req, res) => {
     // Capture the eventual response's `ok` field without altering what is actually sent to the
     // client — res.end/writeHead are called exactly as they always were, just observed in transit.
     let capturedOk = true;
+    // ERP-059B FIX — this used to capture ONLY the boolean `capturedOk` and hand withTransaction()
+    // a freshly-synthesized `{ok: capturedOk}` object as its "result" — which meant a domain
+    // function's real return value (including a `durableFailureAudit` payload, see
+    // ERP-059B-TRANSACTION-DESIGN.md) was silently discarded for every LEGACY-dispatched route,
+    // even after the durableFailureAudit mechanism itself was correctly implemented in
+    // withTransaction(). Live-proven broken this phase: createUser()/importMasterData()/
+    // restoreBackup() (all legacy if-block routes) still lost their rejection audit trail even
+    // after being migrated to attach durableFailureAudit, because THIS wrapper never forwarded it.
+    // Modern registerMutationRoute() handlers never had this problem — dispatchMutationRoute()
+    // already passes the real handler return value straight into withTransaction() (see its own
+    // code, `D.withTransaction(actor, {...}, () => route.handler(actor, body))`). Fixed the same
+    // way here: capture the actual parsed response body and forward it in full.
+    let capturedBody = null;
     const originalEnd = res.end.bind(res);
     res.end = function(chunk, ...args){
       if(chunk){
         try {
           const parsed = JSON.parse(chunk);
-          if(parsed && typeof parsed === 'object' && parsed.ok === false) capturedOk = false;
-        } catch(e) { /* non-JSON response body (e.g. a CSV/binary export) — leave capturedOk true */ }
+          if(parsed && typeof parsed === 'object'){
+            capturedBody = parsed;
+            if(parsed.ok === false) capturedOk = false;
+          }
+        } catch(e) { /* non-JSON response body (e.g. a CSV/binary export) — leave capturedOk true, capturedBody null */ }
       }
       return originalEnd(chunk, ...args);
     };
@@ -603,7 +619,12 @@ const server = http.createServer(async (req, res) => {
     try { actorForAudit = getActor(req); } catch(e) { /* unauthenticated requests are handled, and audited, inside handleRequest itself */ }
     D.withTransaction(actorForAudit, {name: 'legacy-dispatch:' + req.method + ':' + pathnameForDispatch}, () => {
       handleRequest(req, res, body);
-      return {ok: capturedOk};
+      // Forward the REAL captured response body when one was actually sent (preserves
+      // durableFailureAudit and any other field a legacy handler's result carried); fall back to
+      // the plain {ok: capturedOk} shape only if no JSON body was ever captured (e.g. a thrown
+      // error before any response, or a non-JSON response) — identical to this wrapper's
+      // pre-existing behavior in that fallback case.
+      return capturedBody && typeof capturedBody === 'object' ? capturedBody : {ok: capturedOk};
     });
   } catch (err) {
     console.error('[REQUEST ERROR]', req.method, req.url, err);
