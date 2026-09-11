@@ -1,7 +1,29 @@
 'use strict';
 // Phase 8 §40 — volume test: 50 projects, 100 production orders, 100 dispatches,
 // 100 deliveries, 100 invoices, 100 receipts. Real HTTP calls against the running server.
-const BASE = 'http://localhost:4001';
+// ERP-059C — self-contained preflight guard (see docs/erp-remediation/phases/
+// ERP-059C-TEST-ISOLATION-REPORT.md for the incident this responds to). No hardcoded target, no
+// silent fallback to production port 4001 — that exact pattern (a hardcoded 'http://localhost:4001'
+// in this very file) is what let a routine test run wipe the real production database. Inlined
+// rather than required from a shared module so this file keeps working standalone if copied into a
+// disposable scratch directory, matching this project's established isolated-test-server pattern.
+const BASE = process.env.TEST_BASE_URL || (() => { throw new Error('TEST_BASE_URL is not set. Refusing to run against an unspecified target. Example: TEST_BASE_URL=http://127.0.0.1:4095 node ' + __filename); })();
+async function __erp059cPreflight(){
+  console.log('[TEST TARGET]', BASE);
+  let info;
+  try {
+    const r = await fetch(BASE + '/api/system/environment');
+    info = await r.json();
+  } catch(e){
+    console.error(`[PREFLIGHT BLOCKED] Could not reach ${BASE}/api/system/environment (${e.message}). Refusing to run.`);
+    process.exit(1);
+  }
+  if(!info || info.ok !== true || info.appEnv !== 'test' || info.destructiveTestEndpointsEnabled !== true){
+    console.error(`[PREFLIGHT BLOCKED] ${BASE} is APP_ENV="${info && info.appEnv}" (destructive test endpoints ${info && info.destructiveTestEndpointsEnabled ? 'ENABLED' : 'DISABLED'}) — refusing to run a destructive test against it.`);
+    process.exit(1);
+  }
+  console.log(`[PREFLIGHT OK] ${BASE} confirmed APP_ENV=test.`);
+}
 const jars = {};
 async function login(u,p){ const r=await fetch(BASE+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})}); jars[u]=r.headers.get('set-cookie').split(';')[0]; return r.json(); }
 async function api(u,m,p,b){ const h={'Content-Type':'application/json'}; if(jars[u])h.Cookie=jars[u]; const r=await fetch(BASE+p,{method:m,headers:h,body:b?JSON.stringify(b):undefined}); return {status:r.status, ...(await r.json().catch(()=>({})))}; }
@@ -9,6 +31,7 @@ function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 const NAMES = ['Habeeb','Priya','Rajeev','Sarah','Thomas','Anjali','Vinod','Meera','Arjun','Kavya','Sunil','Divya','Rahul','Nisha','Vishnu','Deepa','Manoj','Reshma','Ajay','Sona'];
 
 async function main(){
+  await __erp059cPreflight();
   await login('admin','Admin@12345');
   await login('sales1','Sal@123456'); await login('estimator1','Est@12345'); await login('finance1','Fin@12345'); await login('ceo','Ceo@12345'); await login('pm1','Pm@123456'); await login('purchase1','Pur@12345'); await login('accountant1','Acc@12345');
 

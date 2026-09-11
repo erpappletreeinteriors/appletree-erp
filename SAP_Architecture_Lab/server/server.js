@@ -18,7 +18,23 @@ const url = require('url');
 const D = require('./domain');
 const A = require('./auth');
 
-const PORT = 4001;
+// ERP-059C — explicit environment identity (see docs/erp-remediation/phases/
+// ERP-059C-TEST-ISOLATION-REPORT.md for the full incident this responds to). No environment
+// variable existed anywhere in this codebase before this phase — PORT was a bare literal and every
+// destructive test-only endpoint below was gated ONLY by the Admin role, which is an ordinary
+// production role, not a test/production distinction. APP_ENV is the new, single source of truth
+// for that distinction. FAILS CLOSED BY DESIGN: destructive test endpoints require the literal
+// string 'test' — an absent APP_ENV, an unrecognized value, or 'development'/'production' all
+// disable them identically. This is deliberate, not an oversight: a bypass for "localhost" or for
+// "development" would recreate exactly the failure class this phase exists to close (the incident
+// server was itself a normal, unflagged, localhost-bound Node process — indistinguishable from a
+// disposable test server by port or address alone).
+const APP_ENV = process.env.APP_ENV || 'production';
+const IS_TEST_ENV = APP_ENV === 'test';
+// PORT may still be overridden (needed so isolated test servers can be started without editing this
+// file), but the default is unchanged from before this phase — existing production deployments that
+// never set PORT keep listening on 4001 exactly as before.
+const PORT = process.env.PORT ? Number(process.env.PORT) : 4001;
 const CLIENT_DIR = path.join(__dirname, '..', 'client_secure');
 
 // ---------- helpers ----------
@@ -66,6 +82,26 @@ const isProjectManagerOf = D.isProjectManagerOf;
 function deny(res, code, reason, ctx){
   D.logAudit({type:'AccessDenied', reason, ...ctx});
   sendJson(res, code, {ok:false, error:reason});
+}
+// ERP-059C — the environment guard for every destructive test-only endpoint. Deliberately NOT
+// implemented as a plain deny() call: deny() writes its audit entry via a direct D.logAudit() BEFORE
+// the response is sent, and every one of these endpoints is a legacy-dispatched mutating route
+// reached from inside the outer D.withTransaction() wrapper in the server's request handler — so a
+// direct logAudit() here would itself be silently rolled back on rejection, the exact defect class
+// ERP-059B closed for the 12 business-rule sites (see ERP-059B-TRANSACTION-DESIGN.md). Reusing that
+// same durableFailureAudit mechanism here means this rejection's audit record survives the rollback
+// by the same, already-proven construction: the field rides on the JSON response body itself, which
+// the legacy-dispatch wrapper now forwards verbatim as the transaction result (see the
+// ERP-059B res.end capture fix a few hundred lines below). No new mechanism, no secrets in the
+// payload (path + configured APP_ENV only — matches the security contract every other
+// durableFailureAudit site already follows).
+function denyDestructiveTestEndpoint(res, actor, pathname){
+  const reason = `Destructive test endpoint "${pathname}" is disabled outside APP_ENV=test (current APP_ENV: "${APP_ENV}").`;
+  sendJson(res, 403, {
+    ok:false,
+    error:reason,
+    durableFailureAudit:{ type:'DestructiveTestEndpointBlocked', path:pathname, appEnv:APP_ENV }
+  });
 }
 // ============================================================
 // Phase 21 — Mutation Route Registry. A route registered THROUGH this function cannot omit
@@ -679,6 +715,16 @@ function handleRequest(req, res, body){
     }
     res.setHeader('Set-Cookie', `sid=; Path=/; Max-Age=0`);
     return sendJson(res, 200, {ok:true});
+  }
+  // ERP-059C Step 5 — unauthenticated, read-only environment identity check. Exists so a test
+  // harness's preflight guard (tests/preflight.js) can positively confirm "this target is a
+  // disposable test server" BEFORE attempting anything destructive, without needing valid
+  // credentials first (the incident this phase responds to happened before any login-gated check
+  // could have run). Deliberately returns no secret, no user data, and nothing an attacker could not
+  // already infer by probing any other endpoint's behavior — only the same APP_ENV/enabled flag
+  // this phase already prints unconditionally to the server's own console at startup.
+  if(pathname==='/api/system/environment' && req.method==='GET'){
+    return sendJson(res, 200, {ok:true, appEnv: APP_ENV, destructiveTestEndpointsEnabled: IS_TEST_ENV});
   }
 
   // ---------- everything below requires a valid session ----------
@@ -3212,6 +3258,7 @@ function handleRequest(req, res, body){
 
   // ---------- Test-only: reset DB to fresh seed (used by the test harness, never by real users) ----------
   if(pathname==='/api/test/reset' && req.method==='POST'){
+    if(!IS_TEST_ENV) return denyDestructiveTestEndpoint(res, actor, pathname);
     if(!(actor.role==='Admin')) return deny(res, 403, 'Only Admin may reset test data.', {userId:actor.id, role:actor.role, path:pathname});
     D.resetToFreshSeed();
     return sendJson(res, 200, {ok:true});
@@ -3221,6 +3268,7 @@ function handleRequest(req, res, body){
   // clearly-labeled set of real mutation sequences check at named boundaries. Never reachable by or
   // exposed to a real business user/role.
   if(pathname==='/api/test/set-fault' && req.method==='POST'){
+    if(!IS_TEST_ENV) return denyDestructiveTestEndpoint(res, actor, pathname);
     if(!(actor.role==='Admin')) return deny(res, 403, 'Only Admin may set a test fault point.', {userId:actor.id, role:actor.role, path:pathname});
     D.setTestFaultPoint(body.point || null);
     return sendJson(res, 200, {ok:true, point: body.point || null});
@@ -3229,6 +3277,7 @@ function handleRequest(req, res, body){
   // exception). Same tier as the other test-only endpoints. The response to THIS call completes
   // normally; the crash fires on whichever LATER request first reaches the armed point.
   if(pathname==='/api/test/set-crash' && req.method==='POST'){
+    if(!IS_TEST_ENV) return denyDestructiveTestEndpoint(res, actor, pathname);
     if(!(actor.role==='Admin')) return deny(res, 403, 'Only Admin may arm a test crash point.', {userId:actor.id, role:actor.role, path:pathname});
     D.setTestCrashPoint(body.point || null);
     return sendJson(res, 200, {ok:true, point: body.point || null});
@@ -3237,6 +3286,7 @@ function handleRequest(req, res, body){
   // mode (hard-blocks any DB.journalEntries/inventoryMovements/clearings mutation attempted
   // outside an active withTransaction() boundary). Admin-only, same tier as the other test toggles.
   if(pathname==='/api/test/set-enforce-transaction-boundary' && req.method==='POST'){
+    if(!IS_TEST_ENV) return denyDestructiveTestEndpoint(res, actor, pathname);
     if(!(actor.role==='Admin')) return deny(res, 403, 'Only Admin may toggle transaction-boundary enforcement.', {userId:actor.id, role:actor.role, path:pathname});
     D.setEnforceTransactionBoundary(!!body.enforce);
     return sendJson(res, 200, {ok:true, enforce: D.getEnforceTransactionBoundary()});
@@ -3249,6 +3299,7 @@ function handleRequest(req, res, body){
   // /api/test/naive-tx-legacy) — removed after producing their evidence, see the Phase 38 report.
   // Phase 36 — temporary before/after proof toggle, same tier as the fault-point endpoint above.
   if(pathname==='/api/test/set-skip-rollback' && req.method==='POST'){
+    if(!IS_TEST_ENV) return denyDestructiveTestEndpoint(res, actor, pathname);
     if(!(actor.role==='Admin')) return deny(res, 403, 'Only Admin may toggle rollback for a before/after test.', {userId:actor.id, role:actor.role, path:pathname});
     D.setSkipRollbackForBeforeTest(!!body.skip);
     return sendJson(res, 200, {ok:true, skip: !!body.skip});
@@ -3256,6 +3307,15 @@ function handleRequest(req, res, body){
   // Phase 36 §7/§8 — One-Click Demo Scenario. Admin-only (same tier as the reset above, since it
   // creates a real chain of demo transactions an untrained UAT tester shouldn't trigger by accident).
   if(pathname==='/api/demo/seed-scenario' && req.method==='POST'){
+    // ERP-059C — deliberately NOT placed behind the IS_TEST_ENV guard used for the /api/test/*
+    // endpoints below. Unlike those (which the codebase's own comments describe as "never exposed
+    // to or usable by a real user role"), this route's Phase 36 comment describes it as a real
+    // UAT-facing feature ("One-Click Demo Scenario") that an authorized Admin may need to run
+    // against a live pre-launch/UAT environment, not only inside an automated test run. Disabling it
+    // outside APP_ENV=test would be a functional change beyond this phase's authorized scope
+    // (production/test isolation) without the user's explicit sign-off. Left Admin-gated only, as
+    // before; flagged as an open scope question in ERP-059C-TEST-ISOLATION-REPORT.md rather than
+    // silently changed.
     if(!(actor.role==='Admin')) return deny(res, 403, 'Only Admin may seed the demo scenario.', {userId:actor.id, role:actor.role, path:pathname});
     const r = D.seedDemoScenario(); return sendJson(res, r.ok?200:400, r);
   }
@@ -3270,6 +3330,7 @@ function handleRequest(req, res, body){
   // — this exists solely so automated tests can verify the boundary math, not to let anyone
   // manipulate a real ticket's SLA outcome.
   if(pathname==='/api/test/backdate-ticket' && req.method==='POST'){
+    if(!IS_TEST_ENV) return denyDestructiveTestEndpoint(res, actor, pathname);
     if(!(actor.role==='Admin')) return deny(res, 403, 'Only Admin may backdate test data.', {userId:actor.id, role:actor.role, path:pathname});
     const tkt = D.DB.serviceTickets.find(t=>t.id===body.ticketId);
     if(!tkt) return sendJson(res,404,{ok:false, error:'Ticket not found.'});
@@ -3279,6 +3340,7 @@ function handleRequest(req, res, body){
     return sendJson(res, 200, {ok:true, ticket:tkt});
   }
   if(pathname==='/api/test/backdate-visit' && req.method==='POST'){
+    if(!IS_TEST_ENV) return denyDestructiveTestEndpoint(res, actor, pathname);
     if(!(actor.role==='Admin')) return deny(res, 403, 'Only Admin may backdate test data.', {userId:actor.id, role:actor.role, path:pathname});
     const vis = D.DB.serviceVisits.find(v=>v.id===body.visitId);
     if(!vis) return sendJson(res,404,{ok:false, error:'Visit not found.'});
@@ -3297,4 +3359,21 @@ function handleRequest(req, res, body){
 // already has for missing permission/roles/authCheck, now extended to the legacy dispatcher too.
 require('./route_safety_scanner').runRouteSafetyAudit(__filename);
 
-server.listen(PORT, ()=>{ console.log(`[Phase 6A] Appletree SAP Lab secure server listening on http://localhost:${PORT}`); });
+// ERP-059C — Step 6 startup diagnostics. Printed unconditionally (not just in test/dev) so a
+// production operator can also SEE, at a glance, that destructive test endpoints are disabled —
+// this is deliberately the same code path for every APP_ENV, not a test-only nicety, because the
+// incident this phase responds to happened precisely because nothing distinguished the two servers
+// at a glance. Never prints a secret: APP_ENV, port, DB path, and the enabled/disabled flag are not
+// sensitive, and no credential or token is read here.
+server.listen(PORT, ()=>{
+  console.log(`[Phase 6A] Appletree SAP Lab secure server listening on http://localhost:${PORT}`);
+  console.log(`[ERP-059C] APP_ENV=${APP_ENV}`);
+  console.log(`[ERP-059C] Database path: ${D.DB_FILE}`);
+  console.log(`[ERP-059C] Destructive test endpoints (${IS_TEST_ENV ? 'ENABLED' : 'DISABLED'}): /api/test/reset, /api/test/set-fault, /api/test/set-crash, /api/test/set-enforce-transaction-boundary, /api/test/set-skip-rollback, /api/test/backdate-ticket, /api/test/backdate-visit`);
+  console.log(`[ERP-059C] Process PID: ${process.pid}`);
+  if(APP_ENV === 'production'){
+    console.log(`[ERP-059C] Running as PRODUCTION. Destructive test endpoints DISABLED regardless of port or role.`);
+  } else if(!IS_TEST_ENV){
+    console.log(`[ERP-059C] APP_ENV is not 'test' — destructive test endpoints DISABLED (fail-closed default). Set APP_ENV=test to enable them on a disposable server.`);
+  }
+});

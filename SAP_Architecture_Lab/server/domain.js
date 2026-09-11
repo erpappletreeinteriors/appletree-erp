@@ -71,9 +71,29 @@ function _crashFault(point){
 // (JE-0988/0989/0990) were reversed via reverseEntry() before this code was removed, per this
 // audit's policy against direct edits to financial history.
 
-const DB_FILE = path.join(__dirname, 'db.json');
-const BACKUP_DIR = path.join(__dirname, 'backups');
-const LOCK_FILE = path.join(__dirname, 'db.json.lock');
+// ERP-059C Step 7 — explicit, environment-variable-driven DB path. Before this phase, DB_FILE was
+// ALWAYS path.join(__dirname, 'db.json') — anchored to wherever this SOURCE FILE physically lives
+// on disk, completely independent of the process's cwd or which PORT it was told to listen on. This
+// is exactly why every isolated-test-server exercise all session had to physically COPY domain.js/
+// server.js into a scratch directory to get a disposable database — merely running the original
+// file with a different cwd/PORT does NOT isolate it, a mistake this very phase's own safety test
+// (tests/erp_059c_production_isolation_tests.js) almost made while being written, caught and
+// disclosed in ERP-059C-PRODUCTION-SAFETY-REPORT.md. DB_PATH lets a test/dev instance point
+// explicitly at a disposable file without needing to copy source files at all. When APP_ENV=test,
+// DB_PATH is now REQUIRED — fails closed rather than silently defaulting to whatever db.json
+// happens to sit next to this file, which could be the real one.
+const DB_FILE = process.env.DB_PATH
+  ? path.resolve(process.env.DB_PATH)
+  : (() => {
+      if(process.env.APP_ENV === 'test'){
+        console.error('[FATAL] APP_ENV=test but DB_PATH is not set. Refusing to start: a test instance must be given an explicit, disposable database path instead of defaulting to the db.json next to this source file, which may be the real one. Set DB_PATH=/path/to/scratch/db.json.');
+        process.exit(1);
+      }
+      return path.join(__dirname, 'db.json');
+    })();
+const DB_DIR = path.dirname(DB_FILE);
+const BACKUP_DIR = path.join(DB_DIR, 'backups');
+const LOCK_FILE = path.join(DB_DIR, 'db.json.lock');
 
 // ERP AUDIT FIX (ERP-005, Critical) — ARCHITECTURAL MITIGATION, not a full fix. The independent
 // audit reproduced a genuine multi-process lost update: two separate `node server.js` processes
@@ -11881,6 +11901,9 @@ function hsnDataQualityReport(){
 }
 module.exports = {
   get DB(){ return DB; }, save, resetToFreshSeed, logAudit, withIdempotency, hashPayload,
+  // ERP-059C — exposed so server.js can print/verify the real DB path at startup and in the test
+  // preflight guard, instead of each caller re-deriving path.join(__dirname,'db.json') itself.
+  DB_FILE,
   withTransaction, setEnforceTransactionBoundary, getEnforceTransactionBoundary,
   assertFiniteNumber, assertPositiveFiniteNumber, assertNonNegativeFiniteNumber, assertNonZeroFiniteNumber,
   ROLES, ROLE_ACTIONS, GL_VISIBLE_ROLES,

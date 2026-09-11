@@ -3,7 +3,29 @@
 // BY THIS SCRIPT (not by calling projectPL/projectFinancial360) from the exact transactions it
 // itself created, then compared against the ERP's own computed output. This is the mandatory
 // audit item flagged as the most consistently open item across all of today's reports.
-const BASE = 'http://localhost:4001';
+// ERP-059C — self-contained preflight guard (see docs/erp-remediation/phases/
+// ERP-059C-TEST-ISOLATION-REPORT.md for the incident this responds to). No hardcoded target, no
+// silent fallback to production port 4001 — that exact pattern (a hardcoded 'http://localhost:4001'
+// in this very file) is what let a routine test run wipe the real production database. Inlined
+// rather than required from a shared module so this file keeps working standalone if copied into a
+// disposable scratch directory, matching this project's established isolated-test-server pattern.
+const BASE = process.env.TEST_BASE_URL || (() => { throw new Error('TEST_BASE_URL is not set. Refusing to run against an unspecified target. Example: TEST_BASE_URL=http://127.0.0.1:4095 node ' + __filename); })();
+async function __erp059cPreflight(){
+  console.log('[TEST TARGET]', BASE);
+  let info;
+  try {
+    const r = await fetch(BASE + '/api/system/environment');
+    info = await r.json();
+  } catch(e){
+    console.error(`[PREFLIGHT BLOCKED] Could not reach ${BASE}/api/system/environment (${e.message}). Refusing to run.`);
+    process.exit(1);
+  }
+  if(!info || info.ok !== true || info.appEnv !== 'test' || info.destructiveTestEndpointsEnabled !== true){
+    console.error(`[PREFLIGHT BLOCKED] ${BASE} is APP_ENV="${info && info.appEnv}" (destructive test endpoints ${info && info.destructiveTestEndpointsEnabled ? 'ENABLED' : 'DISABLED'}) — refusing to run a destructive test against it.`);
+    process.exit(1);
+  }
+  console.log(`[PREFLIGHT OK] ${BASE} confirmed APP_ENV=test.`);
+}
 const jars = {};
 let PASS=0, FAIL=0;
 function record(desc, ok, detail){ if(ok) PASS++; else FAIL++; console.log((ok?'✅ PASS':'❌ FAIL')+' | '+desc+(ok?'':' | '+JSON.stringify(detail).slice(0,300))); }
@@ -20,6 +42,7 @@ async function fullPost(creatorUser, createPath, createBody){
 }
 
 (async()=>{
+  await __erp059cPreflight();
   await login('admin','Admin@12345');
   await login('sales1','Sal@123456');
   await login('accountant1','Acc@12345');

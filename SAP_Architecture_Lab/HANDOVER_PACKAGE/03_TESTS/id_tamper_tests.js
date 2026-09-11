@@ -4,7 +4,29 @@
 // (via the normal Lead->Won chain, not hand-edited DB state) and confirms every PM-scoped
 // document type denies the OTHER PM, plus confirms modified-ID access is denied across a
 // wide range of sensitive document types.
-const BASE = 'http://localhost:4001';
+// ERP-059C — self-contained preflight guard (see docs/erp-remediation/phases/
+// ERP-059C-TEST-ISOLATION-REPORT.md for the incident this responds to). No hardcoded target, no
+// silent fallback to production port 4001 — that exact pattern (a hardcoded 'http://localhost:4001'
+// in this very file) is what let a routine test run wipe the real production database. Inlined
+// rather than required from a shared module so this file keeps working standalone if copied into a
+// disposable scratch directory, matching this project's established isolated-test-server pattern.
+const BASE = process.env.TEST_BASE_URL || (() => { throw new Error('TEST_BASE_URL is not set. Refusing to run against an unspecified target. Example: TEST_BASE_URL=http://127.0.0.1:4095 node ' + __filename); })();
+async function __erp059cPreflight(){
+  console.log('[TEST TARGET]', BASE);
+  let info;
+  try {
+    const r = await fetch(BASE + '/api/system/environment');
+    info = await r.json();
+  } catch(e){
+    console.error(`[PREFLIGHT BLOCKED] Could not reach ${BASE}/api/system/environment (${e.message}). Refusing to run.`);
+    process.exit(1);
+  }
+  if(!info || info.ok !== true || info.appEnv !== 'test' || info.destructiveTestEndpointsEnabled !== true){
+    console.error(`[PREFLIGHT BLOCKED] ${BASE} is APP_ENV="${info && info.appEnv}" (destructive test endpoints ${info && info.destructiveTestEndpointsEnabled ? 'ENABLED' : 'DISABLED'}) — refusing to run a destructive test against it.`);
+    process.exit(1);
+  }
+  console.log(`[PREFLIGHT OK] ${BASE} confirmed APP_ENV=test.`);
+}
 const results = [];
 function record(section, name, pass, detail){ results.push({section, name, pass, detail}); }
 const jars = {};
@@ -21,6 +43,7 @@ async function api(username, method, path, body){
 function denied(r){ return r.status===403 || r.status===404; } // both are acceptable non-disclosure outcomes
 
 async function main(){
+  await __erp059cPreflight();
   await login('admin','Admin@12345'); await api('admin','POST','/api/test/reset');
   await Promise.all([
     login('ceo','Ceo@12345'), login('finance1','Fin@12345'), login('pm1','Pm@123456'),

@@ -1,7 +1,29 @@
 // Phase 22 — Self-Test with temporary/demo data. Covers: multi-bank account behavior,
 // Fixed Asset full lifecycle (incl. transfer + disposal), AMC cancellation (all 4 scenarios).
 // Every record created here is clearly PHASE22-TEST labeled.
-const BASE = 'http://localhost:4001';
+// ERP-059C — self-contained preflight guard (see docs/erp-remediation/phases/
+// ERP-059C-TEST-ISOLATION-REPORT.md for the incident this responds to). No hardcoded target, no
+// silent fallback to production port 4001 — that exact pattern (a hardcoded 'http://localhost:4001'
+// in this very file) is what let a routine test run wipe the real production database. Inlined
+// rather than required from a shared module so this file keeps working standalone if copied into a
+// disposable scratch directory, matching this project's established isolated-test-server pattern.
+const BASE = process.env.TEST_BASE_URL || (() => { throw new Error('TEST_BASE_URL is not set. Refusing to run against an unspecified target. Example: TEST_BASE_URL=http://127.0.0.1:4095 node ' + __filename); })();
+async function __erp059cPreflight(){
+  console.log('[TEST TARGET]', BASE);
+  let info;
+  try {
+    const r = await fetch(BASE + '/api/system/environment');
+    info = await r.json();
+  } catch(e){
+    console.error(`[PREFLIGHT BLOCKED] Could not reach ${BASE}/api/system/environment (${e.message}). Refusing to run.`);
+    process.exit(1);
+  }
+  if(!info || info.ok !== true || info.appEnv !== 'test' || info.destructiveTestEndpointsEnabled !== true){
+    console.error(`[PREFLIGHT BLOCKED] ${BASE} is APP_ENV="${info && info.appEnv}" (destructive test endpoints ${info && info.destructiveTestEndpointsEnabled ? 'ENABLED' : 'DISABLED'}) — refusing to run a destructive test against it.`);
+    process.exit(1);
+  }
+  console.log(`[PREFLIGHT OK] ${BASE} confirmed APP_ENV=test.`);
+}
 const jars = {};
 let PASS=0, FAIL=0;
 const results = [];
@@ -19,6 +41,7 @@ async function fullPost(creatorUser, createPath, createBody){
 }
 
 (async()=>{
+  await __erp059cPreflight();
   await login('admin','Admin@12345');
   await login('ceo','Ceo@12345');
   await login('sales1','Sal@123456');

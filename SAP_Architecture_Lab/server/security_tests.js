@@ -5,7 +5,29 @@
 // Every test below is a REAL HTTP call against the running server on
 // http://localhost:4001 — nothing here is simulated or hand-computed.
 // Run with: node security_tests.js   (server must already be running)
-const BASE = 'http://localhost:4001';
+// ERP-059C — self-contained preflight guard (see docs/erp-remediation/phases/
+// ERP-059C-TEST-ISOLATION-REPORT.md for the incident this responds to). No hardcoded target, no
+// silent fallback to production port 4001 — that exact pattern (a hardcoded 'http://localhost:4001'
+// in this very file) is what let a routine test run wipe the real production database. Inlined
+// rather than required from a shared module so this file keeps working standalone if copied into a
+// disposable scratch directory, matching this project's established isolated-test-server pattern.
+const BASE = process.env.TEST_BASE_URL || (() => { throw new Error('TEST_BASE_URL is not set. Refusing to run against an unspecified target. Example: TEST_BASE_URL=http://127.0.0.1:4095 node ' + __filename); })();
+async function __erp059cPreflight(){
+  console.log('[TEST TARGET]', BASE);
+  let info;
+  try {
+    const r = await fetch(BASE + '/api/system/environment');
+    info = await r.json();
+  } catch(e){
+    console.error(`[PREFLIGHT BLOCKED] Could not reach ${BASE}/api/system/environment (${e.message}). Refusing to run.`);
+    process.exit(1);
+  }
+  if(!info || info.ok !== true || info.appEnv !== 'test' || info.destructiveTestEndpointsEnabled !== true){
+    console.error(`[PREFLIGHT BLOCKED] ${BASE} is APP_ENV="${info && info.appEnv}" (destructive test endpoints ${info && info.destructiveTestEndpointsEnabled ? 'ENABLED' : 'DISABLED'}) — refusing to run a destructive test against it.`);
+    process.exit(1);
+  }
+  console.log(`[PREFLIGHT OK] ${BASE} confirmed APP_ENV=test.`);
+}
 const results = [];
 function record(section, name, pass, detail){ results.push({section, name, pass, detail}); }
 
@@ -26,6 +48,7 @@ async function api(username, method, path, body){
 }
 
 async function main(){
+  await __erp059cPreflight();
   // Reset to a clean, known seed before running (Admin-only endpoint, itself an auth test).
   const adminLogin = await login('admin','Admin@12345');
   record('Setup','Admin login succeeds with correct password', adminLogin.ok && adminLogin.status===200, JSON.stringify(adminLogin));

@@ -23,7 +23,17 @@ async function login(u,p){ const r = await fetch(BASE+'/api/login',{method:'POST
 async function api(u,m,p,b){ const h={'Content-Type':'application/json'}; if(jars[u])h.Cookie=jars[u]; const r = await fetch(BASE+p,{method:m,headers:h,body:b?JSON.stringify(b):undefined}); return {status:r.status,...(await r.json().catch(()=>({})))}; }
 
 function startServer(){
-  const child = spawn(process.execPath, ['server.js'], { cwd: serverDir, stdio: ['ignore', 'pipe', 'pipe'] });
+  // ERP-059C — this suite spawns its own server instance and predates the APP_ENV/DB_PATH gating
+  // added this phase (see docs/erp-remediation/phases/ERP-059C-TEST-ISOLATION-REPORT.md). Without
+  // these, the spawned server now defaults to APP_ENV=production (fail-closed default) and its
+  // /api/test/reset calls below would be rejected with 403. DB_PATH is also required now whenever
+  // APP_ENV=test; pointing it explicitly at this same serverDir keeps the isolation this file
+  // already had (cwd=serverDir), just made explicit instead of implicit.
+  const child = spawn(process.execPath, ['server.js'], {
+    cwd: serverDir,
+    env: { ...process.env, APP_ENV: 'test', DB_PATH: dbPath, PORT: port },
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
   return child;
 }
 function stopServer(child){
