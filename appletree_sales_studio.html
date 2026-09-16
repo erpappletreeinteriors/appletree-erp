@@ -675,7 +675,8 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
       <div id="pg-print" class="page">
         <div class="print-toolbar no-print">
           <button class="btn btn-outline" onclick="nav('editor',null)">← Back to Editor</button>
-          <button class="btn btn-gold" onclick="window.print()">🖨️ Print / Save as PDF</button>
+          <button class="btn btn-outline" onclick="exportExcel()">📊 Share Editable Excel</button>
+          <button class="btn btn-gold" onclick="printQuotation()">🖨️ Print / Save as PDF</button>
         </div>
         <div id="print-target"></div>
       </div>
@@ -1054,7 +1055,9 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
                 <div class="frow"><label class="fl">Email</label><input class="inp" id="st-email" onchange="stSet('email',this.value)"></div>
                 <div class="frow"><label class="fl">Website</label><input class="inp" id="st-website" onchange="stSet('website',this.value)"></div>
                 <div class="frow"><label class="fl">Authorized Signatory Title</label><input class="inp" id="st-signatory" onchange="stSet('signatoryTitle',this.value)"></div>
+                <div class="frow"><label class="fl">GSTIN</label><input class="inp" id="st-gstin" onchange="stSet('gstin',this.value)"></div>
               </div>
+              <div class="frow" style="margin-top:6px"><label class="fl">Registered Address (shown on quotation cover &amp; every page footer)</label><textarea class="inp" id="st-address" rows="2" style="resize:vertical" onchange="stSet('address',this.value)"></textarea></div>
               <div class="frow" style="margin-top:6px"><label class="fl">Company Profile (shown on Introduction page)</label><textarea class="inp" id="st-profile" rows="4" style="resize:vertical" onchange="stSet('companyProfile',this.value)"></textarea></div>
             </div>
           </div>
@@ -1218,7 +1221,7 @@ const PROJECT_STATUSES=['Draft','Submitted','Returned','Approved'];
 function uid(prefix){ return prefix+'_'+Math.random().toString(36).slice(2,9)+Date.now().toString(36).slice(-4); }
 function escHtml(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function nl2br(s){ return escHtml(s).replace(/\n/g,'<br>'); }
-function INR(n){ n=Number(n)||0; return '₹'+n.toLocaleString('en-IN',{maximumFractionDigits:0}); }
+function INR(n){ n=Number(n)||0; return '₹'+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function num(v,d=0){ const n=parseFloat(v); return isNaN(n)?d:n; }
 function fmtDate(d){ if(!d) return '—'; const dt=new Date(d); if(isNaN(dt)) return d; return dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}); }
 /* ============================== CRM CONSTANTS ============================== */
@@ -1284,7 +1287,7 @@ function seedSalesData(){
     logo:'logo.png',
     phone:'+91 7592 909090',
     email:'sales@appletreeinteriors.in',
-    website:'appletreeinteriors.in',
+    website:'www.appletreeinteriors.in',
     signatoryTitle:'Authorized Signatory',
     defaultValidityDays:14,
     quotePrefix:'AT',
@@ -1501,7 +1504,7 @@ function sanitizeAllData(){
   if(!DB.settings.logo) DB.settings.logo='logo.png';
   if(!DB.settings.phone) DB.settings.phone='+91 7592 909090';
   if(!DB.settings.email) DB.settings.email='sales@appletreeinteriors.in';
-  if(!DB.settings.website) DB.settings.website='appletreeinteriors.in';
+  if(!DB.settings.website) DB.settings.website='www.appletreeinteriors.in';
   if(!DB.settings.signatoryTitle) DB.settings.signatoryTitle='Authorized Signatory';
   if(DB.settings.defaultValidityDays==null) DB.settings.defaultValidityDays=14;
   if(!DB.settings.quotePrefix) DB.settings.quotePrefix='AT';
@@ -3491,6 +3494,13 @@ function renderReportsPage(){
   ];
   document.getElementById('rep-buttons').innerHTML=reports.map(([label,key])=>`<button class="btn btn-outline" onclick="generateReport('${key}')">${label}</button>`).join('');
 }
+let _reportPrintTitle='';
+function printReportPdf(){
+  const orig=document.title;
+  if(_reportPrintTitle) document.title=_reportPrintTitle;
+  window.print();
+  document.title=orig;
+}
 function generateReport(key){
   const projId=document.getElementById('rep-proj-sel').value;
   const proj=DB.projects.find(p=>p.id===projId);
@@ -3502,7 +3512,8 @@ function generateReport(key){
   if(!proj){ out.innerHTML='<div class="empty">Select a project first.</div>'; return; }
   if(!allItems.length){ out.innerHTML='<div class="empty">This project has no costed furniture items yet.</div>'; return; }
 
-  let html=`<div class="card"><div class="card-hd"><div><div class="card-title">${escHtml(proj.name)} — ${reportTitle(key)}</div><div class="card-sub">${escHtml(proj.client)} · ${fmtDate(proj.date)}</div></div><button class="btn btn-gold no-print" onclick="window.print()">🖨️ Print / Save PDF</button></div>`;
+  _reportPrintTitle=(proj.name+'_'+reportTitle(key)).replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'');
+  let html=`<div class="card"><div class="card-hd"><div><div class="card-title">${escHtml(proj.name)} — ${reportTitle(key)}</div><div class="card-sub">${escHtml(proj.client)} · ${fmtDate(proj.date)}</div></div><button class="btn btn-gold no-print" onclick="printReportPdf()">🖨️ Print / Save PDF</button></div>`;
 
   if(key==='internal'||key==='quotation'){
     const showCost=key==='internal';
@@ -4296,7 +4307,7 @@ function renderBoq(){
         <tbody>${sec.items.length?sec.items.map(it=>`<tr>
           <td>${slMap[it.id]}</td>
           <td>${itemPhotoCellHtml(sec.id,it)}</td>
-          <td><input class="inp inp-sm" value="${escHtml(it.description)}" onchange="itemChange('${sec.id}','${it.id}','description',this.value)"></td>
+          <td><textarea class="inp inp-sm" rows="2" style="resize:vertical;min-height:32px" onchange="itemChange('${sec.id}','${it.id}','description',this.value)">${escHtml(it.description)}</textarea></td>
           <td><input class="inp inp-sm" value="${escHtml(it.finish)}" onchange="itemChange('${sec.id}','${it.id}','finish',this.value)"></td>
           <td><input class="inp inp-sm" value="${escHtml(it.material)}" onchange="itemChange('${sec.id}','${it.id}','material',this.value)"></td>
           <td><input class="inp inp-sm" value="${escHtml(it.size)}" placeholder="N/A" onchange="itemChange('${sec.id}','${it.id}','size',this.value)"></td>
@@ -4630,6 +4641,8 @@ function renderSettings(){
   const s=DB.settings;
   document.getElementById('st-companyName').value=s.companyName||'';
   document.getElementById('st-tagline').value=s.tagline||'';
+  document.getElementById('st-gstin').value=s.gstin||'';
+  document.getElementById('st-address').value=s.address||'';
   document.getElementById('st-phone').value=s.phone||'';
   document.getElementById('st-email').value=s.email||'';
   document.getElementById('st-website').value=s.website||'';
@@ -4731,7 +4744,9 @@ img{ max-width:100%; }
 .cover-grid{ display:grid; grid-template-columns:1fr 1fr; row-gap:7mm; column-gap:8mm; max-width:150mm; }
 .cover-k{ font-size:8pt; text-transform:uppercase; letter-spacing:.06em; color:#9D9A91; margin-bottom:1.5mm; }
 .cover-v{ font-size:12.5pt; font-weight:700; color:#1C1C1A; }
-.cover-foot{ position:absolute; bottom:20mm; left:22mm; right:22mm; font-size:8pt; color:#9D9A91; display:flex; justify-content:space-between; border-top:0.75pt solid #E7E4DC; padding-top:4mm; }
+.cover-foot{ position:absolute; bottom:20mm; left:22mm; right:22mm; font-size:8pt; color:#9D9A91; border-top:0.75pt solid #E7E4DC; padding-top:4mm; }
+.cover-addr{ margin-bottom:2mm; }
+.cover-foot-row{ display:flex; justify-content:space-between; }
 
 .doc-h1{ font-size:16pt; font-weight:800; color:#1C1C1A; margin:0 0 5mm; }
 .doc-h1 .bar{ display:block; width:20mm; height:3px; background:#C3B152; margin-bottom:3mm; }
@@ -4742,13 +4757,16 @@ img{ max-width:100%; }
 .client-strip .k{ font-size:7.2pt; text-transform:uppercase; letter-spacing:.05em; color:#9D9A91; }
 .client-strip .v{ font-size:9.3pt; font-weight:700; color:#1C1C1A; margin-top:0.5mm; }
 
-table.boq{ width:100%; border-collapse:collapse; font-size:7.6pt; }
-table.boq thead th{ background:#1C1C1A; color:#EDEBE4; text-transform:uppercase; letter-spacing:.02em; font-size:6.6pt; padding:2.6mm 1.8mm; text-align:left; }
-table.boq td{ padding:2.3mm 1.8mm; border-bottom:0.5pt solid #E7E4DC; vertical-align:top; }
-table.boq tr.section-row td{ background:#F4F1DC; font-weight:800; color:#5c521f; font-size:8pt; padding:2.6mm 1.8mm; text-transform:uppercase; letter-spacing:.03em; break-after:avoid; break-inside:avoid; }
+table.boq{ width:100%; table-layout:fixed; border-collapse:collapse; font-size:7.6pt; }
+table.boq td{ overflow-wrap:break-word; word-break:break-word; }
+table.boq thead th{ background:#1C1C1A; color:#EDEBE4; text-transform:uppercase; letter-spacing:.02em; font-size:6.6pt; padding:2.6mm 1.8mm; text-align:left; border-right:0.5pt solid rgba(255,255,255,.2); }
+table.boq thead th:last-child{ border-right:none; }
+table.boq td{ padding:2.3mm 1.8mm; border-bottom:0.5pt solid #E7E4DC; border-right:0.5pt solid #E7E4DC; vertical-align:top; }
+table.boq td:last-child{ border-right:none; }
+table.boq tr.section-row td{ background:#F4F1DC; font-weight:800; color:#5c521f; font-size:8pt; padding:2.6mm 1.8mm; text-transform:uppercase; letter-spacing:.03em; break-after:avoid; break-inside:avoid; border-right:none; }
 table.boq tr.item-row{ break-inside:avoid; }
 table.boq tr.total-row td{ border-top:1.2pt solid #1C1C1A; border-bottom:none; font-weight:800; padding-top:3mm; break-inside:avoid; }
-table.boq td.num{ text-align:right; font-family:'JetBrains Mono',monospace; white-space:nowrap; }
+table.boq td.num{ text-align:right; font-family:'JetBrains Mono',monospace; white-space:nowrap; padding-right:3mm; }
 table.boq td.muted{ color:#9D9A91; font-size:7pt; }
 table.boq td.photo-cell{ width:16mm; padding:1mm; }
 table.boq td.photo-cell img{ display:block; width:14mm; height:14mm; object-fit:contain; border:0.5pt solid #E7E4DC; border-radius:1mm; background:#fff; }
@@ -4798,7 +4816,7 @@ function buildPrintContent(q){
       rows.push(`<tr class="item-row">
         <td>${slMap[it.id]}</td>
         ${hasAnyPhoto?`<td class="photo-cell">${it.photo?`<img src="${it.photo}" alt="">`:''}</td>`:''}
-        <td>${escHtml(it.description)}${it.notes?`<div class="muted">${escHtml(it.notes)}</div>`:''}</td>
+        <td>${nl2br(it.description)}${it.notes?`<div class="muted">${escHtml(it.notes)}</div>`:''}</td>
         <td>${escHtml(it.finish)||'—'}</td>
         <td>${escHtml(it.material)||'—'}</td>
         <td>${escHtml(it.size)||'N/A'}</td>
@@ -4831,8 +4849,12 @@ function buildPrintContent(q){
       <div><div class="cover-k">Project Location</div><div class="cover-v">${escHtml(q.projectLocation)||'—'}</div></div>
       <div><div class="cover-k">Prepared By</div><div class="cover-v">${escHtml(q.preparedBy)||'—'}</div></div>
       <div><div class="cover-k">Estimate Validity</div><div class="cover-v">${num(q.validityDays)} days</div></div>
+      ${s.gstin?`<div><div class="cover-k">GSTIN</div><div class="cover-v">${escHtml(s.gstin)}</div></div>`:''}
     </div>
-    <div class="cover-foot"><span>${escHtml(s.companyName||'')}</span><span>${escHtml(s.website||'')}</span></div>
+    <div class="cover-foot">
+      ${s.address?`<div class="cover-addr">${escHtml(s.address)}</div>`:''}
+      <div class="cover-foot-row"><span>${escHtml(s.companyName||'')}</span><span>${escHtml(s.phone||'')} &nbsp;|&nbsp; ${escHtml(s.email||'')} &nbsp;|&nbsp; ${escHtml(s.website||'')}</span></div>
+    </div>
   </div>
 
   <div class="pgbreak">
@@ -4858,6 +4880,10 @@ function buildPrintContent(q){
     <div class="doc-h1"><span class="bar"></span>Bill of Quantities</div>
     ${q.customBoq&&q.customBoq.enabled ? clientGridHtmlForPrint(q.customBoq) : `
     <table class="boq">
+      <colgroup>${hasAnyPhoto
+        ? '<col style="width:4%"><col style="width:9%"><col style="width:18%"><col style="width:10%"><col style="width:11%"><col style="width:9%"><col style="width:6%"><col style="width:6%"><col style="width:13%"><col style="width:14%">'
+        : '<col style="width:4%"><col style="width:28%"><col style="width:10%"><col style="width:10%"><col style="width:9%"><col style="width:7%"><col style="width:6%"><col style="width:13%"><col style="width:13%">'
+      }</colgroup>
       <thead><tr><th>Sl.</th>${hasAnyPhoto?'<th>Photo</th>':''}<th>Item Description</th><th>Finish</th><th>Material Spec.</th><th>Size</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit Price ₹</th><th class="num">Amount ₹</th></tr></thead>
       <tbody>${rows.join('')||`<tr><td colspan="${totalCols}" class="muted" style="padding:8mm 0;text-align:center">No items added yet.</td></tr>`}</tbody>
     </table>`}
@@ -4932,9 +4958,13 @@ function buildTermsSheetRows(q){
 function sanitizeSheetName(name){ return (name||'Sheet').replace(/[:\\\/?*\[\]]/g,' ').slice(0,31)||'Sheet'; }
 function buildQuotationWorkbook(q){
   if(q.customBoq&&q.customBoq.enabled) return buildClientBoqWorkbook(q);
+  const s=DB.settings;
   const slMap=slNoMap(q);
   const rows=[];
-  rows.push(['Appletree Interiors — Quotation']);
+  rows.push([(s.companyName||'Appletree Interiors')+' — Quotation']);
+  if(s.address) rows.push([s.address]);
+  rows.push([[s.phone,s.email,s.website].filter(Boolean).join('  |  ')+(s.gstin?'   GSTIN: '+s.gstin:'')]);
+  rows.push([]);
   rows.push(['Quote No.',q.quoteNo,'','Date',fmtDate(q.date)]);
   rows.push(['Client Name',q.clientName||'','','Project Name',q.projectName||'']);
   rows.push(['Project Location',q.projectLocation||'','','Prepared By',q.preparedBy||'']);
@@ -4979,7 +5009,7 @@ function buildClientBoqWorkbook(q){
   const s=DB.settings;
   const cb=q.customBoq;
   const coverRows=[
-    [s.companyName||'Appletree Interiors'],[s.tagline||''],[],
+    [s.companyName||'Appletree Interiors'],[s.tagline||''],[s.address||''],[s.gstin?'GSTIN: '+s.gstin:''],[],
     ['Quote No.',q.quoteNo,'','Date',fmtDate(q.date)],
     ['Client Name',q.clientName||'','','Project Name',q.projectName||''],
     ['Project Location',q.projectLocation||'','','Prepared By',q.preparedBy||''],
@@ -5012,6 +5042,13 @@ async function exportExcel(){
   await saveBlobToDisk(blob, safeFileBase(q)+'.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Excel Workbook', ['.xlsx']);
 }
 
+function printQuotation(){
+  const q=curQ();
+  const orig=document.title;
+  if(q) document.title=safeFileBase(q);
+  window.print();
+  document.title=orig;
+}
 async function renderPrintPreview(){
   const q=curQ();
   const target=document.getElementById('print-target');
