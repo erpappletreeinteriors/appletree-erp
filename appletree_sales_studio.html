@@ -188,6 +188,13 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
   #print-target{background:#fff!important;padding:0!important;margin:0!important}
 }
 @page{ margin:0; size:A4; }
+/* On-screen readability only — the A4 page at true print size reads small/
+   dense on a monitor. Zoom the on-screen preview up; @media screen never
+   applies when actually printing/saving as PDF, so the real output (page
+   size, margins, pagination) is completely unaffected. */
+@media screen{
+  #print-target .pagedjs_pages{ zoom:1.3; }
+}
 </style>
 </head>
 <body>
@@ -280,6 +287,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
     </div>
     <div class="nav-group" id="navgroup-crm">
       <div class="nav-label">CRM</div>
+      <div class="nav-item" data-pg="leads" onclick="nav('leads',this)"><span class="ni">🎯</span> Leads &amp; Enquiries</div>
       <div class="nav-item" data-pg="partners" onclick="nav('partners',this)"><span class="ni">🤝</span> Partners &amp; Staff</div>
       <div class="nav-item" data-pg="analytics" onclick="nav('analytics',this)"><span class="ni">📈</span> Analytics</div>
     </div>
@@ -679,6 +687,24 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
           <button class="btn btn-gold" onclick="printQuotation()">🖨️ Print / Save as PDF</button>
         </div>
         <div id="print-target"></div>
+      </div>
+
+      <!-- LEADS & ENQUIRIES -->
+      <div id="pg-leads" class="page">
+        <div class="sec-hd"><div class="sec-title">Leads &amp; Enquiries</div><button class="btn btn-gold" onclick="openLeadModal()">+ New Lead</button></div>
+        <div class="card">
+          <div class="tbl-toolbar">
+            <input class="inp inp-search" id="leads-search" placeholder="Search leads…" style="width:220px" oninput="renderLeadsPage()">
+            <select class="inp inp-sm" id="leads-status-f" onchange="renderLeadsPage()">
+              <option value="">All Status</option>
+              <option>New</option><option>Contacted</option><option>Site Visit</option><option>Quotation Requested</option><option>Quoted</option><option>Won</option><option>Lost</option>
+            </select>
+          </div>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Date</th><th>Client Name</th><th>Phone</th><th>Location</th><th>Status</th><th>Source</th><th class="right">Value ₹</th><th>Actions</th></tr></thead>
+            <tbody id="tb-leads"></tbody>
+          </table></div>
+        </div>
       </div>
 
       <!-- PARTNERS & STAFF -->
@@ -1198,7 +1224,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 const STORE_KEY='appletree_sales_studio_db_v1';
 const LEGACY_QUOTATION_KEY='appletree_quotation_db_v1';
 const LEGACY_COSTING_KEY='appletree_costing_db_v1';
-let DB={settings:{},quotations:[],staff:[],architects:[],builders:[],b2bPartners:[],materials:[],hardware:[],labour:[],templates:[],projects:[],costingItems:[],customItems:[],simpleItems:[]};
+let DB={settings:{},quotations:[],staff:[],architects:[],builders:[],b2bPartners:[],materials:[],hardware:[],labour:[],templates:[],projects:[],costingItems:[],customItems:[],simpleItems:[],leads:[]};
 let currentEditId=null;
 let currentProjectId=null, currentItemId=null, currentCustomItemId=null, currentSimpleItemId=null;
 function today(){ return new Date().toISOString().slice(0,10); }
@@ -1491,6 +1517,7 @@ function sanitizeAllData(){
   if(!Array.isArray(DB.costingItems)) DB.costingItems=[];
   if(!Array.isArray(DB.customItems)) DB.customItems=[];
   if(!Array.isArray(DB.simpleItems)) DB.simpleItems=[];
+  if(!Array.isArray(DB.leads)) DB.leads=[];
   if(DB.settings.sheetSqft==null) DB.settings.sheetSqft=32;
   if(DB.settings.defaultWastage==null) DB.settings.defaultWastage=8;
   if(DB.settings.defaultOverhead==null) DB.settings.defaultOverhead=10;
@@ -1681,6 +1708,87 @@ function renderPartnerList(listKey){
   </tr>`).join('') : `<tr><td colspan="6" class="empty">No ${PARTNER_LISTS[listKey].toLowerCase()} added yet.</td></tr>`;
 }
 function renderPartners(){ Object.keys(PARTNER_LISTS).forEach(renderPartnerList); }
+
+/* ============================== LEADS & ENQUIRIES ==============================
+   Reads/writes the ERP's own shared `leads` table (see SS_TABLE_MAP note above
+   and supabase_migration_sales_studio_shared_leads.sql) — NOT a ss_-prefixed
+   Sales-Studio-only table. Status vocabulary intentionally matches the ERP's
+   own Leads module exactly so a lead's stage means the same thing in both apps. */
+const LEAD_STATUSES=['New','Contacted','Site Visit','Quotation Requested','Quoted','Won','Lost'];
+const LEAD_STATUS_COLOR={New:'tag-blue',Contacted:'tag-amber','Site Visit':'tag-amber','Quotation Requested':'tag-blue',Quoted:'tag-blue',Won:'tag-green',Lost:'tag-red'};
+function leadStatusTag(s){ return `<span class="tag ${LEAD_STATUS_COLOR[s]||'tag-grey'}">${escHtml(s||'New')}</span>`; }
+function renderLeadsPage(){
+  const q=(document.getElementById('leads-search')?.value||'').toLowerCase();
+  const statusF=document.getElementById('leads-status-f')?.value||'';
+  const rows=(DB.leads||[]).filter(l=>{
+    if(statusF && l.status!==statusF) return false;
+    if(q && !(`${l.name} ${l.phone} ${l.location} ${l.source}`.toLowerCase().includes(q))) return false;
+    return true;
+  }).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const tb=document.getElementById('tb-leads');
+  tb.innerHTML = rows.length ? rows.map(l=>`<tr>
+    <td>${fmtDate(l.date)}</td>
+    <td><strong>${escHtml(l.name)}</strong></td>
+    <td class="muted">${escHtml(l.phone||'—')}</td>
+    <td>${escHtml(l.location||'—')}</td>
+    <td>${leadStatusTag(l.status)}</td>
+    <td><span class="tag tag-grey">${escHtml(l.source||'—')}</span></td>
+    <td class="right mono">${INR(l.value||0)}</td>
+    <td style="white-space:nowrap">
+      ${['New','Contacted','Site Visit'].includes(l.status)?`<button class="btn btn-gold btn-sm" onclick="requestQuoteForLead('${l.id}')">📝 Request Quote</button>`:''}
+      <button class="btn btn-sm" onclick="openLeadModal('${l.id}')">Edit</button>
+      <button class="btn btn-sm btn-red" onclick="deleteLead('${l.id}')">Del</button>
+    </td>
+  </tr>`).join('') : `<tr><td colspan="8" class="empty">No leads found.</td></tr>`;
+}
+function openLeadModal(id){
+  const l=id?DB.leads.find(x=>x.id===id):null;
+  openModalHtml(`
+    <div class="modal-hd"><div class="modal-title">${l?'Edit':'New'} Lead</div><button class="modal-close" onclick="closeModal()">×</button></div>
+    <input type="hidden" id="ld-id" value="${l?.id||''}">
+    <div class="fgrid">
+      <div><label class="fl">Date</label><input class="inp" type="date" id="ld-date" value="${l?.date||new Date().toISOString().slice(0,10)}" style="width:100%"></div>
+      <div><label class="fl req">Client Name</label><input class="inp" id="ld-name" value="${escHtml(l?.name||'')}" style="width:100%"></div>
+      <div><label class="fl">Phone</label><input class="inp" id="ld-phone" value="${escHtml(l?.phone||'')}" placeholder="+91…" style="width:100%"></div>
+      <div><label class="fl">Location</label><input class="inp" id="ld-loc" value="${escHtml(l?.location||'')}" placeholder="City / Area" style="width:100%"></div>
+      <div><label class="fl">Source</label><select class="inp" id="ld-src" style="width:100%">${optionsHtml(LEAD_SOURCES,l?.source)}</select></div>
+      <div><label class="fl">Status</label><select class="inp" id="ld-status" style="width:100%">${optionsHtml(LEAD_STATUSES,l?.status||'New')}</select></div>
+      <div><label class="fl">Estimated Value ₹</label><input class="inp" type="number" min="0" id="ld-val" value="${l?.value??0}" style="width:100%"></div>
+    </div>
+    <div class="modal-ft"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-gold" onclick="saveLead()">Save Lead</button></div>
+  `);
+}
+function saveLead(){
+  const id=document.getElementById('ld-id').value;
+  const name=document.getElementById('ld-name').value.trim();
+  if(!name){ alert('Client Name is required.'); return; }
+  const rec={
+    id: id||uid('LD'),
+    date: document.getElementById('ld-date').value,
+    name, phone: document.getElementById('ld-phone').value.trim(),
+    location: document.getElementById('ld-loc').value.trim(),
+    source: document.getElementById('ld-src').value,
+    status: document.getElementById('ld-status').value,
+    value: num(document.getElementById('ld-val').value)
+  };
+  const idx=DB.leads.findIndex(x=>x.id===id);
+  if(idx>-1) DB.leads[idx]={...DB.leads[idx],...rec}; else DB.leads.push(rec);
+  persist(); closeModal(); renderLeadsPage();
+}
+function deleteLead(id){
+  if(!confirm('Delete this lead permanently? This also affects the main ERP, which shares this same lead list.')) return;
+  DB.leads=DB.leads.filter(x=>x.id!==id); persist(); renderLeadsPage();
+}
+function requestQuoteForLead(id){
+  const lead=DB.leads.find(x=>x.id===id); if(!lead) return;
+  if(['Quotation Requested','Quoted','Won','Lost'].includes(lead.status)){ alert('This lead has already moved past that stage.'); return; }
+  lead.status='Quotation Requested';
+  const q=newQuotation();
+  q.clientName=lead.name; q.projectLocation=lead.location||''; q.leadSource=lead.source||''; q.leadSourceRefId=lead.id;
+  logActivity(q,'created','Created from lead: '+lead.name);
+  persist();
+  openEditor(q.id);
+}
 
 /* ---- calculations ---- */
 function itemAmount(it){ return it.included ? 0 : (num(it.qty)*num(it.unitPrice)); }
@@ -3567,7 +3675,7 @@ function generateReport(key){
 function reportTitle(key){ return {internal:'Internal Cost Sheet',quotation:'Client Quotation',purchase:'Purchase / Material Requirement List',cutting:'Cutting List',hardware:'Hardware List',labour:'Labour Summary',boq:'BOQ',profit:'Profit Analysis'}[key]||key; }
 
 /* ============================== NAV ============================== */
-const PAGE_TITLES={dashboard:'Dashboard',quotations:'Quotations',editor:'Quotation Editor',print:'Preview & Print',settings:'Settings',partners:'Partners & Staff',analytics:'Analytics',kanban:'Kanban Board',calendar:'Follow-up Calendar',
+const PAGE_TITLES={dashboard:'Dashboard',quotations:'Quotations',editor:'Quotation Editor',print:'Preview & Print',settings:'Settings',partners:'Partners & Staff',analytics:'Analytics',kanban:'Kanban Board',calendar:'Follow-up Calendar',leads:'Leads & Enquiries',
   materials:'Material Master',hardware:'Hardware Master',labour:'Labour Master',templates:'Furniture Template Library',projects:'Costing Projects',projectdetail:'Project',itemdetail:'Furniture Item',customitemdetail:'Custom Wood Item',simpleitemdetail:'Simple Costing Item',reports:'Costing Reports',costingdashboard:'Costing Dashboard',approvals:'Estimation Approvals',teamapprovals:'Team & Approvals'};
 const NAV_GROUP_MAP={editor:'quotations',print:'quotations',projectdetail:'projects',itemdetail:'projects',customitemdetail:'projects',simpleitemdetail:'projects'};
 function nav(pg,el){
@@ -3577,7 +3685,7 @@ function nav(pg,el){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   if(el) el.classList.add('active');
   else { const match=document.querySelector(`.nav-item[data-pg="${NAV_GROUP_MAP[pg]||pg}"]`); if(match) match.classList.add('active'); }
-  const renderers={dashboard:renderDashboard,quotations:renderQuotations,editor:renderEditor,settings:renderSettings,partners:renderPartners,analytics:renderAnalytics,kanban:renderKanban,calendar:renderCalendar,
+  const renderers={dashboard:renderDashboard,quotations:renderQuotations,editor:renderEditor,settings:renderSettings,partners:renderPartners,analytics:renderAnalytics,kanban:renderKanban,calendar:renderCalendar,leads:renderLeadsPage,
     materials:renderMaterials,hardware:renderHardware,labour:renderLabour,templates:renderTemplates,projects:renderProjects,reports:renderReportsPage,costingdashboard:renderCostingDashboard,approvals:renderEstimationApprovals,teamapprovals:renderTeamApprovals,
     projectdetail:renderProjectDetail,itemdetail:renderCostingItemDetail,customitemdetail:renderCustomItemDetail,simpleitemdetail:renderSimpleItemDetail};
   if(renderers[pg]) renderers[pg]();
@@ -4768,8 +4876,8 @@ table.boq tr.item-row{ break-inside:avoid; }
 table.boq tr.total-row td{ border-top:1.2pt solid #1C1C1A; border-bottom:none; font-weight:800; padding-top:3mm; break-inside:avoid; }
 table.boq td.num{ text-align:right; font-family:'JetBrains Mono',monospace; white-space:nowrap; padding-right:3mm; }
 table.boq td.muted{ color:#9D9A91; font-size:7pt; }
-table.boq td.photo-cell{ width:16mm; padding:1mm; }
-table.boq td.photo-cell img{ display:block; width:14mm; height:14mm; object-fit:contain; border:0.5pt solid #E7E4DC; border-radius:1mm; background:#fff; }
+table.boq td.photo-cell{ width:20mm; padding:1mm; }
+table.boq td.photo-cell img{ display:block; width:18mm; height:18mm; object-fit:contain; border:0.5pt solid #E7E4DC; border-radius:1mm; background:#fff; }
 
 .summary-box{ margin-top:7mm; margin-left:auto; width:82mm; break-inside:avoid; }
 .summary-box .row{ display:flex; justify-content:space-between; padding:2mm 0; font-size:9pt; border-bottom:0.5pt solid #E7E4DC; }
@@ -4881,7 +4989,7 @@ function buildPrintContent(q){
     ${q.customBoq&&q.customBoq.enabled ? clientGridHtmlForPrint(q.customBoq) : `
     <table class="boq">
       <colgroup>${hasAnyPhoto
-        ? '<col style="width:4%"><col style="width:9%"><col style="width:18%"><col style="width:10%"><col style="width:11%"><col style="width:9%"><col style="width:6%"><col style="width:6%"><col style="width:13%"><col style="width:14%">'
+        ? '<col style="width:4%"><col style="width:12%"><col style="width:16%"><col style="width:10%"><col style="width:11%"><col style="width:8%"><col style="width:6%"><col style="width:6%"><col style="width:13%"><col style="width:14%">'
         : '<col style="width:4%"><col style="width:28%"><col style="width:10%"><col style="width:10%"><col style="width:9%"><col style="width:7%"><col style="width:6%"><col style="width:13%"><col style="width:13%">'
       }</colgroup>
       <thead><tr><th>Sl.</th>${hasAnyPhoto?'<th>Photo</th>':''}<th>Item Description</th><th>Finish</th><th>Material Spec.</th><th>Size</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit Price ₹</th><th class="num">Amount ₹</th></tr></thead>
@@ -5072,7 +5180,12 @@ const SS_ROLES=['Sales Executive','Cost Estimator','Admin Coordinator','Manageme
 const SS_ADMIN_ROLES=['Admin Coordinator','Management','CEO'];
 const SS_TABLE_MAP={quotations:'ss_quotations',staff:'ss_staff',architects:'ss_architects',builders:'ss_builders',b2bPartners:'ss_b2b_partners',
   materials:'ss_materials',hardware:'ss_hardware',labour:'ss_labour',templates:'ss_templates',
-  projects:'ss_projects',costingItems:'ss_costing_items',customItems:'ss_custom_items',simpleItems:'ss_simple_items'};
+  projects:'ss_projects',costingItems:'ss_costing_items',customItems:'ss_custom_items',simpleItems:'ss_simple_items',
+  leads:'leads'};
+// NOTE: 'leads' deliberately has NO ss_ prefix — it's the ERP's own shared
+// `leads` table (see supabase_migration_sales_studio_shared_leads.sql),
+// not a Sales-Studio-only table. Every other key above is ss_-namespaced
+// and fully separate from the ERP's data.
 const SS_KEYS=Object.keys(SS_TABLE_MAP);
 const SS_SETTINGS_ROW_ID='org-settings';
 
