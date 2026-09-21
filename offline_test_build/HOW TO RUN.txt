@@ -145,6 +145,15 @@ WHAT TO TEST — NEW THIS REFRESH (2026-07-21)
   retyping. For a product without Costing Engine data, open its BOM
   and use "⚡ Fetch from Estimation" if it appears (only shows up when
   that BOQ line was priced with the Costing Engine).
+- Quotation/BOQ output now matches Appletree Sales Studio's format:
+  type a multi-line item description in the BOQ Builder (it now prints
+  with real line breaks); set Company Profile → GSTIN + Registered
+  Address and check they show up on the Quotation's cover page; open
+  a Quotation's Full Print Preview and confirm amounts always show 2
+  decimals and the BOQ table columns stay aligned instead of
+  overflowing; try "📊 Share Editable Excel" next to Print/Save as PDF
+  — it should download an .xls with the same company header/GSTIN and
+  BOQ rows as the PDF.
 
 QUESTIONS OR ISSUES
 --------------------

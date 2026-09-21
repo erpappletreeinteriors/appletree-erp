@@ -5038,7 +5038,8 @@ textarea.inp{resize:vertical;min-height:72px;}
   <div style="background:#1A1612;padding:12px 20px;display:flex;align-items:center;gap:12px;flex-shrink:0;border-bottom:2px solid #C8973A">
     <button onclick="closeQuotPagedPreview()" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px">← Close</button>
     <span style="color:#C8973A;font-weight:700;font-size:15px">Quotation — Full Print Preview</span>
-    <button onclick="window.print()" style="background:#C8973A;border:none;color:#fff;padding:7px 18px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px;margin-left:auto">🖨 Print / Save as PDF</button>
+    <button onclick="exportQuotationExcel()" style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);color:#fff;padding:7px 16px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;margin-left:auto">📊 Share Editable Excel</button>
+    <button onclick="printQuotPaged()" style="background:#C8973A;border:none;color:#fff;padding:7px 18px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px">🖨 Print / Save as PDF</button>
   </div>
   <div id="quot-paged-scroll" style="flex:1;overflow:auto;padding:24px 0;background:#DEDCD3">
     <div id="quot-paged-target"></div>
@@ -5402,6 +5403,7 @@ const DB = {
     email:'sales@appletreeinteriors.in',
     website:'appletreeinteriors.in',
     signatoryTitle:'Authorized Signatory',
+    gstin:'', address:'',
     companyProfileText:'Appletree Interiors is a turnkey interior design and execution studio, delivering custom furniture, lighting, and full-scope interior fit-outs for homes and commercial spaces. Our in-house design, manufacturing, and site teams manage every stage of the project — from concept to handover — so clients get one accountable partner from start to finish.',
     welcomeNote:'We specialize in full-service interior design, including custom furniture, lighting, and art procurement/installation. Our project portfolio spans new home construction and residential renovations of all sizes. Please find below the itemized estimate prepared for your project, based on the requirements shared with us.',
     materialSpecsText:'Plywood | Century Club Prime / Greenply / Trojan Classic\nMarine Ply | IS 710 Grade — Century / Greenply\nLaminate | 1 mm thick laminate for finish, 0.8 mm laminate for carcass inside\nVeneer | Natural veneer, base price as per species selected\nPVC | 0.7 Density — Trojan / Century Cenwood\nGlass | Toughened glass, 6–8 mm as per application\nHardware | Hettich / Hafele\nHinges | Hettich / Hafele — soft-close\nSliders | Hettich / Hafele — telescopic / tandem\nHandles | Hettich / Hafele / Godrej\nChannels | Hettich / Hafele\nPaint Finish | PU Paint Finish, spray-applied\nPolish Finish | Melamine / PU Polish',
@@ -22722,7 +22724,11 @@ function openCompanyProfileModal(){
       <div class="fg"><label class="fl">Website</label><input class="inp" id="cp-website" value="${escHtml(cp.website)}"></div>
       <div class="fg"><label class="fl">Authorized Signatory Title</label><input class="inp" id="cp-signatory" value="${escHtml(cp.signatoryTitle)}"></div>
     </div>
-    <div class="fg"><label class="fl">Default Validity (days)</label><input class="inp" type="number" id="cp-validity" value="${cp.defaultValidityDays||14}" style="max-width:120px"></div>
+    <div class="f2">
+      <div class="fg"><label class="fl">GSTIN</label><input class="inp" id="cp-gstin" value="${escHtml(cp.gstin)}" placeholder="32AAAAA0000A1Z5"></div>
+      <div class="fg"><label class="fl">Default Validity (days)</label><input class="inp" type="number" id="cp-validity" value="${cp.defaultValidityDays||14}"></div>
+    </div>
+    <div class="fg"><label class="fl">Registered Address (shown on the quotation cover page)</label><textarea class="inp" id="cp-address" rows="2" style="resize:vertical">${escHtml(cp.address)}</textarea></div>
     <div class="fg"><label class="fl">Company Profile (shown on the Introduction page)</label><textarea class="inp" id="cp-profile" rows="3">${escHtml(cp.companyProfileText)}</textarea></div>
     <div class="fg"><label class="fl">Default Welcome Note</label><textarea class="inp" id="cp-welcome" rows="3">${escHtml(cp.welcomeNote)}</textarea></div>
     <div class="fg"><label class="fl">Default Material Specifications (one per line: Category | Specification)</label><textarea class="inp" id="cp-matspec" rows="5" style="font-family:'JetBrains Mono',monospace;font-size:11px">${escHtml(cp.materialSpecsText)}</textarea></div>
@@ -22754,6 +22760,7 @@ function saveCompanyProfile(){
   const cp = DB.companyProfile;
   cp.companyName=g('cp-name'); cp.tagline=g('cp-tagline'); cp.phone=g('cp-phone');
   cp.email=g('cp-email'); cp.website=g('cp-website'); cp.signatoryTitle=g('cp-signatory');
+  cp.gstin=g('cp-gstin'); cp.address=g('cp-address');
   cp.defaultValidityDays=+g('cp-validity')||14;
   cp.companyProfileText=g('cp-profile'); cp.welcomeNote=g('cp-welcome');
   cp.materialSpecsText=g('cp-matspec');
@@ -23126,8 +23133,8 @@ function boqRenderRooms(q){
 
       ${room.items.length ? room.items.map((item,ii)=>`
         <div class="boq-item-row" id="item-${item.id}" ${item.isCosted?'title="Costed via Costing Engine — cost breakdown locked; delete and re-add via Costed Item to change"':''}>
-          <input class="boq-inp" value="${item.isCosted?'🧮 '+(item.desc||''):(item.desc||'')}" placeholder="Item description…" ${item.isCosted?'readonly style="background:var(--gold-pale)"':''}
-            oninput="boqItemChange('${room.id}','${item.id}','desc',this.value)">
+          <textarea class="boq-inp" rows="2" style="resize:vertical;min-height:32px" placeholder="Item description…" ${item.isCosted?'readonly style="background:var(--gold-pale);resize:vertical;min-height:32px"':''}
+            oninput="boqItemChange('${room.id}','${item.id}','desc',this.value)">${item.isCosted?'🧮 '+(item.desc||''):(item.desc||'')}</textarea>
           <input class="boq-inp" value="${item.unit||'Nos'}" style="text-align:center" ${item.isCosted?'readonly':''}
             oninput="boqItemChange('${room.id}','${item.id}','unit',this.value)">
           <input class="boq-inp" type="number" value="${item.qty||''}" style="text-align:right" placeholder="0" ${item.isCosted?'readonly':''}
@@ -23410,7 +23417,9 @@ img{ max-width:100%; }
 .cover-grid{ display:grid; grid-template-columns:1fr 1fr; row-gap:7mm; column-gap:8mm; max-width:150mm; }
 .cover-k{ font-size:8pt; text-transform:uppercase; letter-spacing:.06em; color:#9D9A91; margin-bottom:1.5mm; }
 .cover-v{ font-size:12.5pt; font-weight:700; color:#1C1C1A; }
-.cover-foot{ position:absolute; bottom:20mm; left:22mm; right:22mm; font-size:8pt; color:#9D9A91; display:flex; justify-content:space-between; border-top:0.75pt solid #E7E4DC; padding-top:4mm; }
+.cover-foot{ position:absolute; bottom:20mm; left:22mm; right:22mm; font-size:8pt; color:#9D9A91; border-top:0.75pt solid #E7E4DC; padding-top:4mm; }
+.cover-addr{ margin-bottom:2mm; }
+.cover-foot-row{ display:flex; justify-content:space-between; }
 
 .doc-h1{ font-size:16pt; font-weight:800; color:#1C1C1A; margin:0 0 5mm; }
 .doc-h1 .bar{ display:block; width:20mm; height:3px; background:#C3B152; margin-bottom:3mm; }
@@ -23421,13 +23430,16 @@ img{ max-width:100%; }
 .client-strip .k{ font-size:7.2pt; text-transform:uppercase; letter-spacing:.05em; color:#9D9A91; }
 .client-strip .v{ font-size:9.3pt; font-weight:700; color:#1C1C1A; margin-top:0.5mm; }
 
-table.boq{ width:100%; border-collapse:collapse; font-size:8pt; }
-table.boq thead th{ background:#1C1C1A; color:#EDEBE4; text-transform:uppercase; letter-spacing:.02em; font-size:6.8pt; padding:2.6mm 1.8mm; text-align:left; }
-table.boq td{ padding:2.3mm 1.8mm; border-bottom:0.5pt solid #E7E4DC; vertical-align:top; }
-table.boq tr.section-row td{ background:#F4F1DC; font-weight:800; color:#5c521f; font-size:8pt; padding:2.6mm 1.8mm; text-transform:uppercase; letter-spacing:.03em; break-after:avoid; break-inside:avoid; }
+table.boq{ width:100%; table-layout:fixed; border-collapse:collapse; font-size:8pt; }
+table.boq td{ overflow-wrap:break-word; word-break:break-word; }
+table.boq thead th{ background:#1C1C1A; color:#EDEBE4; text-transform:uppercase; letter-spacing:.02em; font-size:6.8pt; padding:2.6mm 1.8mm; text-align:left; border-right:0.5pt solid rgba(255,255,255,.2); }
+table.boq thead th:last-child{ border-right:none; }
+table.boq td{ padding:2.3mm 1.8mm; border-bottom:0.5pt solid #E7E4DC; border-right:0.5pt solid #E7E4DC; vertical-align:top; }
+table.boq td:last-child{ border-right:none; }
+table.boq tr.section-row td{ background:#F4F1DC; font-weight:800; color:#5c521f; font-size:8pt; padding:2.6mm 1.8mm; text-transform:uppercase; letter-spacing:.03em; break-after:avoid; break-inside:avoid; border-right:none; }
 table.boq tr.item-row{ break-inside:avoid; }
 table.boq tr.total-row td{ border-top:1.2pt solid #1C1C1A; border-bottom:none; font-weight:800; padding-top:3mm; break-inside:avoid; }
-table.boq td.num{ text-align:right; font-family:'JetBrains Mono',monospace; white-space:nowrap; }
+table.boq td.num{ text-align:right; font-family:'JetBrains Mono',monospace; white-space:nowrap; padding-right:3mm; }
 table.boq td.muted{ color:#9D9A91; font-size:7pt; }
 
 .summary-box{ margin-top:7mm; margin-left:auto; width:82mm; break-inside:avoid; }
@@ -23460,6 +23472,12 @@ table.bank td:first-child{ color:#9D9A91; width:40mm; }
 
 function _nl2br(s){ return escHtml(s||'').replace(/\n/g,'<br>'); }
 function _pipeLines(text){ return (text||'').split('\n').map(l=>l.trim()).filter(Boolean).map(l=>l.split('|').map(p=>p.trim())); }
+// Quotation-only currency formatter — always 2 decimals, matching Appletree
+// Sales Studio's printed format. Deliberately scoped to the Quotation/BOQ
+// print output only (buildQuotPrintContent + the Quick Preview templates
+// below), not a change to the app-wide INR() used across every dashboard
+// and list table, which stays whole-rupee.
+function _qINR(n){ n=Number(n)||0; return '₹'+n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
 function buildQuotPrintContent(q){
   const cp = DB.companyProfile||{};
@@ -23471,15 +23489,15 @@ function buildQuotPrintContent(q){
       sl++;
       rows.push(`<tr class="item-row">
         <td>${sl}</td>
-        <td>${escHtml(it.desc||it.description||'')}${it.isCosted&&it.templateName?`<div class="muted" style="font-size:7pt">via ${escHtml(it.templateName)}</div>`:''}</td>
+        <td>${_nl2br(it.desc||it.description||'')}${it.isCosted&&it.templateName?`<div class="muted" style="font-size:7pt">via ${escHtml(it.templateName)}</div>`:''}</td>
         <td>${escHtml(it.unit)||'Nos'}</td>
         <td class="num">${it.qty??''}</td>
-        <td class="num">${INR(it.rate)}</td>
-        <td class="num">${INR(it.amount)}</td>
+        <td class="num">${_qINR(it.rate)}</td>
+        <td class="num">${_qINR(it.amount)}</td>
       </tr>`);
     });
     const roomTotal=(room.items||[]).reduce((s,i)=>s+(+i.amount||0),0);
-    rows.push(`<tr class="total-row"><td colspan="5">${escHtml(room.name||'Section')} Total</td><td class="num">${INR(roomTotal)}</td></tr>`);
+    rows.push(`<tr class="total-row"><td colspan="5">${escHtml(room.name||'Section')} Total</td><td class="num">${_qINR(roomTotal)}</td></tr>`);
   });
 
   const sub=quotSubtotal(q);
@@ -23517,8 +23535,12 @@ function buildQuotPrintContent(q){
       <div><div class="cover-k">Project Location</div><div class="cover-v">${escHtml(projectLocation)||'—'}</div></div>
       <div><div class="cover-k">Prepared By</div><div class="cover-v">${escHtml(preparedBy)||'—'}</div></div>
       <div><div class="cover-k">Valid Until</div><div class="cover-v">${expiryLabel}</div></div>
+      ${cp.gstin?`<div><div class="cover-k">GSTIN</div><div class="cover-v">${escHtml(cp.gstin)}</div></div>`:''}
     </div>
-    <div class="cover-foot"><span>${escHtml(cp.companyName||'')}</span><span>${escHtml(cp.website||'')}</span></div>
+    <div class="cover-foot">
+      ${cp.address?`<div class="cover-addr">${_nl2br(cp.address)}</div>`:''}
+      <div class="cover-foot-row"><span>${escHtml(cp.companyName||'')}</span><span>${escHtml(cp.website||'')}</span></div>
+    </div>
   </div>
 
   <div class="pgbreak">
@@ -23543,14 +23565,15 @@ function buildQuotPrintContent(q){
     </div>
     <div class="doc-h1"><span class="bar"></span>Bill of Quantities</div>
     <table class="boq">
+      <colgroup><col style="width:4%"><col style="width:38%"><col style="width:10%"><col style="width:9%"><col style="width:17%"><col style="width:22%"></colgroup>
       <thead><tr><th>Sl.</th><th>Item Description</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit Price ₹</th><th class="num">Amount ₹</th></tr></thead>
       <tbody>${rows.join('')||'<tr><td colspan="6" class="muted" style="padding:8mm 0;text-align:center">No items added yet.</td></tr>'}</tbody>
     </table>
     <div class="summary-box">
-      <div class="row"><span>Grand Total</span><span class="v">${INR(sub)}</span></div>
-      ${discAmt>0?`<div class="row"><span>Discount ${q.discountType==='pct'?'('+(q.discountValue||0)+'%)':''}</span><span class="v">- ${INR(discAmt)}</span></div>`:''}
-      ${(q.gstPct||0)>0?`<div class="row"><span>GST (${q.gstPct}%)</span><span class="v">${INR(gstAmt)}</span></div>`:`<div class="row"><span>GST</span><span class="v">Extra, as applicable</span></div>`}
-      <div class="row final"><span>Total Payable</span><span class="v">${INR(finalTotal)}</span></div>
+      <div class="row"><span>Grand Total</span><span class="v">${_qINR(sub)}</span></div>
+      ${discAmt>0?`<div class="row"><span>Discount ${q.discountType==='pct'?'('+(q.discountValue||0)+'%)':''}</span><span class="v">- ${_qINR(discAmt)}</span></div>`:''}
+      ${(q.gstPct||0)>0?`<div class="row"><span>GST (${q.gstPct}%)</span><span class="v">${_qINR(gstAmt)}</span></div>`:`<div class="row"><span>GST</span><span class="v">Extra, as applicable</span></div>`}
+      <div class="row final"><span>Total Payable</span><span class="v">${_qINR(finalTotal)}</span></div>
     </div>
   </div>
 
@@ -23595,12 +23618,22 @@ function buildQuotPrintContent(q){
   `;
 }
 
+// Quotation this preview is currently showing — set by openQuotPagedPreview(),
+// read by printQuotPaged()/exportQuotationExcel() so the Save-As filename and
+// the Excel export both carry the real quote no. + client name, matching
+// Appletree Sales Studio's format instead of the SPA's generic page title.
+let _quotPagedQ = null;
+function _quotPrintFilename(q){
+  return ((q.refNo||'Quotation')+'_'+(q.customer||'')).replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'') || 'Quotation';
+}
+
 async function openQuotPagedPreview(id){
   document.getElementById('quot-paged-overlay').style.display = 'flex';
   const target = document.getElementById('quot-paged-target');
   target.innerHTML = '<div style="padding:60px;text-align:center;color:#9D9A91">Rendering paginated preview…</div>';
   const q = DB.quotations.find(x=>x.id===id);
   if(!q){ target.innerHTML = '<div style="padding:60px;text-align:center;color:#9D9A91">No quotation loaded.</div>'; return; }
+  _quotPagedQ = q;
   const content = buildQuotPrintContent(q);
   try{
     const previewer = new Paged.Previewer();
@@ -23610,6 +23643,56 @@ async function openQuotPagedPreview(id){
     console.error('Paged.js render failed', e);
     target.innerHTML = '<div style="padding:60px;text-align:center;color:#9D9A91">Could not render the print preview. Open the browser console for details.</div>';
   }
+}
+
+// Sets the document title to "<quote no>_<client name>" just for the print
+// dialog's Save-As default filename, then restores the SPA's real title —
+// same technique as Sales Studio's printReportPdf().
+function printQuotPaged(){
+  const orig = document.title;
+  if(_quotPagedQ) document.title = _quotPrintFilename(_quotPagedQ);
+  window.print();
+  document.title = orig;
+}
+
+// "Share Editable Excel" (Sales Studio parity) — an .xls the client/team can
+// edit, not a print. Same HTML-table-as-.xls technique exportTableToExcel()
+// already uses elsewhere in the app (no SheetJS dependency needed), with a
+// company header block (name/address/contact/GSTIN) for the same parity
+// Sales Studio's buildQuotationWorkbook() added.
+function exportQuotationExcel(){
+  const q = _quotPagedQ;
+  if(!q){ toast('No quotation loaded','err'); return; }
+  const cp = DB.companyProfile||{};
+  const esc = s => escHtml(s);
+  const rows = [];
+  rows.push(`<tr><td colspan="6" style="font-weight:700;font-size:14pt">${esc(cp.companyName||'Appletree Interiors')} — Quotation</td></tr>`);
+  if(cp.address) rows.push(`<tr><td colspan="6">${esc(cp.address).replace(/\n/g,'<br>')}</td></tr>`);
+  rows.push(`<tr><td colspan="6">${esc([cp.phone,cp.email,cp.website].filter(Boolean).join('  |  ')+(cp.gstin?'   GSTIN: '+cp.gstin:''))}</td></tr>`);
+  rows.push(`<tr><td colspan="6"></td></tr>`);
+  rows.push(`<tr><td>Quote No.</td><td>${esc(q.refNo)}</td><td></td><td>Date</td><td colspan="2">${esc(fmtDate(q.date))}</td></tr>`);
+  rows.push(`<tr><td>Client Name</td><td>${esc(q.customer)}</td><td></td><td>Site</td><td colspan="2">${esc(q.site||'')}</td></tr>`);
+  rows.push(`<tr><td colspan="6"></td></tr>`);
+  rows.push(`<tr><th>Sl.</th><th>Item Description</th><th>Unit</th><th>Qty</th><th>Unit Price ₹</th><th>Amount ₹</th></tr>`);
+  let sl=0;
+  (q.rooms||[]).forEach(room=>{
+    rows.push(`<tr><td colspan="6" style="font-weight:700">${esc(room.name||'Untitled Section')}</td></tr>`);
+    (room.items||[]).forEach(it=>{
+      sl++;
+      rows.push(`<tr><td>${sl}</td><td>${esc(it.desc||it.description||'')}</td><td>${esc(it.unit)||'Nos'}</td><td>${it.qty??''}</td><td>${(+it.rate||0).toFixed(2)}</td><td>${(+it.amount||0).toFixed(2)}</td></tr>`);
+    });
+    const roomTotal=(room.items||[]).reduce((s,i)=>s+(+i.amount||0),0);
+    rows.push(`<tr><td colspan="5" style="font-weight:700">${esc(room.name||'Section')} Total</td><td style="font-weight:700">${roomTotal.toFixed(2)}</td></tr>`);
+  });
+  rows.push(`<tr><td colspan="6"></td></tr>`);
+  rows.push(`<tr><td colspan="5" style="font-weight:700">GRAND TOTAL</td><td style="font-weight:700">${quotTotalAmount(q).toFixed(2)}</td></tr>`);
+
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet>
+<x:Name>Quotation</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>
+<body><table border="1">${rows.join('')}</table></body></html>`;
+  _downloadBlob(html, _quotPrintFilename(q)+'.xls', 'application/vnd.ms-excel');
+  toast('Quotation exported to Excel ✓','ok');
 }
 
 function closeQuotPagedPreview(){
@@ -23669,7 +23752,7 @@ function _quotHTML(q, tpl){
     <tbody>${roomRows}</tbody>
     <tfoot><tr class="grand-total-row">
       <td colspan="5" class="grand-label">GRAND TOTAL</td>
-      <td class="grand-val">${INR(grand)}</td>
+      <td class="grand-val">${_qINR(grand)}</td>
     </tr></tfoot>
   </table>
   ${terms}
@@ -23772,20 +23855,21 @@ function _statusBadgeBg(status, tpl){
 }
 
 function _quotHeader(q, tpl){
+  const cp = DB.companyProfile||{};
   const badge = tpl==='minimal'
     ? `<span class="status-badge">${q.status}</span>`
     : `<span class="status-badge" style="${_statusBadgeBg(q.status,tpl)}">${q.status}</span>`;
   return `<div class="hd">
     <div>
-      <div class="logo" style="display:flex;align-items:center;gap:8px"><img src="logo.png" alt="Appletree Interiors" style="height:26px;width:auto">Appletree <span>Interiors</span></div>
-      <div style="font-size:10px;margin-top:3px;opacity:.7">Premium Interior Design & Manufacturing</div>
-      <div style="font-size:10px;opacity:.7">sales.appletreeinteriors@gmail.com</div>
+      <div class="logo" style="display:flex;align-items:center;gap:8px"><img src="${escHtml(cp.logo||'logo.png')}" alt="${escHtml(cp.companyName||'Appletree Interiors')}" style="height:26px;width:auto">${escHtml(cp.companyName||'Appletree Interiors')}</div>
+      <div style="font-size:10px;margin-top:3px;opacity:.7">${escHtml(cp.tagline||'Premium Interior Design & Manufacturing')}</div>
+      <div style="font-size:10px;opacity:.7">${escHtml(cp.email||'sales.appletreeinteriors@gmail.com')}${cp.gstin?' &nbsp;|&nbsp; GSTIN: '+escHtml(cp.gstin):''}</div>
     </div>
     <div style="text-align:right">
       <div style="font-size:11px;font-weight:600;opacity:.6;text-transform:uppercase;letter-spacing:.08em">Quotation</div>
-      <div class="ref-no">${q.refNo}</div>
+      <div class="ref-no">${escHtml(q.refNo)}</div>
       <div style="font-size:11px;margin-top:4px;opacity:.7">Date: ${fmtDate(q.date)}</div>
-      <div style="font-size:11px;opacity:.7">Valid: ${q.validity||'30 days'}</div>
+      <div style="font-size:11px;opacity:.7">Valid: ${escHtml(q.validity||'30 days')}</div>
       ${badge}
     </div>
   </div>`;
@@ -23824,23 +23908,23 @@ function _quotTableHead(tpl){
 function _quotItemRow(item, ii, tpl){
   return `<tr class="item-row">
     <td>${ii+1}</td>
-    <td>${item.desc||'—'}</td>
+    <td>${item.desc?_nl2br(item.desc):'—'}</td>
     <td style="text-align:center">${item.unit||''}</td>
     <td style="text-align:right">${item.qty||0}</td>
-    <td style="text-align:right">${INR(item.rate||0)}</td>
-    <td style="text-align:right;font-weight:600">${INR(item.amount||0)}</td>
+    <td style="text-align:right">${_qINR(item.rate||0)}</td>
+    <td style="text-align:right;font-weight:600">${_qINR(item.amount||0)}</td>
   </tr>`;
 }
 
 function _quotRoomBlock(r, roomTotal, itemRows, ri, tpl){
   return `<tr class="room-hd">
-    <td colspan="5">${r.name}</td>
-    <td>${INR(roomTotal)}</td>
+    <td colspan="5">${escHtml(r.name)}</td>
+    <td>${_qINR(roomTotal)}</td>
   </tr>
   ${itemRows}
   <tr class="subtotal-row">
     <td colspan="5">Room Sub-Total</td>
-    <td>${INR(roomTotal)}</td>
+    <td>${_qINR(roomTotal)}</td>
   </tr>`;
 }
 
@@ -23859,9 +23943,10 @@ function _quotTerms(q, tpl){
 }
 
 function _quotFooter(q, grand, tpl){
+  const cp = DB.companyProfile||{};
   return `<div class="footer">
-    <div>This is a computer-generated quotation. Prices are valid for ${q.validity||'30 days'} from date of issue.</div>
-    <div style="margin-top:4px">Appletree Interiors — sales.appletreeinteriors@gmail.com</div>
+    <div>This is a computer-generated quotation. Prices are valid for ${escHtml(q.validity||'30 days')} from date of issue.</div>
+    <div style="margin-top:4px">${escHtml(cp.companyName||'Appletree Interiors')} — ${escHtml(cp.email||'sales.appletreeinteriors@gmail.com')}${cp.address?' — '+_nl2br(cp.address):''}</div>
   </div>`;
 }
 
