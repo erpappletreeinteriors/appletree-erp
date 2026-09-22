@@ -5192,7 +5192,7 @@ function buildPrintContent(q){
     ${q.customBoq&&q.customBoq.enabled ? clientGridHtmlForPrint(q.customBoq) : `
     <table class="boq">
       <colgroup>${hasAnyPhoto
-        ? '<col style="width:4%"><col style="width:16%"><col style="width:26%"><col style="width:5%"><col style="width:6%"><col style="width:6%"><col style="width:5%"><col style="width:5%"><col style="width:13%"><col style="width:14%">'
+        ? '<col style="width:4%"><col style="width:14%"><col style="width:21%"><col style="width:11%"><col style="width:10%"><col style="width:6%"><col style="width:4%"><col style="width:3%"><col style="width:13%"><col style="width:14%">'
         : '<col style="width:4%"><col style="width:28%"><col style="width:10%"><col style="width:10%"><col style="width:9%"><col style="width:7%"><col style="width:6%"><col style="width:13%"><col style="width:13%">'
       }</colgroup>
       <thead><tr><th>Sl.</th>${hasAnyPhoto?'<th>Photo</th>':''}<th>Item Description</th><th>Finish</th><th>Material Spec.</th><th>Size</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit Price ₹</th><th class="num">Amount ₹</th></tr></thead>
