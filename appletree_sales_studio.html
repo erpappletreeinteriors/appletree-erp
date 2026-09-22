@@ -314,6 +314,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
       <!-- DASHBOARD -->
       <div id="pg-dashboard" class="page">
+        <div class="sec-hd"><div class="sec-title">Dashboard</div><div class="card-sub">Your quotation pipeline at a glance — activity, follow-ups, and top performers</div></div>
         <div class="kpi-row c4" id="dash-kpis"></div>
         <div class="kpi-row c4" id="dash-kpis2" style="margin-top:-4px"></div>
 
@@ -367,7 +368,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
       <!-- QUOTATIONS LIST -->
       <div id="pg-quotations" class="page">
-        <div class="sec-hd"><div class="sec-title">Quotations</div><div class="chip-row"><button class="btn btn-outline" onclick="loadQuoteFromFile()">📂 Load from File</button><button class="btn btn-gold" onclick="createQuotation()">+ New Quotation</button></div></div>
+        <div class="sec-hd"><div><div class="sec-title">Quotations</div><div class="card-sub">Every quotation across every stage — draft, sent, won, or lost</div></div><div class="chip-row"><button class="btn btn-outline" onclick="loadQuoteFromFile()">📂 Load from File</button><button class="btn btn-gold" onclick="createQuotation()">+ New Quotation</button></div></div>
         <div class="card">
           <div class="tbl-toolbar">
             <input class="inp inp-search" id="q-search" placeholder="Search client, project, quote no…" oninput="renderQuotations()">
@@ -407,7 +408,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
       <!-- CALENDAR -->
       <div id="pg-calendar" class="page">
         <div class="sec-hd">
-          <div class="sec-title">Follow-up Calendar</div>
+          <div><div class="sec-title">Follow-up Calendar</div><div class="card-sub">Follow-ups due on each day, across all active quotations</div></div>
           <div class="chip-row">
             <button class="btn btn-outline btn-sm" onclick="calNavigate(-1)">← Prev</button>
             <span class="bold" id="cal-month-label" style="min-width:140px;text-align:center"></span>
@@ -691,7 +692,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
       <!-- LEADS & ENQUIRIES -->
       <div id="pg-leads" class="page">
-        <div class="sec-hd"><div class="sec-title">Leads &amp; Enquiries</div><button class="btn btn-gold" onclick="openLeadModal()">+ New Lead</button></div>
+        <div class="sec-hd"><div><div class="sec-title">Leads &amp; Enquiries</div><div class="card-sub">Track enquiries from first contact through to a quotation request</div></div><button class="btn btn-gold" onclick="openLeadModal()">+ New Lead</button></div>
         <div class="card">
           <div class="tbl-toolbar">
             <input class="inp inp-search" id="leads-search" placeholder="Search leads…" style="width:220px" oninput="renderLeadsPage()">
@@ -819,7 +820,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
       <!-- COSTING DASHBOARD -->
       <div id="pg-costingdashboard" class="page">
-        <div class="sec-hd"><div class="sec-title">Costing Dashboard</div></div>
+        <div class="sec-hd"><div class="sec-title">Costing Dashboard</div><div class="card-sub">Live totals across all costed furniture items — cost, margin, and material/hardware/labour split</div></div>
         <div class="kpi-row c4" id="cdash-kpis"></div>
         <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:16px">
           <div class="card">
@@ -839,7 +840,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
       <!-- MATERIAL MASTER -->
       <div id="pg-materials" class="page">
-        <div class="sec-hd"><div class="sec-title">Material Master</div><button class="btn btn-gold" onclick="openMaterialModal()">+ Add Material</button></div>
+        <div class="sec-hd"><div><div class="sec-title">Material Master</div><div class="card-sub">Materials used in costing — code, rate, wastage %, and vendor</div></div><button class="btn btn-gold" onclick="openMaterialModal()">+ Add Material</button></div>
         <div class="card">
           <div class="tbl-toolbar">
             <input class="inp inp-search" id="mat-search" placeholder="Search material, code, brand…" oninput="tableState.materials.page=1;renderMaterials()">
@@ -867,7 +868,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
       <!-- HARDWARE MASTER -->
       <div id="pg-hardware" class="page">
-        <div class="sec-hd"><div class="sec-title">Hardware Master</div><button class="btn btn-gold" onclick="openHardwareModal()">+ Add Hardware</button></div>
+        <div class="sec-hd"><div><div class="sec-title">Hardware Master</div><div class="card-sub">Hardware items used in costing — hinges, channels, handles, and rates</div></div><button class="btn btn-gold" onclick="openHardwareModal()">+ Add Hardware</button></div>
         <div class="card">
           <div class="tbl-toolbar">
             <input class="inp inp-search" id="hw-search" placeholder="Search hardware, code, brand…" oninput="tableState.hardware.page=1;renderHardware()">
@@ -892,7 +893,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
       <!-- LABOUR MASTER -->
       <div id="pg-labour" class="page">
-        <div class="sec-hd"><div class="sec-title">Labour Master</div><button class="btn btn-gold" onclick="openLabourModal()">+ Add Labour Rate</button></div>
+        <div class="sec-hd"><div><div class="sec-title">Labour Master</div><div class="card-sub">Labour rates used in costing, by trade or operation</div></div><button class="btn btn-gold" onclick="openLabourModal()">+ Add Labour Rate</button></div>
         <div class="card">
           <div class="tbl-toolbar">
             <input class="inp inp-search" id="lab-search" placeholder="Search labour…" oninput="tableState.labour.page=1;renderLabour()">
@@ -916,9 +917,8 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
       <!-- FURNITURE TEMPLATES -->
       <div id="pg-templates" class="page">
-        <div class="sec-hd"><div class="sec-title">Furniture Template Library</div><button class="btn btn-gold" onclick="openTemplateModal()">+ Add Template</button></div>
+        <div class="sec-hd"><div><div class="sec-title">Furniture Template Library</div><div class="card-sub">Each template is the standard "recipe" for a furniture type — construction logic, default thickness/finish, wastage, and which hardware/labour rules apply. Project Costing pulls from these automatically; override anything per project.</div></div><button class="btn btn-gold" onclick="openTemplateModal()">+ Add Template</button></div>
         <div class="card">
-          <div class="card-sub" style="margin-bottom:10px">Each template is the standard "recipe" for a furniture type — construction logic, default thickness/finish, wastage, and which hardware/labour rules apply. Project Costing pulls from these automatically; override anything per project.</div>
           <div class="tbl-wrap"><table>
             <thead><tr><th>Name</th><th>Category</th><th>Construction Logic</th><th>Default Core</th><th>Default Finish</th><th class="right">Wastage %</th><th>Doors/Drawers/Shelves</th><th>CNC</th><th></th></tr></thead>
             <tbody id="tb-templates"></tbody>
@@ -928,7 +928,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
       <!-- PROJECTS -->
       <div id="pg-projects" class="page">
-        <div class="sec-hd"><div class="sec-title">Costing Projects</div><button class="btn btn-gold" onclick="openProjectModal()">+ New Project</button></div>
+        <div class="sec-hd"><div><div class="sec-title">Costing Projects</div><div class="card-sub">Furniture costing projects, linked to quotations where applicable</div></div><button class="btn btn-gold" onclick="openProjectModal()">+ New Project</button></div>
         <div id="projects-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px"></div>
       </div>
 
@@ -1034,7 +1034,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
       <!-- COSTING REPORTS -->
       <div id="pg-reports" class="page">
-        <div class="sec-hd"><div class="sec-title">Costing Reports</div></div>
+        <div class="sec-hd"><div class="sec-title">Costing Reports</div><div class="card-sub">Generate Internal Cost Sheets, Client Quotations, BOQs, and other project reports</div></div>
         <div class="card">
           <div class="fgrid" style="margin-bottom:14px">
             <div><label class="fl">Project</label><select class="inp" id="rep-proj-sel" style="width:100%"></select></div>
@@ -1058,7 +1058,7 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 
       <!-- SETTINGS -->
       <div id="pg-settings" class="page">
-        <div class="sec-hd"><div class="sec-title">Settings</div><span class="small">Changes here only affect new quotations/items — existing ones keep what was already saved.</span></div>
+        <div class="sec-hd"><div class="sec-title">Settings</div><div class="card-sub">Changes here only affect new quotations/items — existing ones keep what was already saved.</div></div>
 
         <div style="display:grid;grid-template-columns:200px 1fr;gap:18px;align-items:start">
           <div id="settings-menu" style="display:flex;flex-direction:column;gap:8px;position:sticky;top:76px">
@@ -4415,6 +4415,59 @@ function itemChange(secId,itemId,field,val){
     if(amtEl && it.included) amtEl.textContent = it.includedNote||'Included';
   }
 }
+
+/* ============================== TYPE-AHEAD SUGGESTIONS FROM HISTORY ==============================
+   Furniture quotations are highly repetitive — the same wardrobe/kitchen/cot descriptions get
+   typed over and over across projects. These BOQ fields now suggest previously-used values across
+   ALL of your quotations as you type. Finish/Material/Size/Unit use the browser's native
+   <datalist> (simple, prefix-matched, no custom UI needed). Description is a <textarea>
+   (multi-line, for the line-break support added earlier) — <datalist> doesn't work on textareas
+   at all, so it gets a small custom substring-matched suggestion box instead. */
+function historyValues(field,limit=80){
+  const counts=new Map();
+  (DB.quotations||[]).forEach(q=>(q.sections||[]).forEach(sec=>(sec.items||[]).forEach(it=>{
+    const v=(it[field]||'').trim();
+    if(v) counts.set(v,(counts.get(v)||0)+1);
+  })));
+  return [...counts.entries()].sort((a,b)=>b[1]-a[1]).slice(0,limit).map(e=>e[0]);
+}
+function historyDatalistHtml(id,field){
+  return `<datalist id="${id}">${historyValues(field).map(v=>`<option value="${escHtml(v)}">`).join('')}</datalist>`;
+}
+function historyDatalistsHtml(){
+  return historyDatalistHtml('dl-boq-finish','finish')+historyDatalistHtml('dl-boq-material','material')+historyDatalistHtml('dl-boq-size','size')+historyDatalistHtml('dl-boq-unit','unit');
+}
+let _descSuggestBox=null;
+function _getDescSuggestBox(){
+  if(_descSuggestBox) return _descSuggestBox;
+  _descSuggestBox=document.createElement('div');
+  _descSuggestBox.id='desc-suggest-box';
+  _descSuggestBox.style.cssText='position:fixed;z-index:150;background:#fff;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);max-height:220px;overflow-y:auto;display:none;font-size:12px';
+  document.body.appendChild(_descSuggestBox);
+  return _descSuggestBox;
+}
+function showDescSuggestions(ta){
+  const q=ta.value.trim().toLowerCase();
+  const box=_getDescSuggestBox();
+  if(!q){ box.style.display='none'; return; }
+  const matches=historyValues('description',500).filter(v=>v.toLowerCase().includes(q) && v.toLowerCase()!==q).slice(0,8);
+  if(!matches.length){ box.style.display='none'; return; }
+  const rect=ta.getBoundingClientRect();
+  box.style.left=Math.round(rect.left)+'px'; box.style.top=Math.round(rect.bottom+2)+'px'; box.style.width=Math.round(Math.max(rect.width,260))+'px';
+  box.innerHTML=matches.map(v=>`<div style="padding:7px 10px;cursor:pointer;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--gold-pale)'" onmouseout="this.style.background=''" onmousedown="event.preventDefault();applyDescSuggestion('${ta.dataset.secId}','${ta.dataset.itemId}',this)" data-value="${escHtml(v)}">${escHtml(v)}</div>`).join('');
+  box.style.display='block';
+}
+function hideDescSuggestions(){ if(_descSuggestBox) _descSuggestBox.style.display='none'; }
+function applyDescSuggestion(secId,itemId,el){
+  const value=el.getAttribute('data-value');
+  const ta=document.querySelector(`textarea.desc-input[data-sec-id="${secId}"][data-item-id="${itemId}"]`);
+  if(ta) ta.value=value;
+  itemChange(secId,itemId,'description',value);
+  hideDescSuggestions();
+}
+document.addEventListener('input',evt=>{ if(evt.target.matches && evt.target.matches('textarea.desc-input')) showDescSuggestions(evt.target); });
+document.addEventListener('focusout',evt=>{ if(evt.target.matches && evt.target.matches('textarea.desc-input')) setTimeout(hideDescSuggestions,150); });
+
 function renderBoq(){
   const q=curQ();
   const slMap=slNoMap(q);
@@ -4422,7 +4475,7 @@ function renderBoq(){
   if(!q.sections.length){
     el.innerHTML='<div class="empty">No sections yet. Click "+ Add Section" to start (e.g. Foyer, Living Room, Kitchen, Bedrooms…).</div>';
   } else {
-    el.innerHTML = q.sections.map(sec=>`
+    el.innerHTML = historyDatalistsHtml() + q.sections.map(sec=>`
     <div class="card boq-card">
       <div class="sec-hd" style="margin-bottom:8px">
         <input class="inp bold" style="font-size:14px;max-width:320px" value="${escHtml(sec.name)}" placeholder="Section name (e.g. Kitchen)" onchange="renameSection('${sec.id}',this.value)">
@@ -4442,11 +4495,11 @@ function renderBoq(){
         <tbody>${sec.items.length?sec.items.map(it=>`<tr>
           <td>${slMap[it.id]}</td>
           <td>${itemPhotoCellHtml(sec.id,it)}</td>
-          <td><textarea class="inp inp-sm" rows="2" style="resize:vertical;min-height:32px" onchange="itemChange('${sec.id}','${it.id}','description',this.value)">${escHtml(it.description)}</textarea></td>
-          <td><input class="inp inp-sm" value="${escHtml(it.finish)}" onchange="itemChange('${sec.id}','${it.id}','finish',this.value)"></td>
-          <td><input class="inp inp-sm" value="${escHtml(it.material)}" onchange="itemChange('${sec.id}','${it.id}','material',this.value)"></td>
-          <td><input class="inp inp-sm" value="${escHtml(it.size)}" placeholder="N/A" onchange="itemChange('${sec.id}','${it.id}','size',this.value)"></td>
-          <td><input class="inp inp-sm" value="${escHtml(it.unit)}" onchange="itemChange('${sec.id}','${it.id}','unit',this.value)"></td>
+          <td><textarea class="inp inp-sm desc-input" data-sec-id="${sec.id}" data-item-id="${it.id}" rows="2" style="resize:vertical;min-height:32px" onchange="itemChange('${sec.id}','${it.id}','description',this.value)">${escHtml(it.description)}</textarea></td>
+          <td><input class="inp inp-sm" list="dl-boq-finish" value="${escHtml(it.finish)}" onchange="itemChange('${sec.id}','${it.id}','finish',this.value)"></td>
+          <td><input class="inp inp-sm" list="dl-boq-material" value="${escHtml(it.material)}" onchange="itemChange('${sec.id}','${it.id}','material',this.value)"></td>
+          <td><input class="inp inp-sm" list="dl-boq-size" value="${escHtml(it.size)}" placeholder="N/A" onchange="itemChange('${sec.id}','${it.id}','size',this.value)"></td>
+          <td><input class="inp inp-sm" list="dl-boq-unit" value="${escHtml(it.unit)}" onchange="itemChange('${sec.id}','${it.id}','unit',this.value)"></td>
           <td><input class="inp inp-sm" type="number" id="qty-${it.id}" value="${it.qty}" ${it.included?'disabled':''} onchange="itemChange('${sec.id}','${it.id}','qty',this.value)"></td>
           <td><input class="inp inp-sm" type="number" id="price-${it.id}" value="${it.unitPrice}" ${it.included?'disabled':''} onchange="itemChange('${sec.id}','${it.id}','unitPrice',this.value)"></td>
           <td style="text-align:center">
@@ -5026,8 +5079,8 @@ table.boq tr.item-row{ break-inside:avoid; }
 table.boq tr.total-row td{ border-top:1.2pt solid #1C1C1A; border-bottom:none; font-weight:800; padding-top:3mm; break-inside:avoid; }
 table.boq td.num{ text-align:right; font-family:'JetBrains Mono',monospace; white-space:nowrap; padding-right:3mm; }
 table.boq td.muted{ color:#9D9A91; font-size:7pt; }
-table.boq td.photo-cell{ width:20mm; padding:1mm; }
-table.boq td.photo-cell img{ display:block; width:18mm; height:18mm; object-fit:contain; border:0.5pt solid #E7E4DC; border-radius:1mm; background:#fff; }
+table.boq td.photo-cell{ width:28mm; padding:1mm; }
+table.boq td.photo-cell img{ display:block; width:26mm; height:26mm; object-fit:contain; border:0.5pt solid #E7E4DC; border-radius:1mm; background:#fff; }
 
 .summary-box{ margin-top:7mm; margin-left:auto; width:82mm; break-inside:avoid; }
 .summary-box .row{ display:flex; justify-content:space-between; padding:2mm 0; font-size:9pt; border-bottom:0.5pt solid #E7E4DC; }
@@ -5139,7 +5192,7 @@ function buildPrintContent(q){
     ${q.customBoq&&q.customBoq.enabled ? clientGridHtmlForPrint(q.customBoq) : `
     <table class="boq">
       <colgroup>${hasAnyPhoto
-        ? '<col style="width:4%"><col style="width:12%"><col style="width:16%"><col style="width:10%"><col style="width:11%"><col style="width:8%"><col style="width:6%"><col style="width:6%"><col style="width:13%"><col style="width:14%">'
+        ? '<col style="width:4%"><col style="width:16%"><col style="width:26%"><col style="width:5%"><col style="width:6%"><col style="width:6%"><col style="width:5%"><col style="width:5%"><col style="width:13%"><col style="width:14%">'
         : '<col style="width:4%"><col style="width:28%"><col style="width:10%"><col style="width:10%"><col style="width:9%"><col style="width:7%"><col style="width:6%"><col style="width:13%"><col style="width:13%">'
       }</colgroup>
       <thead><tr><th>Sl.</th>${hasAnyPhoto?'<th>Photo</th>':''}<th>Item Description</th><th>Finish</th><th>Material Spec.</th><th>Size</th><th>Unit</th><th class="num">Qty</th><th class="num">Unit Price ₹</th><th class="num">Amount ₹</th></tr></thead>
