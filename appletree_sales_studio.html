@@ -1540,6 +1540,11 @@ function sanitizeAllData(){
   if(!DB.settings.welcomeNote) DB.settings.welcomeNote='We specialize in full-service interior design, including custom furniture, lighting, and art procurement/installation. Our project portfolio spans new home construction and residential renovations of all sizes. Please find below the itemized estimate prepared for your project, based on the requirements shared with us.';
   DB.quotations.forEach(sanitizeQuotation);
   DB.projects.forEach(p=>{ if(!PROJECT_STATUSES.includes(p.status)) p.status = p.status==='Sent'?'Submitted' : p.status==='Approved'?'Approved' : 'Draft'; if(!p.quotationId) p.quotationId=''; });
+  // Fire-and-forget: sweeps any photo still stored as a raw base64 data URI (older
+  // saved data, or a record just pulled down from Supabase) out into IndexedDB and
+  // rewrites it to a short reference — see PHOTO STORAGE section above. Runs async
+  // and self-persists when done, so it never blocks the caller.
+  migratePhotosToIndexedDB();
 }
 async function loadOrSeed(){
   if(_sb && _currentUser){
@@ -1728,7 +1733,7 @@ function renderLeadsPage(){
   const tb=document.getElementById('tb-leads');
   tb.innerHTML = rows.length ? rows.map(l=>`<tr>
     <td>${fmtDate(l.date)}</td>
-    <td><strong>${escHtml(l.name)}</strong></td>
+    <td><strong>${escHtml(l.name)}</strong>${l.photo?` <span style="cursor:pointer" title="View reference photo" onclick="window.open(resolvePhoto('${l.photo}'),'_blank')">📎</span>`:''}</td>
     <td class="muted">${escHtml(l.phone||'—')}</td>
     <td>${escHtml(l.location||'—')}</td>
     <td>${leadStatusTag(l.status)}</td>
@@ -1741,8 +1746,10 @@ function renderLeadsPage(){
     </td>
   </tr>`).join('') : `<tr><td colspan="8" class="empty">No leads found.</td></tr>`;
 }
+let _leadPhotoDraft=null;
 function openLeadModal(id){
   const l=id?DB.leads.find(x=>x.id===id):null;
+  _leadPhotoDraft=l?.photo||null;
   openModalHtml(`
     <div class="modal-hd"><div class="modal-title">${l?'Edit':'New'} Lead</div><button class="modal-close" onclick="closeModal()">×</button></div>
     <input type="hidden" id="ld-id" value="${l?.id||''}">
@@ -1755,13 +1762,32 @@ function openLeadModal(id){
       <div><label class="fl">Status</label><select class="inp" id="ld-status" style="width:100%">${optionsHtml(LEAD_STATUSES,l?.status||'New')}</select></div>
       <div><label class="fl">Estimated Value ₹</label><input class="inp" type="number" min="0" id="ld-val" value="${l?.value??0}" style="width:100%"></div>
     </div>
+    <div class="frow" style="margin-top:6px">
+      <label class="fl">Reference Photo <span class="hint" style="margin:0">(WhatsApp screenshot, site photo, etc.)</span></label>
+      <div id="lead-photo-box"></div>
+    </div>
     <div class="modal-ft"><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-gold" onclick="saveLead()">Save Lead</button></div>
   `);
+  renderLeadPhotoBox();
 }
-function saveLead(){
+function renderLeadPhotoBox(){
+  const box=document.getElementById('lead-photo-box'); if(!box) return;
+  const armHint='Click once to arm for Ctrl+V paste — double-click to browse for a file instead';
+  box.innerHTML = _leadPhotoDraft
+    ? `<div style="position:relative;width:72px;height:72px">
+        <img src="${resolvePhoto(_leadPhotoDraft)}" style="width:72px;height:72px;object-fit:contain;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer" onclick="armLeadPhoto(this)" ondblclick="browseLeadPhoto()" title="${armHint}">
+        <button type="button" onclick="removeLeadPhotoDraft()" title="Remove photo" style="position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;border:1px solid var(--border);background:#fff;color:var(--red);font-size:11px;line-height:1;cursor:pointer;padding:0">✕</button>
+      </div>`
+    : `<button type="button" class="btn btn-sm btn-outline" style="width:72px;height:72px;display:flex;align-items:center;justify-content:center;font-size:20px;padding:0" onclick="armLeadPhoto(this)" ondblclick="browseLeadPhoto()" title="${armHint}">+</button>`;
+}
+function armLeadPhoto(el){ _armPhotoTarget('lead-modal',el); }
+function browseLeadPhoto(){ _browsePhotoTarget('lead-modal'); }
+function removeLeadPhotoDraft(){ deletePhotoRef(_leadPhotoDraft); _leadPhotoDraft=null; renderLeadPhotoBox(); }
+async function saveLead(){
   const id=document.getElementById('ld-id').value;
   const name=document.getElementById('ld-name').value.trim();
   if(!name){ alert('Client Name is required.'); return; }
+  const photo = (typeof _leadPhotoDraft==='string' && _leadPhotoDraft.startsWith('data:')) ? await storePhotoRef(_leadPhotoDraft) : _leadPhotoDraft;
   const rec={
     id: id||uid('LD'),
     date: document.getElementById('ld-date').value,
@@ -1769,7 +1795,8 @@ function saveLead(){
     location: document.getElementById('ld-loc').value.trim(),
     source: document.getElementById('ld-src').value,
     status: document.getElementById('ld-status').value,
-    value: num(document.getElementById('ld-val').value)
+    value: num(document.getElementById('ld-val').value),
+    photo
   };
   const idx=DB.leads.findIndex(x=>x.id===id);
   if(idx>-1) DB.leads[idx]={...DB.leads[idx],...rec}; else DB.leads.push(rec);
@@ -4438,24 +4465,140 @@ function renderBoq(){
   renderSummary();
 }
 
-/* ---- Line item photos (optional, per-item, resized+compressed client-side so no separate file storage is needed) ---- */
+/* ============================== PHOTO STORAGE (IndexedDB) ==============================
+   Item/lead photos are resized+compressed client-side, but the resulting base64 data URI
+   is still tens of KB each — storing that directly on the record meant it rode along
+   inside the single big DB object that persist() JSON.stringifies into one localStorage
+   key on every save. Enough photos across quotations/leads blows past the browser's
+   ~5-10MB localStorage quota ("Could not save — your browser storage is full.", and
+   worse, once that happens NOTHING saves locally until space frees up, not just photos).
+   Photos now live in IndexedDB (a much larger per-origin quota) instead; the DB object
+   only ever holds a short 'idb:<id>' reference string, keeping localStorage light.
+   _photoCache is a synchronous in-memory mirror of IndexedDB's contents, populated once
+   at login (hydratePhotoCache()) and kept in sync on every write — so existing render
+   code stays synchronous (resolvePhoto() is a plain Map lookup, no await needed).
+   This is purely a LOCAL browser storage optimization, not a sync mechanism: photos still
+   travel to Supabase/teammates exactly as before, as real bytes in the JSONB payload (see
+   resolvePhotosForSync(), used by _sbFlush) — other devices resolve them back into their
+   own IndexedDB on load (migratePhotosToIndexedDB(), called from sanitizeAllData()), so a
+   teammate on a different browser still sees the photo. migratePhotosToIndexedDB() also
+   sweeps any pre-existing raw data-URI photos (already-saved quotations/leads from before
+   this fix) out of localStorage the first time the app loads after this change. */
+const _photoCache=new Map();
+let _photoDbPromise=null;
+function _openPhotoDb(){
+  if(_photoDbPromise) return _photoDbPromise;
+  _photoDbPromise=new Promise((resolve,reject)=>{
+    const req=indexedDB.open('ss_photo_store',1);
+    req.onupgradeneeded=()=>{ req.result.createObjectStore('photos',{keyPath:'id'}); };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+  return _photoDbPromise;
+}
+async function idbPutPhoto(id,dataUri){
+  const db=await _openPhotoDb();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('photos','readwrite');
+    tx.objectStore('photos').put({id,dataUri});
+    tx.oncomplete=()=>resolve(); tx.onerror=()=>reject(tx.error);
+  });
+}
+async function idbDeletePhoto(id){
+  const db=await _openPhotoDb();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('photos','readwrite');
+    tx.objectStore('photos').delete(id);
+    tx.oncomplete=()=>resolve(); tx.onerror=()=>reject(tx.error);
+  });
+}
+async function idbGetAllPhotos(){
+  const db=await _openPhotoDb();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('photos','readonly');
+    const req=tx.objectStore('photos').getAll();
+    req.onsuccess=()=>resolve(req.result||[]); req.onerror=()=>reject(req.error);
+  });
+}
+async function hydratePhotoCache(){
+  try{ (await idbGetAllPhotos()).forEach(r=>_photoCache.set(r.id,r.dataUri)); }
+  catch(e){ console.error('Photo cache hydrate failed — photos may not display until reload',e); }
+}
+function resolvePhoto(ref){
+  if(!ref) return '';
+  if(typeof ref==='string' && ref.startsWith('idb:')) return _photoCache.get(ref.slice(4))||'';
+  return ref; // legacy raw data URI saved before this fix, or a plain URL
+}
+async function storePhotoRef(dataUri){
+  const id=uid('PH');
+  _photoCache.set(id,dataUri);
+  await idbPutPhoto(id,dataUri);
+  return 'idb:'+id;
+}
+function deletePhotoRef(ref){
+  if(typeof ref==='string' && ref.startsWith('idb:')){
+    const id=ref.slice(4);
+    _photoCache.delete(id);
+    idbDeletePhoto(id).catch(()=>{});
+  }
+}
+function _walkPhotoFields(cb){
+  (DB.quotations||[]).forEach(q=>(q.sections||[]).forEach(sec=>(sec.items||[]).forEach(it=>{ cb(()=>it.photo, v=>{ it.photo=v; }); })));
+  (DB.leads||[]).forEach(l=>{ cb(()=>l.photo, v=>{ l.photo=v; }); });
+}
+let _photoMigrationRunning=false;
+async function migratePhotosToIndexedDB(){
+  if(_photoMigrationRunning) return;
+  const pending=[];
+  _walkPhotoFields((get,set)=>{ const v=get(); if(typeof v==='string' && v.startsWith('data:')) pending.push({set,v}); });
+  if(!pending.length) return;
+  _photoMigrationRunning=true;
+  try{
+    for(const {set,v} of pending){ set(await storePhotoRef(v)); }
+    persist();
+  }catch(e){ console.error('Photo migration to IndexedDB failed',e); }
+  finally{ _photoMigrationRunning=false; }
+}
+function resolvePhotosForSync(key,records){
+  if(key!=='quotations' && key!=='leads') return records;
+  const clone=JSON.parse(JSON.stringify(records));
+  if(key==='leads') clone.forEach(l=>{ if(l.photo) l.photo=resolvePhoto(l.photo); });
+  else clone.forEach(q=>(q.sections||[]).forEach(sec=>(sec.items||[]).forEach(it=>{ if(it.photo) it.photo=resolvePhoto(it.photo); })));
+  return clone;
+}
+
+/* ---- Line item photos (optional, per-item, resized+compressed client-side, stored via IndexedDB above) ---- */
 const ITEM_PHOTO_MAX_DIM=500, ITEM_PHOTO_QUALITY=0.72;
 let _pendingPhotoTarget=null;
 function itemPhotoCellHtml(secId,it){
-  const pasteHint='Click to browse for a file — or just click here once, then press Ctrl+V to paste a screenshot/copied image';
+  const armHint='Click once to arm for Ctrl+V paste — double-click to browse for a file instead';
   if(it.photo){
     return `<div style="position:relative;width:56px;height:56px">
-      <img src="${it.photo}" style="width:56px;height:56px;object-fit:contain;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer" onclick="openItemPhotoPicker('${secId}','${it.id}')" title="${pasteHint}">
+      <img src="${resolvePhoto(it.photo)}" style="width:56px;height:56px;object-fit:contain;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer" onclick="armItemPhoto('${secId}','${it.id}',this)" ondblclick="browseItemPhoto('${secId}','${it.id}')" title="${armHint}">
       <button type="button" onclick="removeItemPhoto('${secId}','${it.id}')" title="Remove photo" style="position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;border:1px solid var(--border);background:#fff;color:var(--red);font-size:11px;line-height:1;cursor:pointer;padding:0">✕</button>
     </div>`;
   }
-  return `<button type="button" class="btn btn-sm btn-outline" style="width:56px;height:56px;display:flex;align-items:center;justify-content:center;font-size:18px;padding:0" onclick="openItemPhotoPicker('${secId}','${it.id}')" title="${pasteHint}">+</button>`;
+  return `<button type="button" class="btn btn-sm btn-outline" style="width:56px;height:56px;display:flex;align-items:center;justify-content:center;font-size:18px;padding:0" onclick="armItemPhoto('${secId}','${it.id}',this)" ondblclick="browseItemPhoto('${secId}','${it.id}')" title="${armHint}">+</button>`;
 }
-function openItemPhotoPicker(secId,itemId){
-  _pendingPhotoTarget={secId,itemId};
+// Single click ARMS the paste target (so Ctrl+V works without a file dialog stealing
+// focus first) — a native file-browse dialog only opens on double-click. Previously a
+// single click did both at once, which made "click then paste" clumsy: the OS file
+// picker popped up every time, even when the user only meant to paste.
+function _armPhotoTarget(target,el){
+  _pendingPhotoTarget=target;
+  if(el){
+    el.style.outline='2px solid var(--gold)'; el.style.outlineOffset='1px';
+    clearTimeout(el._armTimer);
+    el._armTimer=setTimeout(()=>{ el.style.outline=''; el.style.outlineOffset=''; },4000);
+  }
+}
+function _browsePhotoTarget(target){
+  _pendingPhotoTarget=target;
   document.getElementById('item-photo-file').value='';
   document.getElementById('item-photo-file').click();
 }
+function armItemPhoto(secId,itemId,el){ _armPhotoTarget({secId,itemId},el); }
+function browseItemPhoto(secId,itemId){ _browsePhotoTarget({secId,itemId}); }
 async function handleGlobalPhotoPaste(evt){
   if(!_pendingPhotoTarget) return;
   const items=evt.clipboardData && evt.clipboardData.items;
@@ -4469,9 +4612,14 @@ async function handleGlobalPhotoPaste(evt){
   if(!file) return;
   try{
     const dataUri=await resizeImageToDataUri(file,ITEM_PHOTO_MAX_DIM,ITEM_PHOTO_QUALITY);
-    itemChange(target.secId,target.itemId,'photo',dataUri);
-    renderBoq();
+    await applyPickedPhoto(target,dataUri);
   }catch(e){ console.error(e); alert('Could not paste that image — try again or use the upload button.'); }
+}
+async function applyPickedPhoto(target,dataUri){
+  const ref=await storePhotoRef(dataUri);
+  if(target==='lead-modal'){ _leadPhotoDraft=ref; renderLeadPhotoBox(); return; }
+  itemChange(target.secId,target.itemId,'photo',ref);
+  renderBoq();
 }
 function resizeImageToDataUri(file,maxDim,quality){
   return new Promise((resolve,reject)=>{
@@ -4501,11 +4649,13 @@ async function handleItemPhotoFile(evt){
   if(!file.type.startsWith('image/')){ alert('Please choose an image file.'); return; }
   try{
     const dataUri=await resizeImageToDataUri(file,ITEM_PHOTO_MAX_DIM,ITEM_PHOTO_QUALITY);
-    itemChange(target.secId,target.itemId,'photo',dataUri);
-    renderBoq();
+    await applyPickedPhoto(target,dataUri);
   }catch(e){ console.error(e); alert('Could not read that image — try a different file.'); }
 }
 function removeItemPhoto(secId,itemId){
+  const sec=curQ()?.sections.find(s=>s.id===secId);
+  const item=sec?.items.find(i=>i.id===itemId);
+  if(item) deletePhotoRef(item.photo);
   itemChange(secId,itemId,'photo',null);
   renderBoq();
 }
@@ -4923,7 +5073,7 @@ function buildPrintContent(q){
       const amt = it.included ? `<span class="muted">${escHtml(it.includedNote||'Included')}</span>` : INR(itemAmount(it));
       rows.push(`<tr class="item-row">
         <td>${slMap[it.id]}</td>
-        ${hasAnyPhoto?`<td class="photo-cell">${it.photo?`<img src="${it.photo}" alt="">`:''}</td>`:''}
+        ${hasAnyPhoto?`<td class="photo-cell">${it.photo?`<img src="${resolvePhoto(it.photo)}" alt="">`:''}</td>`:''}
         <td>${nl2br(it.description)}${it.notes?`<div class="muted">${escHtml(it.notes)}</div>`:''}</td>
         <td>${escHtml(it.finish)||'—'}</td>
         <td>${escHtml(it.material)||'—'}</td>
@@ -5263,7 +5413,7 @@ async function _handleSession(session){
   document.getElementById('topbar-userrole').textContent=_currentUser.role;
   applyRoleNav(_currentUser.role);
   try{
-    await loadOrSeed();
+    await Promise.all([hydratePhotoCache(), loadOrSeed()]);
     _showScreen('app');
     nav('dashboard',document.querySelector('.nav-item[data-pg="dashboard"]'));
   }catch(e){
@@ -5314,7 +5464,11 @@ async function _sbFlush(){
       }
       const table=SS_TABLE_MAP[k];
       if(!table) continue;
-      const rows=(DB[k]||[]).map(r=>({id:String(r.id),data:r,created_by:_currentUser.id,updated_at:new Date().toISOString()}));
+      // Photos are stored locally as short 'idb:<id>' references (see PHOTO STORAGE
+      // section) to keep localStorage light — resolve them back to real image bytes
+      // before pushing, so teammates on another browser can actually see the photo.
+      const syncRecords=resolvePhotosForSync(k,DB[k]||[]);
+      const rows=syncRecords.map(r=>({id:String(r.id),data:r,created_by:_currentUser.id,updated_at:new Date().toISOString()}));
       if(rows.length) await _sb.from(table).upsert(rows,{onConflict:'id'});
     }catch(e){ console.error('Sync failed for',k,e); }
   }
