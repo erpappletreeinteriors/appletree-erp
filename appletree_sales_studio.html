@@ -5498,7 +5498,7 @@ function applyRoleNav(role){
 }
 
 /* ---- Cloud sync ---- */
-let _dirty=new Set(), _syncTimer=null;
+let _dirty=new Set(), _syncTimer=null, _syncFailureAlerted=false;
 function _sbQueueSync(){
   SS_KEYS.forEach(k=>_dirty.add(k));
   _dirty.add('settings');
@@ -5506,9 +5506,18 @@ function _sbQueueSync(){
   if(_syncTimer) clearTimeout(_syncTimer);
   _syncTimer=setTimeout(_sbFlush,2000);
 }
+// A failed upsert used to be swallowed silently (console.error only) while the topbar
+// still claimed "● Synced" — actively misleading, since the change was saved to THIS
+// browser's localStorage (so the user saw no error) but never reached the shared
+// Supabase table other users read from. Most commonly this is an RLS permission gap
+// (e.g. a role/table missing a policy — see supabase_migration_sales_studio_shared_leads.sql
+// for the exact incident this traces back to). Now a failure gets a visibly red,
+// clickable topbar status with specifics, plus a one-time alert per session so it's
+// never missed in the moment either.
 async function _sbFlush(){
   if(!_sb||!_currentUser) return;
   const keys=[..._dirty]; _dirty.clear();
+  const failed=[];
   for(const k of keys){
     try{
       if(k==='settings'){
@@ -5523,9 +5532,22 @@ async function _sbFlush(){
       const syncRecords=resolvePhotosForSync(k,DB[k]||[]);
       const rows=syncRecords.map(r=>({id:String(r.id),data:r,created_by:_currentUser.id,updated_at:new Date().toISOString()}));
       if(rows.length) await _sb.from(table).upsert(rows,{onConflict:'id'});
-    }catch(e){ console.error('Sync failed for',k,e); }
+    }catch(e){ console.error('Sync failed for',k,e); failed.push(k); }
   }
-  const st=document.getElementById('topbar-syncstatus'); if(st) st.textContent='● Synced';
+  const st=document.getElementById('topbar-syncstatus');
+  if(failed.length){
+    if(st){
+      st.textContent='⚠ Sync failed — click for details';
+      st.style.color='var(--red)'; st.style.cursor='pointer';
+      st.onclick=()=>alert(`Could not save the following to the shared cloud database — these changes only exist on THIS device right now, and your team can't see them:\n\n${failed.join(', ')}\n\nThis usually means your account doesn't yet have permission to write this kind of data (ask your admin to check). Once fixed, reload this page — your local changes will sync automatically.`);
+    }
+    if(!_syncFailureAlerted){
+      _syncFailureAlerted=true;
+      alert(`Some of your changes could not be saved to the shared database (${failed.join(', ')}) — they're only saved on this device for now, not visible to your team yet. Look for the red "⚠ Sync failed" status at the top of the screen for details.`);
+    }
+  } else if(st){
+    st.textContent='● Synced'; st.style.color=''; st.style.cursor=''; st.onclick=null;
+  }
 }
 async function _sbLoadAll(){
   const entries=await Promise.all(SS_KEYS.map(async k=>{
