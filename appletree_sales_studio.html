@@ -1548,9 +1548,29 @@ function sanitizeAllData(){
 }
 async function loadOrSeed(){
   if(_sb && _currentUser){
+    // Snapshot whatever this browser already had BEFORE the cloud load overwrites DB —
+    // this is the only guard against a real incident: a permission gap silently rejected
+    // someone's writes, they kept working locally unaware, and the very next reload
+    // (once the gap got fixed) pulled the — now genuinely correct — but SMALLER cloud
+    // state and overwrote their only copy of the missing data, with no way back.
+    const preLoadRaw=localStorage.getItem(STORE_KEY);
+    let preLoadLocal=null;
+    try{ preLoadLocal=preLoadRaw?JSON.parse(preLoadRaw):null; }catch(e){}
     try{
       const failed=await _sbLoadAll();
       sanitizeAllData();
+      if(preLoadLocal){
+        const shrunk=SS_KEYS.filter(k=>{
+          const before=(preLoadLocal[k]||[]).length, after=(DB[k]||[]).length;
+          return before>0 && after<before;
+        });
+        if(shrunk.length){
+          const detail=shrunk.map(k=>`${k}: ${(preLoadLocal[k]||[]).length} on this device → ${(DB[k]||[]).length} in the shared database`).join('\n');
+          alert(`This device has MORE data saved locally than what just came from the shared database:\n\n${detail}\n\nThis usually means some past changes never actually reached the cloud (often a permission issue) and are about to be overwritten. Downloading a backup of what's on this device now, before continuing — send this file to your admin so nothing is lost.`);
+          const blob=new Blob([JSON.stringify(preLoadLocal,null,2)],{type:'application/json'});
+          const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`appletree_sales_studio_LOCAL_BACKUP_${today()}.json`; a.click();
+        }
+      }
       try{ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }catch(e){}
       await _maybeOfferLocalUpload();
       if(failed && failed.length){
