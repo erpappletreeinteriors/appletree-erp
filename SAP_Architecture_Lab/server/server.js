@@ -20,21 +20,23 @@ const A = require('./auth');
 
 // ERP-059C — explicit environment identity (see docs/erp-remediation/phases/
 // ERP-059C-TEST-ISOLATION-REPORT.md for the full incident this responds to). No environment
-// variable existed anywhere in this codebase before this phase — PORT was a bare literal and every
+// variable existed anywhere in this codebase before that phase — PORT was a bare literal and every
 // destructive test-only endpoint below was gated ONLY by the Admin role, which is an ordinary
-// production role, not a test/production distinction. APP_ENV is the new, single source of truth
-// for that distinction. FAILS CLOSED BY DESIGN: destructive test endpoints require the literal
-// string 'test' — an absent APP_ENV, an unrecognized value, or 'development'/'production' all
-// disable them identically. This is deliberate, not an oversight: a bypass for "localhost" or for
-// "development" would recreate exactly the failure class this phase exists to close (the incident
-// server was itself a normal, unflagged, localhost-bound Node process — indistinguishable from a
-// disposable test server by port or address alone).
-const APP_ENV = process.env.APP_ENV || 'production';
-const IS_TEST_ENV = APP_ENV === 'test';
-// PORT may still be overridden (needed so isolated test servers can be started without editing this
-// file), but the default is unchanged from before this phase — existing production deployments that
-// never set PORT keep listening on 4001 exactly as before.
-const PORT = process.env.PORT ? Number(process.env.PORT) : 4001;
+// production role, not a test/production distinction. APP_ENV is the single source of truth for
+// that distinction. FAILS CLOSED BY DESIGN: destructive test endpoints require the literal string
+// 'test' — an absent APP_ENV, an unrecognized value, or 'development'/'production' all disable them
+// identically. This is deliberate, not an oversight: a bypass for "localhost" or for "development"
+// would recreate exactly the failure class ERP-059C exists to close (the incident server was itself
+// a normal, unflagged, localhost-bound Node process — indistinguishable from a disposable test
+// server by port or address alone).
+// CR-2026-002 — APP_ENV/PORT resolution (plus DB_PATH, consumed by domain.js) now lives in the
+// single shared server/env.js module rather than being duplicated here. IS_TEST_ENV below still
+// gates destructive endpoints on the literal 'test' string ONLY — unchanged; ENV.IS_DEV_ENV is
+// deliberately NOT used for that gate (see env.js's own comment).
+const ENV = require('./env');
+const APP_ENV = ENV.APP_ENV;
+const IS_TEST_ENV = ENV.IS_TEST_ENV;
+const PORT = ENV.PORT;
 const CLIENT_DIR = path.join(__dirname, '..', 'client_secure');
 
 // ---------- helpers ----------
@@ -79,6 +81,24 @@ function isGLVisible(actor){ return D.GL_VISIBLE_ROLES.has(actor.role) || actor.
 // enforces its own authorization internally and needs this same check). This alias keeps all 54
 // existing call sites below unchanged.
 const isProjectManagerOf = D.isProjectManagerOf;
+// ARCH-2026-001C-F — 23 of the 32 raw isProjectManagerOf(actor,X) call sites in this file were
+// migrated to D.hasScopeAccess(actor,'Project',X), the ARCH-2026-001C centralized scope dispatcher.
+// hasScopeAccess() is provably identical to isProjectManagerOf() ONLY where the call is directly
+// ANDed with (or nested inside a branch already gated by) `actor.role==='ProjectManager'` — in that
+// context hasScopeAccess's own internal role check is redundant-but-harmless. It is NOT safe to
+// substitute inside a bare OR (`A || isProjectManagerOf(...)`) or an `!X && !isProjectManagerOf(...)`
+// DENY-guard that is not itself already narrowed to PM, because hasScopeAccess() returns TRUE
+// UNCONDITIONALLY for every non-ProjectManager role (by design, for the read-filter/allow-list use
+// case) — substituting it into one of those un-narrowed patterns silently converts "deny every role
+// outside the explicit allow-list" into "allow every role except a non-owning ProjectManager." This
+// exact defect was introduced by an initial blind bulk substitution, LIVE-CAUGHT during this CR's own
+// testing (Sales granted 200 on GET /api/projects/:id/financial-readiness for a project it has no
+// relationship to — confirmed via a real HTTP call before any test file was written), and fixed by
+// reverting the 9 genuinely unsafe sites (pmOrAdminCeo() and its 2 callers, GET .../financial-
+// readiness, GET /api/project-pl, POST /api/designs, GET .../cost-breakdown, GET .../financial-360,
+// GET .../billing-ceiling, GET .../closure-readiness, POST /api/export report=financial-360) back to
+// the direct isProjectManagerOf(actor,X) call — see ARCH-2026-001C-F-MIGRATION.md §4 for the full
+// defect writeup and the per-site safety rule used to re-verify all 32 sites individually.
 function deny(res, code, reason, ctx){
   D.logAudit({type:'AccessDenied', reason, ...ctx});
   sendJson(res, code, {ok:false, error:reason});
@@ -251,7 +271,10 @@ registerMutationRoute({ method:'DELETE', path:'/api/report-variants/:id', authCh
 // none of "A AND B AND C" was collapsed into "A" to fit a simpler declaration.
 // ============================================================
 registerMutationRoute({ method:'POST', path:'/api/ar/invoice', permission:'create',
-  extraCheck: (actor, body) => (actor.role==='Sales' && body.customerId && !(actor.assignedCustomers||[]).includes(body.customerId))
+  // ARCH-2026-001C — migrated to the centralized scope engine, provably equivalent: hasScopeAccess
+  // returns !assignedCustomers.includes(...) negated exactly when actor.role==='Sales' (the only
+  // role the Customer dimension restricts), true for every other role — identical to the original.
+  extraCheck: (actor, body) => (body.customerId && !D.hasScopeAccess(actor,'Customer',body.customerId))
     ? {ok:false, error:`Sales user is not assigned to customer ${body.customerId}.`} : {ok:true},
   idempotent:true, auditReject:true,
   handler:(actor, body) => D.draftCustomerInvoice({...body, createdByUserId:actor.id, createdByRole:actor.role}) });
@@ -312,8 +335,14 @@ registerMutationRoute({ method:'POST', path:'/api/boms', roles:['Admin','CEO','E
 // createMaterialRequirement() carries the new bomId-linkage logic, it is squarely a "newly modified
 // mutation route" under this phase's own instruction to use registerMutationRoute() for those.
 // Same authCheck condition the removed if-block had, preserved exactly.
+// ARCH-2026-001C — migrated to the centralized scope engine. Provably equivalent to the original
+// condition: hasScopeAccess() returns isProjectManagerOf(actor,projectId) when actor.role is
+// 'ProjectManager' (the only role that dimension restricts) and TRUE unconditionally for every
+// other role — so for Admin/CEO the AND collapses to the allow-list membership alone, identical to
+// the original `|| ['Admin','CEO'].includes(actor.role)` clause. See
+// ARCH-2026-001C-DATA-SCOPE-IMPLEMENTATION.md for the full equivalence proof and test.
 registerMutationRoute({ method:'POST', path:'/api/material-requirements',
-  authCheck: (actor, body) => (actor.role==='ProjectManager' && isProjectManagerOf(actor, body.projectId)) || ['Admin','CEO'].includes(actor.role),
+  authCheck: (actor, body) => ['ProjectManager','Admin','CEO'].includes(actor.role) && D.hasScopeAccess(actor,'Project',body.projectId),
   idempotent:true, auditReject:true,
   handler:(actor, body) => D.createMaterialRequirement({...body, actor}) });
 // Project Variation Phase 7 — DEFECT FOUND & FIXED, same class already closed for BOM (Phase 5) and
@@ -509,7 +538,7 @@ function dispatchMutationRoute(route, req, res, actor, body, pathname, params){
 // role in running production) so the same rule can be re-applied to lifecycle actions that
 // take only a document ID (submit/issue-material/complete/hold/resume/cancel/close), which were
 // found during Phase 9B security testing to have NO authorization gate at all.
-function pmOrAdminCeo(actor, projectId){ return ['Admin','CEO'].includes(actor.role) || isProjectManagerOf(actor, projectId); }
+function pmOrAdminCeo(actor, projectId){ return ['Admin','CEO'].includes(actor.role) || isProjectManagerOf(actor,projectId); }
 
 // Phase 9B §17 — real server-side pagination for the highest-volume lists (Journal Register,
 // Audit Log, Inventory Movements — the ones the brief names first). page/pageSize are OPTIONAL
@@ -745,7 +774,7 @@ function handleRequest(req, res, body){
   if(pathname==='/api/customers' && req.method==='GET'){
     if(actor.role==='Purchase') return deny(res, 403, 'Purchase role cannot view customer master.', {userId:actor.id, role:actor.role, path:pathname});
     let rows = D.DB.customers;
-    if(actor.role==='Sales') rows = rows.filter(c=>(actor.assignedCustomers||[]).includes(c.id));
+    rows = rows.filter(c=>D.hasScopeAccess(actor,'Customer',c.id)); // ARCH-2026-001C-F migrated
     const financialEligible = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
     const out = rows.map(c=>{
       const base = {...c};
@@ -770,7 +799,7 @@ function handleRequest(req, res, body){
   }
   if(pathname==='/api/projects' && req.method==='GET'){
     let rows = D.DB.projects;
-    if(actor.role==='ProjectManager') rows = rows.filter(p=>isProjectManagerOf(actor,p.id));
+    rows = rows.filter(p=>D.hasScopeAccess(actor,'Project',p.id)); // ARCH-2026-001C-F migrated
     return sendJson(res, 200, {ok:true, projects: rows});
   }
   if(pathname==='/api/accounts' && req.method==='GET'){
@@ -863,7 +892,7 @@ function handleRequest(req, res, body){
     if(!D.DB.projects.find(x=>x.id===pid)) return sendJson(res, 404, {ok:false, error:`Project "${pid}" not found.`});
     const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
     if(!fullAccess.has(actor.role)){
-      if(isProjectManagerOf(actor, pid)){ /* allowed, own project only */ }
+      if(isProjectManagerOf(actor,pid)){ /* allowed, own project only */ }
       else return deny(res, 403, `Role "${actor.role}" cannot view project profitability for ${pid}.`, {userId:actor.id, role:actor.role, path:pathname, projectId:pid});
     }
     return sendJson(res, 200, {ok:true, pl: D.projectPL(pid)});
@@ -950,7 +979,9 @@ function handleRequest(req, res, body){
 
   // ---------- Audit / Export ----------
   if(pathname==='/api/audit-log' && req.method==='GET'){
-    if(!(actor.role==='Admin' || actor.role==='CEO')) return deny(res, 403, `Role "${actor.role}" cannot view the audit log.`, {userId:actor.id, role:actor.role, path:pathname});
+    // ARCH-2026-001B — migrated to the centralized privilege engine (AuditLog.VIEW), role set
+    // {Admin, CEO} read directly from this exact original check.
+    if(!D.hasPrivilege(actor,'AuditLog.VIEW')) return deny(res, 403, `Role "${actor.role}" cannot view the audit log.`, {userId:actor.id, role:actor.role, path:pathname});
     let rows = D.DB.auditLog;
     const q = parsed.query;
     if(q.search){ const s = q.search.toLowerCase(); rows = rows.filter(a=>(a.type||'').toLowerCase().includes(s) || (a.reason||'').toLowerCase().includes(s) || (a.userId||'').toLowerCase().includes(s)); }
@@ -965,6 +996,43 @@ function handleRequest(req, res, body){
     // discover the distinction the hard way, as this engagement's own DR drill did.
     return sendJson(res, 200, {ok:true, auditLog: p.rows, total:p.total, page:p.page, pageSize:p.pageSize, hasMore:p.hasMore, paginated:p.paginated, loginHistory: D.DB.loginHistory,
       scopeNote: 'This log contains administrative/security/configuration/exception events only. For a routine transaction\'s own Created/Submitted/Approved/Posted history, see that document\'s own "history" field (GET /api/journal-drafts).'});
+  }
+  // ============================================================
+  // ARCH-2026-001D — SoD administration & detective diagnostics. Admin/CEO-only (enforced INSIDE
+  // each domain function, not just here — defense in depth, same pattern as this file's other
+  // security-sensitive routes). No new audit system: every write below goes through the existing
+  // logAudit()/DB.auditLog path via the domain functions themselves.
+  // ============================================================
+  if(pathname==='/api/sod/rules' && req.method==='GET'){
+    if(!['Admin','CEO'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view SoD rule configuration.`,{userId:actor.id,role:actor.role,path:pathname});
+    return sendJson(res,200,{ok:true, rules:D.DB.sodRules, exceptions:D.DB.sodExceptions});
+  }
+  if(pathname==='/api/sod/conflicts' && req.method==='GET'){
+    const r = D.detectSoDConflicts(actor); return sendJson(res, r.ok?200:403, r);
+  }
+  if(pathname==='/api/sod/exceptions' && req.method==='POST'){
+    if(!['Admin','CEO'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot grant an SoD exception.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.grantSoDException({...body, actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  if(pathname.match(/^\/api\/sod\/exceptions\/[^/]+\/revoke$/) && req.method==='POST'){
+    if(!['Admin','CEO'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot revoke an SoD exception.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.revokeSoDException({exceptionId:pathname.split('/')[4], actor}); return sendJson(res, r.ok?200:400, r);
+  }
+  // ARCH-2026-001E — read-only diagnostic ("could I approve this?"), never itself an approval action.
+  // Authenticated users only (getActor() above already guarantees this); does not expose any actor
+  // other than the caller's own eligibility, so no additional role gate is required beyond auth.
+  if(pathname==='/api/approval-authority/check' && req.method==='GET'){
+    const {transactionType, id} = parsed.query;
+    if(!transactionType || !id) return sendJson(res,400,{ok:false, error:'transactionType and id are required.'});
+    let record;
+    if(transactionType==='PurchaseOrder') record = D.DB.purchaseOrders.find(x=>x.id===id);
+    else if(transactionType==='QuotationDiscount') record = D.DB.quotations.find(x=>x.id===id);
+    else if(transactionType==='PaymentRequest') record = D.DB.paymentApprovals.find(x=>x.id===id);
+    else if(transactionType==='DesignReview') record = D.DB.designs.find(x=>x.id===id);
+    else return sendJson(res,400,{ok:false, error:`Unknown transactionType "${transactionType}".`});
+    if(!record) return sendJson(res,404,{ok:false, error:'Record not found.'});
+    const result = D.resolveApprovalAuthority(transactionType, actor, record);
+    return sendJson(res, result.ok?200:400, result);
   }
   // Phase 13 POL-12: real export handling lives further down (after PROC_VIEW_ROLES/AS_VIEW_ROLES/
   // isProjectManagerOf/ticketAllowed have all actually executed in this request's top-to-bottom
@@ -1083,7 +1151,7 @@ function handleRequest(req, res, body){
     const p = D.DB.projects.find(x=>x.id===id);
     if(!p) return sendJson(res,404,{ok:false,error:'Project not found.'});
     const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
-    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor, id)){
+    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor,id)){
       return deny(res,403,`Role "${actor.role}" cannot view financial readiness for ${id}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:id});
     }
     return sendJson(res,200,{ok:true, readiness: D.projectFinancialReadiness(id)});
@@ -1098,7 +1166,7 @@ function handleRequest(req, res, body){
     // NOT gated by the generic 'create' action (which correctly denies ProjectManager for
     // financial documents but would incorrectly deny them here too). Gated instead by project
     // assignment (business-rule authorization, per §28), same discipline as financial-readiness.
-    if(!(['Admin','CEO'].includes(actor.role) || isProjectManagerOf(actor, body.projectId))){
+    if(!(['Admin','CEO'].includes(actor.role) || isProjectManagerOf(actor,body.projectId))){
       return deny(res,403,`Role "${actor.role}" cannot submit a design for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:body.projectId});
     }
     const r = D.submitDesign({...body, actor}); return sendJson(res, r.ok?200:400, r);
@@ -1106,7 +1174,7 @@ function handleRequest(req, res, body){
   if(pathname==='/api/designs' && req.method==='GET'){
     const pid = parsed.query.projectId;
     let rows = D.DB.designs.filter(d=>!pid || d.projectId===pid);
-    if(actor.role==='ProjectManager') rows = rows.filter(d=>isProjectManagerOf(actor,d.projectId));
+    if(actor.role==='ProjectManager') rows = rows.filter(d=>D.hasScopeAccess(actor,'Project',d.projectId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
     else if(!['Admin','CEO','Estimator','Viewer'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view designs.`,{userId:actor.id,role:actor.role,path:pathname});
     return sendJson(res,200,{ok:true, designs:rows, statuses:D.DESIGN_STATUSES});
   }
@@ -1114,7 +1182,7 @@ function handleRequest(req, res, body){
     if(!(['Admin','CEO','ProjectManager'].includes(actor.role))) return deny(res,403,`Role "${actor.role}" cannot review/approve designs.`,{userId:actor.id,role:actor.role,path:pathname});
     const id = pathname.split('/')[3];
     const design = D.DB.designs.find(x=>x.id===id);
-    if(design && actor.role==='ProjectManager' && !isProjectManagerOf(actor, design.projectId)){
+    if(design && actor.role==='ProjectManager' && !D.hasScopeAccess(actor,'Project',design.projectId)){
       return deny(res,403,`ProjectManager not assigned to project ${design.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     const r = D.reviewDesign({designId:id, status:body.status, remarks:body.remarks, actor}); return sendJson(res, r.ok?200:400, r);
@@ -1158,7 +1226,7 @@ function handleRequest(req, res, body){
   // ---- Material Requirement ----
   if(pathname==='/api/material-requirements' && req.method==='GET'){
     let rows = D.DB.materialRequirements;
-    if(actor.role==='ProjectManager') rows = rows.filter(r=>isProjectManagerOf(actor,r.projectId));
+    if(actor.role==='ProjectManager') rows = rows.filter(r=>D.hasScopeAccess(actor,'Project',r.projectId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
     else if(!PROC_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view Material Requirements.`,{userId:actor.id,role:actor.role,path:pathname});
     return sendJson(res,200,{ok:true, requirements:rows});
   }
@@ -1179,7 +1247,7 @@ function handleRequest(req, res, body){
   if(pathname==='/api/material-requests' && req.method==='GET'){
     if(!PROC_VIEW_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view Material Requests.`,{userId:actor.id,role:actor.role,path:pathname});
     let rows = D.DB.materialRequests;
-    if(actor.role==='ProjectManager') rows = rows.filter(r=>isProjectManagerOf(actor,r.projectId));
+    rows = rows.filter(r=>D.hasScopeAccess(actor,'Project',r.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, materialRequests:rows, statuses:D.MR_STATUSES});
   }
   if(pathname==='/api/material-requests' && req.method==='POST'){
@@ -1229,7 +1297,7 @@ function handleRequest(req, res, body){
   // ---- Purchase Order ----
   if(pathname==='/api/purchase-orders' && req.method==='GET'){
     let rows = D.DB.purchaseOrders;
-    if(actor.role==='ProjectManager') rows = rows.filter(p=>isProjectManagerOf(actor,p.projectId));
+    if(actor.role==='ProjectManager') rows = rows.filter(p=>D.hasScopeAccess(actor,'Project',p.projectId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
     else if(!PROC_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view Purchase Orders.`,{userId:actor.id,role:actor.role,path:pathname});
     return sendJson(res,200,{ok:true, purchaseOrders:rows, statuses:D.PO_STATUSES});
   }
@@ -1262,7 +1330,7 @@ function handleRequest(req, res, body){
   if(pathname==='/api/grns' && req.method==='GET'){
     if(!PROC_VIEW_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view GRNs.`,{userId:actor.id,role:actor.role,path:pathname});
     let rows = D.DB.grns;
-    if(actor.role==='ProjectManager') rows = rows.filter(g=>isProjectManagerOf(actor,g.projectId));
+    rows = rows.filter(g=>D.hasScopeAccess(actor,'Project',g.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, grns:rows});
   }
   // Phase 23: /api/grns migrated to registerMutationRoute() — see the migration ledger.
@@ -1275,7 +1343,7 @@ function handleRequest(req, res, body){
   if(pathname==='/api/inventory/movements' && req.method==='GET'){
     if(!PROC_VIEW_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view inventory movements.`,{userId:actor.id,role:actor.role,path:pathname});
     let rows = D.DB.inventoryMovements;
-    if(actor.role==='ProjectManager') rows = rows.filter(m=>m.projectId && isProjectManagerOf(actor,m.projectId));
+    rows = rows.filter(m=>D.hasScopeAccess(actor,'Project',m.projectId)); // ARCH-2026-001C-F migrated
     const materialId = parsed.query.materialId;
     if(materialId) rows = rows.filter(m=>m.materialId===materialId);
     if(parsed.query.warehouseId) rows = rows.filter(m=>m.warehouseId===parsed.query.warehouseId);
@@ -1319,7 +1387,7 @@ function handleRequest(req, res, body){
   if(pathname==='/api/bom-quota' && req.method==='GET'){
     const projectId = parsed.query.projectId, materialId = parsed.query.materialId;
     if(!projectId || !materialId) return sendJson(res,400,{ok:false, error:'projectId and materialId are both required.'});
-    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor, projectId)) && !PROC_VIEW_ROLES.has(actor.role)){
+    if(!(actor.role==='ProjectManager' && D.hasScopeAccess(actor,'Project',projectId)) && !PROC_VIEW_ROLES.has(actor.role)){
       return deny(res,403,`Role "${actor.role}" cannot view BOM quota for project ${projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     return sendJson(res,200,{ok:true, quota: D.materialBomQuota({projectId, materialId})});
@@ -1330,14 +1398,14 @@ function handleRequest(req, res, body){
   if(pathname.match(/^\/api\/projects\/[^/]+\/cost-breakdown$/) && req.method==='GET'){
     const id = pathname.split('/')[3];
     const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
-    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor, id)) return deny(res,403,`Role "${actor.role}" cannot view cost breakdown for ${id}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:id});
+    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor,id)) return deny(res,403,`Role "${actor.role}" cannot view cost breakdown for ${id}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:id});
     return sendJson(res,200,{ok:true, breakdown: D.projectCostBreakdown(id)});
   }
   // Phase 11 §4 — Project Financial 360, same access tier as cost-breakdown (it's a superset).
   if(pathname.match(/^\/api\/projects\/[^/]+\/financial-360$/) && req.method==='GET'){
     const id = pathname.split('/')[3];
     const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
-    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor, id)) return deny(res,403,`Role "${actor.role}" cannot view the financial 360 for ${id}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:id});
+    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor,id)) return deny(res,403,`Role "${actor.role}" cannot view the financial 360 for ${id}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:id});
     const r = D.projectFinancial360(id);
     return sendJson(res, r.ok?200:404, r);
   }
@@ -1416,7 +1484,7 @@ function handleRequest(req, res, body){
   if(pathname==='/api/bom-entitlement' && req.method==='GET'){
     const projectId = parsed.query.projectId, materialId = parsed.query.materialId, siteId = parsed.query.siteId||null;
     if(!projectId || !materialId) return sendJson(res,400,{ok:false, error:'projectId and materialId are both required.'});
-    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor, projectId)) && !PROC_VIEW_ROLES.has(actor.role) && actor.role!=='SiteInCharge'){
+    if(!(actor.role==='ProjectManager' && D.hasScopeAccess(actor,'Project',projectId)) && !PROC_VIEW_ROLES.has(actor.role) && actor.role!=='SiteInCharge'){
       return deny(res,403,`Role "${actor.role}" cannot view BOM entitlement for project ${projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     return sendJson(res,200,{ok:true, entitlement: D.projectBomEntitlement({projectId, materialId, siteId})});
@@ -1427,7 +1495,7 @@ function handleRequest(req, res, body){
     let list = D.DB.excessMaterialIssueRequests;
     if(parsed.query.status) list = list.filter(x=>x.status===parsed.query.status);
     if(parsed.query.projectId) list = list.filter(x=>x.projectId===parsed.query.projectId);
-    if(actor.role==='ProjectManager') list = list.filter(x=>isProjectManagerOf(actor, x.projectId) || x.requestedBy===actor.id);
+    if(actor.role==='ProjectManager') list = list.filter(x=>D.hasScopeAccess(actor,'Project',x.projectId) || x.requestedBy===actor.id);
     return sendJson(res,200,{ok:true, excessRequests:list});
   }
   if(pathname==='/api/excess-material-issue-requests' && req.method==='POST'){
@@ -1457,7 +1525,7 @@ function handleRequest(req, res, body){
   if(pathname.match(/^\/api\/projects\/[^/]+\/billing-ceiling$/) && req.method==='GET'){
     const projectId = pathname.split('/')[3];
     const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer','Sales']);
-    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor, projectId)) return deny(res,403,`Role "${actor.role}" cannot view the billing ceiling for ${projectId}.`,{userId:actor.id,role:actor.role,path:pathname,projectId});
+    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor,projectId)) return deny(res,403,`Role "${actor.role}" cannot view the billing ceiling for ${projectId}.`,{userId:actor.id,role:actor.role,path:pathname,projectId});
     const ceiling = D.projectBillingCeiling(projectId);
     if(!ceiling) return sendJson(res,404,{ok:false, error:'Project not found.'});
     return sendJson(res,200,{ok:true, ceiling});
@@ -1466,7 +1534,7 @@ function handleRequest(req, res, body){
     let list = D.DB.excessBillingApprovals;
     if(parsed.query.status) list = list.filter(x=>x.status===parsed.query.status);
     if(parsed.query.projectId) list = list.filter(x=>x.projectId===parsed.query.projectId);
-    if(actor.role==='ProjectManager') list = list.filter(x=>isProjectManagerOf(actor, x.projectId) || x.requestedBy===actor.id);
+    if(actor.role==='ProjectManager') list = list.filter(x=>D.hasScopeAccess(actor,'Project',x.projectId) || x.requestedBy===actor.id);
     return sendJson(res,200,{ok:true, excessBillingApprovals:list});
   }
   if(pathname==='/api/excess-billing-approvals' && req.method==='POST'){
@@ -1489,7 +1557,7 @@ function handleRequest(req, res, body){
   // derived — see D.bomConsumptionReport()'s header comment).
   if(pathname==='/api/reports/bom-consumption' && req.method==='GET'){
     const projectId = parsed.query.projectId;
-    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor, projectId)) && !PROC_VIEW_ROLES.has(actor.role)){
+    if(!(actor.role==='ProjectManager' && D.hasScopeAccess(actor,'Project',projectId)) && !PROC_VIEW_ROLES.has(actor.role)){
       return deny(res,403,`Role "${actor.role}" cannot view the BOM Consumption report for project ${projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     const r = D.bomConsumptionReport(projectId); return sendJson(res, r.ok?200:400, r);
@@ -1527,35 +1595,35 @@ function handleRequest(req, res, body){
   // sibling reports elsewhere in this file; every other view role sees any project.
   if(pathname==='/api/reports/material-by-project' && req.method==='GET'){
     const {materialId, projectId, dateFrom, dateTo} = parsed.query;
-    if(!(actor.role==='ProjectManager' && projectId && isProjectManagerOf(actor, projectId)) && !MATERIAL_ANALYTICS_ROLES.has(actor.role)){
+    if(!(actor.role==='ProjectManager' && projectId && D.hasScopeAccess(actor,'Project',projectId)) && !MATERIAL_ANALYTICS_ROLES.has(actor.role)){
       return deny(res,403,`Role "${actor.role}" cannot view Material x Project.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     return sendJson(res,200, D.materialByProject({materialId:materialId||undefined, projectId:projectId||undefined, dateFrom, dateTo}));
   }
   if(pathname==='/api/reports/material-by-project-vendor' && req.method==='GET'){
     const {materialId, projectId, vendorId, dateFrom, dateTo} = parsed.query;
-    if(!(actor.role==='ProjectManager' && projectId && isProjectManagerOf(actor, projectId)) && !MATERIAL_ANALYTICS_ROLES.has(actor.role)){
+    if(!(actor.role==='ProjectManager' && projectId && D.hasScopeAccess(actor,'Project',projectId)) && !MATERIAL_ANALYTICS_ROLES.has(actor.role)){
       return deny(res,403,`Role "${actor.role}" cannot view Material x Project x Vendor.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     return sendJson(res,200, D.materialByProjectVendor({materialId:materialId||undefined, projectId:projectId||undefined, vendorId:vendorId||undefined, dateFrom, dateTo}));
   }
   if(pathname==='/api/reports/vendor-project-matrix' && req.method==='GET'){
     const {vendorId, projectId, dateFrom, dateTo, status} = parsed.query;
-    if(!(actor.role==='ProjectManager' && projectId && isProjectManagerOf(actor, projectId)) && !PROC_VIEW_ROLES.has(actor.role)){
+    if(!(actor.role==='ProjectManager' && projectId && D.hasScopeAccess(actor,'Project',projectId)) && !PROC_VIEW_ROLES.has(actor.role)){
       return deny(res,403,`Role "${actor.role}" cannot view Vendor x Project.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     return sendJson(res,200, D.vendorProjectMatrix({vendorId:vendorId||undefined, projectId:projectId||undefined, dateFrom, dateTo, status}));
   }
   if(pathname==='/api/reports/project-material-plan-vs-actual' && req.method==='GET'){
     const projectId = parsed.query.projectId;
-    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor, projectId)) && !PROC_VIEW_ROLES.has(actor.role)){
+    if(!(actor.role==='ProjectManager' && D.hasScopeAccess(actor,'Project',projectId)) && !PROC_VIEW_ROLES.has(actor.role)){
       return deny(res,403,`Role "${actor.role}" cannot view Project x Material for ${projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     const r = D.projectMaterialPlanVsActual(projectId); return sendJson(res, r.ok?200:400, r);
   }
   if(pathname==='/api/reports/project-variation-summary' && req.method==='GET'){
     const projectId = parsed.query.projectId;
-    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor, projectId)) && !can(actor,'view')){
+    if(!(actor.role==='ProjectManager' && D.hasScopeAccess(actor,'Project',projectId)) && !can(actor,'view')){
       return deny(res,403,`Role "${actor.role}" cannot view Project x Variation for ${projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     if(!projectId || !D.DB.projects.find(p=>p.id===projectId)) return sendJson(res,400,{ok:false, error:'A valid project is required.'});
@@ -1564,7 +1632,7 @@ function handleRequest(req, res, body){
 
   if(pathname==='/api/production-orders' && req.method==='GET'){ return sendJson(res,200,{ok:true, productionOrders:D.DB.productionOrders}); }
   if(pathname==='/api/production-orders' && req.method==='POST'){
-    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor, body.projectId)) && !['Admin','CEO'].includes(actor.role)){
+    if(!(actor.role==='ProjectManager' && D.hasScopeAccess(actor,'Project',body.projectId)) && !['Admin','CEO'].includes(actor.role)){
       return deny(res,403,`Role "${actor.role}" cannot create a Production Order for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     const r = D.createProductionOrder({...body, actor}); return sendJson(res, r.ok?200:400, r);
@@ -1618,11 +1686,11 @@ function handleRequest(req, res, body){
   // Phase 8 — Dispatch → Delivery → Installation → QC → Snag → Handover → Billing → AR
   // ============================================================
   const EXEC_CREATE_ROLES = new Set(['Admin','CEO','Purchase']);
-  function execAllowed(actor, projectId){ return EXEC_CREATE_ROLES.has(actor.role) || (actor.role==='ProjectManager' && isProjectManagerOf(actor, projectId)); }
+  function execAllowed(actor, projectId){ return EXEC_CREATE_ROLES.has(actor.role) || (actor.role==='ProjectManager' && D.hasScopeAccess(actor,'Project',projectId)); }
 
   if(pathname==='/api/dispatches' && req.method==='GET'){
     let rows = D.DB.dispatches;
-    if(actor.role==='ProjectManager') rows = rows.filter(d=>isProjectManagerOf(actor,d.projectId));
+    if(actor.role==='ProjectManager') rows = rows.filter(d=>D.hasScopeAccess(actor,'Project',d.projectId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
     else if(!PROC_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view Dispatches.`,{userId:actor.id,role:actor.role,path:pathname});
     return sendJson(res,200,{ok:true, dispatches:rows, statuses:D.DISPATCH_STATUSES});
   }
@@ -1651,7 +1719,7 @@ function handleRequest(req, res, body){
 
   if(pathname==='/api/deliveries' && req.method==='GET'){
     let rows = D.DB.deliveries;
-    if(actor.role==='ProjectManager') rows = rows.filter(d=>isProjectManagerOf(actor,d.projectId));
+    rows = rows.filter(d=>D.hasScopeAccess(actor,'Project',d.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, deliveries:rows});
   }
   if(pathname==='/api/deliveries' && req.method==='POST'){
@@ -1662,7 +1730,7 @@ function handleRequest(req, res, body){
 
   if(pathname==='/api/installations' && req.method==='GET'){
     let rows = D.DB.installations;
-    if(actor.role==='ProjectManager') rows = rows.filter(i=>isProjectManagerOf(actor,i.projectId));
+    rows = rows.filter(i=>D.hasScopeAccess(actor,'Project',i.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, installations:rows, statuses:D.INSTALLATION_STATUSES});
   }
   if(pathname==='/api/installations' && req.method==='POST'){
@@ -1678,7 +1746,7 @@ function handleRequest(req, res, body){
 
   if(pathname==='/api/qc-checklists' && req.method==='GET'){
     let rows = D.DB.qcChecklists;
-    if(actor.role==='ProjectManager') rows = rows.filter(q=>isProjectManagerOf(actor,q.projectId));
+    rows = rows.filter(q=>D.hasScopeAccess(actor,'Project',q.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, qcChecklists:rows});
   }
   if(pathname==='/api/qc-checklists' && req.method==='POST'){
@@ -1693,7 +1761,7 @@ function handleRequest(req, res, body){
 
   if(pathname==='/api/snags' && req.method==='GET'){
     let rows = D.DB.snags;
-    if(actor.role==='ProjectManager') rows = rows.filter(s=>isProjectManagerOf(actor,s.projectId));
+    rows = rows.filter(s=>D.hasScopeAccess(actor,'Project',s.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, snags:rows, statuses:D.SNAG_STATUSES, severities:D.SNAG_SEVERITIES});
   }
   if(pathname==='/api/snags' && req.method==='POST'){
@@ -1736,7 +1804,7 @@ function handleRequest(req, res, body){
 
   if(pathname==='/api/handovers' && req.method==='GET'){
     let rows = D.DB.handovers;
-    if(actor.role==='ProjectManager') rows = rows.filter(h=>isProjectManagerOf(actor,h.projectId));
+    rows = rows.filter(h=>D.hasScopeAccess(actor,'Project',h.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, handovers:rows});
   }
   if(pathname==='/api/handovers' && req.method==='POST'){
@@ -1746,7 +1814,7 @@ function handleRequest(req, res, body){
 
   if(pathname==='/api/billing-milestones' && req.method==='GET'){
     let rows = D.DB.billingMilestones;
-    if(actor.role==='ProjectManager') rows = rows.filter(m=>isProjectManagerOf(actor,m.projectId));
+    if(actor.role==='ProjectManager') rows = rows.filter(m=>D.hasScopeAccess(actor,'Project',m.projectId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
     else if(!['Admin','CEO','FinanceManager','Accountant','Sales','Viewer'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view billing milestones.`,{userId:actor.id,role:actor.role,path:pathname});
     return sendJson(res,200,{ok:true, milestones:rows, types:D.MILESTONE_TYPES});
   }
@@ -1766,7 +1834,7 @@ function handleRequest(req, res, body){
   if(pathname.match(/^\/api\/projects\/[^/]+\/closure-readiness$/) && req.method==='GET'){
     const id = pathname.split('/')[3];
     const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
-    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor, id)) return deny(res,403,`Role "${actor.role}" cannot view closure readiness for ${id}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:id});
+    if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor,id)) return deny(res,403,`Role "${actor.role}" cannot view closure readiness for ${id}.`,{userId:actor.id,role:actor.role,path:pathname,projectId:id});
     return sendJson(res,200,{ok:true, readiness: D.projectClosureReadiness(id)});
   }
   if(pathname.match(/^\/api\/projects\/[^/]+\/close$/) && req.method==='POST'){
@@ -1788,21 +1856,21 @@ function handleRequest(req, res, body){
   // Admin/CEO/PM-assigned only (no Purchase): unlike procurement/dispatch, after-sales service
   // work belongs to the project's own team, not the procurement function. Named distinctly from
   // execAllowed (Phase 8) since the eligible role SET is genuinely different, not a duplicate.
-  function afterSalesAllowed(actor, projectId){ return ['Admin','CEO'].includes(actor.role) || (actor.role==='ProjectManager' && isProjectManagerOf(actor, projectId)); }
+  function afterSalesAllowed(actor, projectId){ return ['Admin','CEO'].includes(actor.role) || (actor.role==='ProjectManager' && D.hasScopeAccess(actor,'Project',projectId)); }
   function customerVisible(actor, customerId){
     if(AS_VIEW_ROLES.has(actor.role)){
       if(actor.role==='Sales') return (actor.assignedCustomers||[]).includes(customerId);
       return true;
     }
-    if(actor.role==='ProjectManager'){ const p = D.DB.projects.find(x=>x.customerId===customerId); return p && isProjectManagerOf(actor, p.id); }
+    if(actor.role==='ProjectManager'){ const p = D.DB.projects.find(x=>x.customerId===customerId); return p && D.hasScopeAccess(actor,'Project',p.id); }
     return false;
   }
 
   // ---- Warranty ----
   if(pathname==='/api/warranties' && req.method==='GET'){
     let rows = D.DB.warranties;
-    if(actor.role==='ProjectManager') rows = rows.filter(w=>isProjectManagerOf(actor,w.projectId));
-    else if(actor.role==='Sales') rows = rows.filter(w=>(actor.assignedCustomers||[]).includes(w.customerId));
+    if(actor.role==='ProjectManager') rows = rows.filter(w=>D.hasScopeAccess(actor,'Project',w.projectId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
+    else if(actor.role==='Sales') rows = rows.filter(w=>D.hasScopeAccess(actor,'Customer',w.customerId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
     else if(!AS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view warranties.`,{userId:actor.id,role:actor.role,path:pathname});
     return sendJson(res,200,{ok:true, warranties: rows.map(w=>({...w, effectiveStatus:D.warrantyEffectiveStatus(w)}))});
   }
@@ -1834,13 +1902,13 @@ function handleRequest(req, res, body){
   // ---- Complaint ----
   if(pathname==='/api/complaints' && req.method==='GET'){
     let rows = D.DB.complaints;
-    if(actor.role==='ProjectManager') rows = rows.filter(c=>c.projectId && isProjectManagerOf(actor,c.projectId));
-    else if(actor.role==='Sales') rows = rows.filter(c=>(actor.assignedCustomers||[]).includes(c.customerId));
+    if(actor.role==='ProjectManager') rows = rows.filter(c=>D.hasScopeAccess(actor,'Project',c.projectId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
+    else if(actor.role==='Sales') rows = rows.filter(c=>D.hasScopeAccess(actor,'Customer',c.customerId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
     else if(!AS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view complaints.`,{userId:actor.id,role:actor.role,path:pathname});
     return sendJson(res,200,{ok:true, complaints:rows, statuses:D.COMPLAINT_STATUSES});
   }
   if(pathname==='/api/complaints' && req.method==='POST'){
-    const allowed = ['Admin','CEO','Sales'].includes(actor.role) || (actor.role==='ProjectManager' && isProjectManagerOf(actor, body.projectId));
+    const allowed = ['Admin','CEO','Sales'].includes(actor.role) || (actor.role==='ProjectManager' && D.hasScopeAccess(actor,'Project',body.projectId));
     if(!allowed) return deny(res,403,`Role "${actor.role}" cannot create a complaint.`,{userId:actor.id,role:actor.role,path:pathname});
     const r = D.createComplaint({...body, actor}); return sendJson(res, r.ok?200:400, r);
   }
@@ -1850,7 +1918,7 @@ function handleRequest(req, res, body){
   }
   if(pathname.match(/^\/api\/complaints\/[^/]+\/status$/) && req.method==='POST'){
     const cmp = D.DB.complaints.find(c=>c.id===pathname.split('/')[3]);
-    const allowed = cmp && (['Admin','CEO','FinanceManager','Sales'].includes(actor.role) || (actor.role==='ProjectManager' && isProjectManagerOf(actor, cmp.projectId)));
+    const allowed = cmp && (['Admin','CEO','FinanceManager','Sales'].includes(actor.role) || (actor.role==='ProjectManager' && D.hasScopeAccess(actor,'Project',cmp.projectId)));
     if(!allowed) return deny(res,403,`Role "${actor.role}" cannot change this complaint's status.`,{userId:actor.id,role:actor.role,path:pathname});
     const r = D.changeComplaintStatus({id:pathname.split('/')[3], newStatus:body.newStatus, reason:body.reason, actor}); return sendJson(res, r.ok?200:400, r);
   }
@@ -1858,8 +1926,8 @@ function handleRequest(req, res, body){
   // ---- Service Ticket ----
   if(pathname==='/api/service-tickets' && req.method==='GET'){
     let rows = D.DB.serviceTickets;
-    if(actor.role==='ProjectManager') rows = rows.filter(t=>t.projectId && isProjectManagerOf(actor,t.projectId));
-    else if(actor.role==='Sales') rows = rows.filter(t=>(actor.assignedCustomers||[]).includes(t.customerId));
+    if(actor.role==='ProjectManager') rows = rows.filter(t=>D.hasScopeAccess(actor,'Project',t.projectId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
+    else if(actor.role==='Sales') rows = rows.filter(t=>D.hasScopeAccess(actor,'Customer',t.customerId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
     else if(!AS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view service tickets.`,{userId:actor.id,role:actor.role,path:pathname});
     return sendJson(res,200,{ok:true, tickets:rows, classifications:D.TICKET_CLASSIFICATIONS, statuses:D.TICKET_STATUSES});
   }
@@ -1907,7 +1975,7 @@ function handleRequest(req, res, body){
   // status Sales legitimately needs); Sales still sees the parent ticket's status/classification.
   if(pathname==='/api/service-visits' && req.method==='GET'){
     let rows = D.DB.serviceVisits;
-    if(actor.role==='ProjectManager') rows = rows.filter(v=>v.projectId && isProjectManagerOf(actor,v.projectId));
+    if(actor.role==='ProjectManager') rows = rows.filter(v=>D.hasScopeAccess(actor,'Project',v.projectId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
     else if(!['Admin','CEO','FinanceManager','Accountant','Viewer'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view service visits.`,{userId:actor.id,role:actor.role,path:pathname});
     return sendJson(res,200,{ok:true, visits:rows, statuses:D.VISIT_STATUSES});
   }
@@ -1952,8 +2020,8 @@ function handleRequest(req, res, body){
   // ---- AMC ----
   if(pathname==='/api/amc-contracts' && req.method==='GET'){
     let rows = D.DB.amcContracts;
-    if(actor.role==='ProjectManager') rows = rows.filter(a=>a.projectId && isProjectManagerOf(actor,a.projectId));
-    else if(actor.role==='Sales') rows = rows.filter(a=>(actor.assignedCustomers||[]).includes(a.customerId));
+    if(actor.role==='ProjectManager') rows = rows.filter(a=>D.hasScopeAccess(actor,'Project',a.projectId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
+    else if(actor.role==='Sales') rows = rows.filter(a=>D.hasScopeAccess(actor,'Customer',a.customerId)); // ARCH-2026-001C-F migrated (inner predicate only; outer if/else-if chain preserved exactly)
     else if(!AS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view AMC contracts.`,{userId:actor.id,role:actor.role,path:pathname});
     return sendJson(res,200,{ok:true, contracts:rows, statuses:D.AMC_STATUSES});
   }
@@ -2046,7 +2114,7 @@ function handleRequest(req, res, body){
   if(pathname.match(/^\/api\/customers\/[^/]+\/profitability$/) && req.method==='GET'){
     const customerId = pathname.split('/')[3];
     const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
-    const pmOwnsAny = actor.role==='ProjectManager' && D.DB.projects.some(p=>p.customerId===customerId && isProjectManagerOf(actor, p.id));
+    const pmOwnsAny = actor.role==='ProjectManager' && D.DB.projects.some(p=>p.customerId===customerId && D.hasScopeAccess(actor,'Project',p.id));
     if(!fullAccess.has(actor.role) && !pmOwnsAny) return deny(res,403,`Role "${actor.role}" cannot view profitability for ${customerId}.`,{userId:actor.id,role:actor.role,path:pathname,customerId});
     return sendJson(res,200,{ok:true, profitability: D.customerProfitability(customerId)});
   }
@@ -2068,11 +2136,11 @@ function handleRequest(req, res, body){
     if(report==='inventory' && !PROC_VIEW_ROLES.has(actor.role)) return deny(res, 403, `Role "${actor.role}" cannot export inventory data.`, {userId:actor.id, role:actor.role, path:pathname, report});
     if(report==='financial-360'){
       const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
-      if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor, filters.projectId)) return deny(res, 403, `Role "${actor.role}" cannot export the Financial 360 for ${filters.projectId}.`, {userId:actor.id, role:actor.role, path:pathname, report});
+      if(!fullAccess.has(actor.role) && !isProjectManagerOf(actor,filters.projectId)) return deny(res, 403, `Role "${actor.role}" cannot export the Financial 360 for ${filters.projectId}.`, {userId:actor.id, role:actor.role, path:pathname, report});
     }
     if(report==='customer-profitability'){
       const fullAccess = new Set(['Admin','CEO','Accountant','FinanceManager','Viewer']);
-      const pmOwnsAny = actor.role==='ProjectManager' && D.DB.projects.some(p=>p.customerId===filters.customerId && isProjectManagerOf(actor, p.id));
+      const pmOwnsAny = actor.role==='ProjectManager' && D.DB.projects.some(p=>p.customerId===filters.customerId && D.hasScopeAccess(actor,'Project',p.id));
       if(!fullAccess.has(actor.role) && !pmOwnsAny) return deny(res, 403, `Role "${actor.role}" cannot export profitability for ${filters.customerId}.`, {userId:actor.id, role:actor.role, path:pathname, report});
     }
     if(report==='after-sales' && !['Admin','CEO','FinanceManager','Accountant','Viewer'].includes(actor.role)) return deny(res, 403, `Role "${actor.role}" cannot export the after-sales summary.`, {userId:actor.id, role:actor.role, path:pathname, report});
@@ -2176,7 +2244,7 @@ function handleRequest(req, res, body){
   if(pathname==='/api/material-issues' && req.method==='GET'){
     if(!PROC_VIEW_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view material issues.`,{userId:actor.id,role:actor.role,path:pathname});
     let rows = D.DB.inventoryMovements.filter(m=>m.type==='Issue');
-    if(actor.role==='ProjectManager') rows = rows.filter(m=>m.projectId && isProjectManagerOf(actor,m.projectId));
+    rows = rows.filter(m=>D.hasScopeAccess(actor,'Project',m.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, issues:rows});
   }
   if(pathname==='/api/locations' && req.method==='GET'){
@@ -2235,14 +2303,14 @@ function handleRequest(req, res, body){
   if(pathname==='/api/labour-wages' && req.method==='GET'){
     if(!OPS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view labour wages.`,{userId:actor.id,role:actor.role,path:pathname});
     let rows = D.DB.labourWages;
-    if(actor.role==='ProjectManager') rows = rows.filter(r=>isProjectManagerOf(actor,r.projectId));
+    rows = rows.filter(r=>D.hasScopeAccess(actor,'Project',r.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, labour:rows});
   }
   // Phase 23: /api/labour-wages migrated to registerMutationRoute() — see the migration ledger.
   if(pathname==='/api/project-expenses' && req.method==='GET'){
     if(!OPS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view project expenses.`,{userId:actor.id,role:actor.role,path:pathname});
     let rows = D.DB.projectExpenses;
-    if(actor.role==='ProjectManager') rows = rows.filter(r=>isProjectManagerOf(actor,r.projectId));
+    rows = rows.filter(r=>D.hasScopeAccess(actor,'Project',r.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, expenses:rows});
   }
   // Phase 23: /api/project-expenses migrated to registerMutationRoute() — see the migration ledger.
@@ -2253,17 +2321,17 @@ function handleRequest(req, res, body){
   if(pathname==='/api/reports/labour-entries' && req.method==='GET'){
     if(!OPS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view Labour Cost Analysis.`,{userId:actor.id,role:actor.role,path:pathname});
     const {projectId, workerName, role, dateFrom, dateTo, amountFrom, amountTo} = parsed.query;
-    if(actor.role==='ProjectManager' && projectId && !isProjectManagerOf(actor,projectId)) return deny(res,403,`Role "${actor.role}" cannot view labour for project ${projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    if(actor.role==='ProjectManager' && projectId && !D.hasScopeAccess(actor,'Project',projectId)) return deny(res,403,`Role "${actor.role}" cannot view labour for project ${projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
     let rows = D.labourWageEntries({projectId, workerName, role, dateFrom, dateTo, amountFrom, amountTo});
-    if(actor.role==='ProjectManager') rows = rows.filter(r=>isProjectManagerOf(actor,r.projectId));
+    rows = rows.filter(r=>D.hasScopeAccess(actor,'Project',r.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, rows});
   }
   if(pathname==='/api/reports/labour-by-project' && req.method==='GET'){
     if(!OPS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view Labour x Project.`,{userId:actor.id,role:actor.role,path:pathname});
     const projectId = parsed.query.projectId;
-    if(actor.role==='ProjectManager' && projectId && !isProjectManagerOf(actor,projectId)) return deny(res,403,`Role "${actor.role}" cannot view labour for project ${projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
+    if(actor.role==='ProjectManager' && projectId && !D.hasScopeAccess(actor,'Project',projectId)) return deny(res,403,`Role "${actor.role}" cannot view labour for project ${projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
     let rows = D.labourCostByProject({projectId});
-    if(actor.role==='ProjectManager') rows = rows.filter(r=>isProjectManagerOf(actor,r.projectId));
+    rows = rows.filter(r=>D.hasScopeAccess(actor,'Project',r.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, rows});
   }
   if(pathname==='/api/reports/labour-identity-quality' && req.method==='GET'){
@@ -2292,7 +2360,7 @@ function handleRequest(req, res, body){
 
     // Projects — same scoping as GET /api/projects
     let projRows = D.DB.projects;
-    if(actor.role==='ProjectManager') projRows = projRows.filter(p=>isProjectManagerOf(actor,p.id));
+    if(actor.role==='ProjectManager') projRows = projRows.filter(p=>D.hasScopeAccess(actor,'Project',p.id));
     results.projects = projRows.filter(p=>matchesAny(p.id)||matchesAny(p.name)).sort((a,b)=>rank(a.id,a.name)-rank(b.id,b.name)).slice(0,8)
       .map(p=>({type:'PROJECT', id:p.id, title:p.id, subtitle:p.name, group:'PROJECTS', tab:'project360'}));
 
@@ -2319,7 +2387,7 @@ function handleRequest(req, res, body){
     // scoping as the existing /api/labour-wages route.
     if(OPS_VIEW_ROLES.has(actor.role)){
       let wRows = D.DB.labourWages;
-      if(actor.role==='ProjectManager') wRows = wRows.filter(r=>isProjectManagerOf(actor,r.projectId));
+      if(actor.role==='ProjectManager') wRows = wRows.filter(r=>D.hasScopeAccess(actor,'Project',r.projectId));
       const names = [...new Set(wRows.map(r=>r.workerName))].filter(matchesAny).sort((a,b)=>rank(a)-rank(b));
       results.workers = names.slice(0,8).map(n=>({type:'WORKER', id:n, title:n, subtitle:'Worker — free-text identity, see Labour Identity Quality', group:'SITE OPERATIONS', tab:'labourcost'}));
     }
@@ -2388,7 +2456,7 @@ function handleRequest(req, res, body){
   // ---- Phase 10 — Project Budget/Commitment/Actual/Variance (strictly read-only) ----
   if(pathname==='/api/reports/budget-variance' && req.method==='GET'){
     if(!['Admin','CEO','FinanceManager','Accountant','ProjectManager'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view the Budget Variance report.`,{userId:actor.id,role:actor.role,path:pathname});
-    return sendJson(res,200, D.projectBudgetVarianceReport(parsed.query.projectId||null));
+    return sendJson(res,200, D.projectBudgetVarianceReport(parsed.query.projectId||null, actor));
   }
 
   if(pathname==='/api/qc-dashboard' && req.method==='GET'){
@@ -2397,24 +2465,29 @@ function handleRequest(req, res, body){
   }
   if(pathname==='/api/timesheet' && req.method==='GET'){
     if(!OPS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view timesheets.`,{userId:actor.id,role:actor.role,path:pathname});
-    let rows = D.DB.timesheetEntries;
-    if(actor.role==='ProjectManager') rows = rows.filter(r=>isProjectManagerOf(actor,r.projectId));
+    // ARCH-2026-001C — read-filter migrated to the centralized scope engine (identical behavior:
+    // hasScopeAccess returns isProjectManagerOf's result for ProjectManager, true for every other
+    // role, so .filter() is a no-op for non-PM roles exactly as before).
+    let rows = D.DB.timesheetEntries.filter(r=>D.hasScopeAccess(actor,'Project',r.projectId));
     return sendJson(res,200,{ok:true, entries:rows});
   }
   if(pathname==='/api/timesheet' && req.method==='POST'){
-    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor,body.projectId)) && !['Admin','CEO'].includes(actor.role)){
+    // ARCH-2026-001C — migrated to the centralized scope engine, provably equivalent to the
+    // original condition (see ARCH-2026-001C-DATA-SCOPE-IMPLEMENTATION.md for the proof).
+    if(!(['ProjectManager','Admin','CEO'].includes(actor.role) && D.hasScopeAccess(actor,'Project',body.projectId))){
       return deny(res,403,`Role "${actor.role}" cannot log a timesheet entry for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     const r = D.createTimesheetEntry({...body, actor}); return sendJson(res, r.ok?200:400, r);
   }
   if(pathname==='/api/tasks' && req.method==='GET'){
     if(!OPS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view tasks.`,{userId:actor.id,role:actor.role,path:pathname});
-    let rows = D.DB.tasks;
-    if(actor.role==='ProjectManager') rows = rows.filter(r=>isProjectManagerOf(actor,r.projectId));
+    // ARCH-2026-001C — read-filter migrated to the centralized scope engine (identical behavior).
+    let rows = D.DB.tasks.filter(r=>D.hasScopeAccess(actor,'Project',r.projectId));
     return sendJson(res,200,{ok:true, tasks:rows});
   }
   if(pathname==='/api/tasks' && req.method==='POST'){
-    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor,body.projectId)) && !['Admin','CEO'].includes(actor.role)){
+    // ARCH-2026-001C — migrated to the centralized scope engine, provably equivalent.
+    if(!(['ProjectManager','Admin','CEO'].includes(actor.role) && D.hasScopeAccess(actor,'Project',body.projectId))){
       return deny(res,403,`Role "${actor.role}" cannot create a task for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     const r = D.createTask({...body, actor}); return sendJson(res, r.ok?200:400, r);
@@ -2422,19 +2495,22 @@ function handleRequest(req, res, body){
   if(pathname.match(/^\/api\/tasks\/[^/]+\/status$/) && req.method==='POST'){
     const t = D.DB.tasks.find(x=>x.id===pathname.split('/')[3]);
     if(!t) return sendJson(res,404,{ok:false, error:'Task not found.'});
-    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor,t.projectId)) && !['Admin','CEO'].includes(actor.role)){
+    // ARCH-2026-001C — migrated to the centralized scope engine, provably equivalent. Scope is
+    // resolved from the AUTHORITATIVE database record (t.projectId), never from a client parameter.
+    if(!(['ProjectManager','Admin','CEO'].includes(actor.role) && D.hasScopeAccess(actor,'Project',t.projectId))){
       return deny(res,403,`Role "${actor.role}" cannot change this task's status.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     const r = D.updateTaskStatus({id:t.id, status:body.status, actor}); return sendJson(res, r.ok?200:400, r);
   }
   if(pathname==='/api/risk-register' && req.method==='GET'){
     if(!OPS_VIEW_ROLES.has(actor.role)) return deny(res,403,`Role "${actor.role}" cannot view the Risk Register.`,{userId:actor.id,role:actor.role,path:pathname});
-    let rows = D.DB.riskRegister;
-    if(actor.role==='ProjectManager') rows = rows.filter(r=>isProjectManagerOf(actor,r.projectId));
+    // ARCH-2026-001C — read-filter migrated to the centralized scope engine (identical behavior).
+    let rows = D.DB.riskRegister.filter(r=>D.hasScopeAccess(actor,'Project',r.projectId));
     return sendJson(res,200,{ok:true, risks:rows});
   }
   if(pathname==='/api/risk-register' && req.method==='POST'){
-    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor,body.projectId)) && !['Admin','CEO'].includes(actor.role)){
+    // ARCH-2026-001C — migrated to the centralized scope engine, provably equivalent.
+    if(!(['ProjectManager','Admin','CEO'].includes(actor.role) && D.hasScopeAccess(actor,'Project',body.projectId))){
       return deny(res,403,`Role "${actor.role}" cannot create a risk entry for project ${body.projectId}.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     const r = D.createRiskEntry({...body, actor}); return sendJson(res, r.ok?200:400, r);
@@ -2442,7 +2518,9 @@ function handleRequest(req, res, body){
   if(pathname.match(/^\/api\/risk-register\/[^/]+\/close$/) && req.method==='POST'){
     const rk = D.DB.riskRegister.find(x=>x.id===pathname.split('/')[3]);
     if(!rk) return sendJson(res,404,{ok:false, error:'Risk entry not found.'});
-    if(!(actor.role==='ProjectManager' && isProjectManagerOf(actor,rk.projectId)) && !['Admin','CEO'].includes(actor.role)){
+    // ARCH-2026-001C — migrated to the centralized scope engine, provably equivalent. Scope
+    // resolved from the authoritative record (rk.projectId), never a client parameter.
+    if(!(['ProjectManager','Admin','CEO'].includes(actor.role) && D.hasScopeAccess(actor,'Project',rk.projectId))){
       return deny(res,403,`Role "${actor.role}" cannot close this risk entry.`,{userId:actor.id,role:actor.role,path:pathname});
     }
     const r = D.closeRiskEntry({id:rk.id, actor}); return sendJson(res, r.ok?200:400, r);
@@ -2471,7 +2549,7 @@ function handleRequest(req, res, body){
   if(pathname==='/api/job-cards' && req.method==='GET'){
     if(!PROC_VIEW_ROLES.has(actor.role) && actor.role!=='ProjectManager') return deny(res,403,`Role "${actor.role}" cannot view job cards.`,{userId:actor.id,role:actor.role,path:pathname});
     let rows = D.DB.jobCards;
-    if(actor.role==='ProjectManager') rows = rows.filter(r=>isProjectManagerOf(actor,r.projectId));
+    rows = rows.filter(r=>D.hasScopeAccess(actor,'Project',r.projectId)); // ARCH-2026-001C-F migrated
     return sendJson(res,200,{ok:true, jobCards:rows});
   }
   if(pathname==='/api/job-cards' && req.method==='POST'){
@@ -2828,6 +2906,15 @@ function handleRequest(req, res, body){
   if(pathname==='/api/bank-import/batches' && req.method==='GET'){
     if(!isGLVisible(actor)) return deny(res,403,`Role "${actor.role}" cannot view bank import batches.`,{userId:actor.id,role:actor.role,path:pathname});
     return sendJson(res,200,{ok:true, batches:D.DB.bankImportBatches});
+  }
+  // ARCH-2026-002 Wave 1 — Bank Reconciliation consolidation. Admin/CEO-gated (same tier as
+  // Backup/Restore, the other explicitly-triggered administrative/migration action in this Lab) —
+  // this is NEVER run automatically on server start, so production db.json is never touched by this
+  // route unless an Admin/CEO explicitly calls it against a production-pointed instance, which this
+  // Wave 1 implementation itself never does.
+  if(pathname==='/api/admin/migrate-legacy-bank-lines' && req.method==='POST'){
+    if(!['Admin','CEO'].includes(actor.role)) return deny(res,403,`Role "${actor.role}" cannot run the legacy bank-statement migration.`,{userId:actor.id,role:actor.role,path:pathname});
+    const r = D.migrateLegacyBankStatementLines({actor}); return sendJson(res, r.ok?200:400, r);
   }
 
   // Phase 18 §2/§3 — Financial Period Control. Create/Close/Reopen are gated inside
@@ -3292,6 +3379,10 @@ function handleRequest(req, res, body){
     return sendJson(res, 200, {ok:true, enforce: D.getEnforceTransactionBoundary()});
   }
   if(pathname==='/api/test/architectural-violations' && req.method==='GET'){
+    // Phase 39 fix (DEF-P38-01) — every sibling /api/test/* route requires APP_ENV=test; this one
+    // read-only diagnostic route previously required only role==='Admin', reachable in production.
+    // Same gate as its siblings now, closing the inconsistency rather than leaving it undocumented.
+    if(!IS_TEST_ENV) return denyDestructiveTestEndpoint(res, actor, pathname);
     if(!(actor.role==='Admin')) return deny(res, 403, 'Only Admin may view architectural violation records.', {userId:actor.id, role:actor.role, path:pathname});
     return sendJson(res, 200, {ok:true, violations: D.DB.__architecturalViolations||[], count:(D.DB.__architecturalViolations||[]).length, enforce: D.getEnforceTransactionBoundary()});
   }
@@ -3366,6 +3457,9 @@ require('./route_safety_scanner').runRouteSafetyAudit(__filename);
 // at a glance. Never prints a secret: APP_ENV, port, DB path, and the enabled/disabled flag are not
 // sensitive, and no credential or token is read here.
 server.listen(PORT, ()=>{
+  // CR-2026-002 §10 — printed first, before the existing ERP-059C diagnostics below, so the
+  // loudest, hardest-to-miss identification is the very first thing a human sees.
+  ENV.printStartupBanner();
   console.log(`[Phase 6A] Appletree SAP Lab secure server listening on http://localhost:${PORT}`);
   console.log(`[ERP-059C] APP_ENV=${APP_ENV}`);
   console.log(`[ERP-059C] Database path: ${D.DB_FILE}`);

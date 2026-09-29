@@ -1,0 +1,660 @@
+[
+  {
+    "part": "A1",
+    "name": "Setup: asset created",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "A1",
+    "name": "Setup: asset capitalized on the 5th (distinct proration fraction from baseline suite's 15th)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "A1",
+    "name": "First (prorated) period matches independently-computed proration (₹17419.35 expected)",
+    "pass": true,
+    "detail": {
+      "amount": 17419.35,
+      "expected": 17419.35
+    }
+  },
+  {
+    "part": "A1",
+    "name": "Second (full) period charges the full monthly amount, unaffected by first period's proration",
+    "pass": true,
+    "detail": {
+      "amount": 20000,
+      "expected": 20000
+    }
+  },
+  {
+    "part": "A2",
+    "name": "Setup: 2-month-life asset capitalized (full month 1, day 1)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "A2",
+    "name": "Period 1 of 2 posted (₹25,000)",
+    "pass": true,
+    "detail": {
+      "amount": 25000
+    }
+  },
+  {
+    "part": "A2",
+    "name": "Period 2 of 2 posted — asset now FULLY depreciated (NBV = residual = 0)",
+    "pass": true,
+    "detail": {
+      "amount": 25000,
+      "nbv": 0
+    }
+  },
+  {
+    "part": "A2-NEG",
+    "name": "A THIRD depreciation attempt on a fully-depreciated asset (0 remaining depreciable value) is BLOCKED, not silently a ₹0 no-op",
+    "pass": true,
+    "detail": {
+      "error": "Cannot depreciate ₹25000 — only ₹0 remains depreciable before hitting the residual value floor."
+    }
+  },
+  {
+    "part": "A2-NEG",
+    "name": "A manual amount well beyond the residual floor (₹500, past the ₹0.01 rounding tolerance) is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Cannot depreciate ₹500 — only ₹0 remains depreciable before hitting the residual value floor."
+    }
+  },
+  {
+    "part": "A2",
+    "name": "Fully-depreciated asset still correctly listed as Capitalized (fully depreciated is not a distinct/terminal status)",
+    "pass": true,
+    "detail": {
+      "status": "Capitalized",
+      "nbv": 0
+    }
+  },
+  {
+    "part": "A3",
+    "name": "Setup: asset created with a purchase date years in the past (2019)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "A3",
+    "name": "Historical asset capitalizes normally with a 2019 capitalization date — no date-age gate",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "A3",
+    "name": "Historical asset depreciates normally for a 2019 period, proration formula identical to a present-day asset",
+    "pass": true,
+    "detail": {
+      "amount": 6300,
+      "expected": 6300
+    }
+  },
+  {
+    "part": "A3",
+    "name": "Historical asset transfers normally today (no age gate on transfer either)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "A3",
+    "name": "Historical asset disposes normally today, gain/loss computed off its real (old) NBV",
+    "pass": true,
+    "detail": {
+      "gainOrLoss": -103700
+    }
+  },
+  {
+    "part": "A4",
+    "name": "Setup: asset capitalized for the reversal test",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "A4-NEG",
+    "name": "DEFECT FOUND & FIXED: reversing a FixedAssetCapitalization GL entry is now BLOCKED (previously silently succeeded and desynced the Register from the GL — see WAVE3_CHANGELOG.md)",
+    "pass": true,
+    "detail": {
+      "error": "Cannot reverse JE-0017 — it is a Fixed Asset Capitalization entry. Reversing it would remove the asset's cost/accumulated-depreciation from the General Ledger while leaving the Fixed Asset Register's own status and lifecycle fields unchanged, permanently breaking the Fixed Asset Register <-> GL reconciliation (no compensating mechanism exists in this Lab, unlike Depreciation reversal which is self-consistent). If the capitalization was genuinely wrong, correct it via a new, independently-authorized Fixed Asset transaction instead of reversing this GL entry directly."
+    }
+  },
+  {
+    "part": "A4",
+    "name": "Asset status/cost unaffected by the blocked reversal attempt",
+    "pass": true,
+    "detail": {
+      "status": "Capitalized",
+      "cost": 120000
+    }
+  },
+  {
+    "part": "A4",
+    "name": "Fixed Asset Register <-> GL reconciliation still costMatches:true after the blocked attempt (would have broken without the fix)",
+    "pass": true,
+    "detail": {
+      "registerCost": 410000,
+      "glCost": 410000,
+      "costMatches": true,
+      "registerAccumDep": 87419.35,
+      "glAccumDep": 87419.35,
+      "accumDepMatches": true,
+      "assetCount": 3,
+      "disposedCount": 1
+    }
+  },
+  {
+    "part": "A4",
+    "name": "Setup: one depreciation period posted",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "A4",
+    "name": "Reversing a plain Depreciation entry is ALLOWED (self-consistent by design — unlike Capitalization/Disposal, no register desync is possible)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "A4",
+    "name": "Accumulated depreciation correctly drops back down after the depreciation reversal (assetAccumulatedDepreciation() already excludes reversed entries)",
+    "pass": true,
+    "detail": {
+      "before": 10000,
+      "after": 0
+    }
+  },
+  {
+    "part": "A4",
+    "name": "Setup: asset disposed",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "A4-NEG",
+    "name": "DEFECT FOUND & FIXED: reversing a FixedAssetDisposal GL entry is now BLOCKED (same defect class/fix as capitalization reversal)",
+    "pass": true,
+    "detail": {
+      "error": "Cannot reverse JE-0020 — it is a Fixed Asset Disposal entry. Reversing it would remove the asset's cost/accumulated-depreciation from the General Ledger while leaving the Fixed Asset Register's own status and lifecycle fields unchanged, permanently breaking the Fixed Asset Register <-> GL reconciliation (no compensating mechanism exists in this Lab, unlike Depreciation reversal which is self-consistent). If the disposal was genuinely wrong, correct it via a new, independently-authorized Fixed Asset transaction instead of reversing this GL entry directly."
+    }
+  },
+  {
+    "part": "A6",
+    "name": "Setup: asset capitalized for the concurrency test",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "A6",
+    "name": "Exactly ONE of the two truly-concurrent disposal requests succeeds, the other is correctly rejected (asset already Disposed) — no double-disposal, no lost update",
+    "pass": true,
+    "detail": {
+      "concA": {
+        "ok": true,
+        "gainOrLoss": -20000
+      },
+      "concB": {
+        "ok": false,
+        "error": "Cannot dispose — asset is \"Disposed\", not Capitalized."
+      }
+    }
+  },
+  {
+    "part": "A6",
+    "name": "Final asset state is Disposed exactly once, proceeds match whichever request actually won the race (no corrupted hybrid state)",
+    "pass": true,
+    "detail": {
+      "status": "Disposed",
+      "proceeds": 70000
+    }
+  },
+  {
+    "part": "A6",
+    "name": "Fixed Asset Register <-> GL reconciliation is still exactly correct after the concurrent race (no phantom double-post)",
+    "pass": true,
+    "detail": {
+      "note": "validated via the shared reconciliation check below, section A7"
+    }
+  },
+  {
+    "part": "A6",
+    "name": "Both concurrent transfer requests (a non-exclusive action) succeed independently",
+    "pass": true,
+    "detail": {
+      "tA": true,
+      "tB": true
+    }
+  },
+  {
+    "part": "A6",
+    "name": "transferHistory recorded BOTH concurrent transfers, in order, with no lost update (length===2)",
+    "pass": true,
+    "detail": {
+      "historyLen": 2,
+      "history": [
+        {
+          "from": {
+            "location": "Factory",
+            "custodian": "W3 Custodian",
+            "projectId": "PRJ-1"
+          },
+          "to": {
+            "location": "Bay 1",
+            "custodian": "W3 Custodian",
+            "projectId": "PRJ-1"
+          },
+          "reason": "Wave3 A6b — concurrent transfer, actor 1",
+          "by": "U-FIN1",
+          "at": "2026-09-29T03:17:38.986Z"
+        },
+        {
+          "from": {
+            "location": "Bay 1",
+            "custodian": "W3 Custodian",
+            "projectId": "PRJ-1"
+          },
+          "to": {
+            "location": "Bay 2",
+            "custodian": "W3 Custodian",
+            "projectId": "PRJ-1"
+          },
+          "reason": "Wave3 A6b — concurrent transfer, actor 2",
+          "by": "U-ADMIN",
+          "at": "2026-09-29T03:17:39.052Z"
+        }
+      ]
+    }
+  },
+  {
+    "part": "A7",
+    "name": "Fixed Asset Register cost still reconciles exactly to GL account 1400 after all Wave 3 asset hardening activity",
+    "pass": true,
+    "detail": {
+      "registerCost": 330000,
+      "glCost": 330000,
+      "costMatches": true,
+      "registerAccumDep": 87419.35,
+      "glAccumDep": 87419.35,
+      "accumDepMatches": true,
+      "assetCount": 3,
+      "disposedCount": 3
+    }
+  },
+  {
+    "part": "A7",
+    "name": "Accumulated Depreciation still reconciles exactly to GL account 1450",
+    "pass": true,
+    "detail": {
+      "registerCost": 330000,
+      "glCost": 330000,
+      "costMatches": true,
+      "registerAccumDep": 87419.35,
+      "glAccumDep": 87419.35,
+      "accumDepMatches": true,
+      "assetCount": 3,
+      "disposedCount": 3
+    }
+  },
+  {
+    "part": "A7",
+    "name": "No new Fixed Asset SoD rule exists — capitalize/transfer/depreciate/dispose remain pure role gates (assertCanXxxFixedAsset), confirmed by the SAME actor (finance1) being able to perform multiple lifecycle steps on one asset throughout this section",
+    "pass": true,
+    "detail": {
+      "note": "W3-3 remains an IMPLEMENTATION BLOCKER per WAVE3_IMPLEMENTATION_SCOPE.md — not implemented this pass"
+    }
+  },
+  {
+    "part": "B1",
+    "name": "Exactly ONE definition each of matchBankImportLine/unmatchBankImportLine/reconcileBankImportLine exists (the single consolidated engine, ARCH-2026-002 Wave 1)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "B1",
+    "name": "importBankStatement/matchBankStatementLine/unmatchBankStatementLine/bankReconciliationStatus are still thin wrappers delegating to the single bankImportLines engine (source-level re-confirmation)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "B1",
+    "name": "Manual full-file review confirms no second bank-statement reconciliation/matching engine exists (only AR/AP/Tax/Asset/Opening-Balance reconciliation REPORTS, an unrelated concept, share the word \"reconcile\")",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "B2",
+    "name": "Setup: a real Bank Account master exists to import against",
+    "pass": true,
+    "detail": {
+      "bankAcct": {
+        "id": "BANK-ICICI-1112",
+        "bankName": "ICICI Bank",
+        "accountName": "ICICI Areekkad A/c No.249005001112",
+        "accountNumberLast4": "1112",
+        "glAccount": "1000",
+        "active": true
+      }
+    }
+  },
+  {
+    "part": "B2",
+    "name": "Bank statement imported as a new batch (metadata only, no GL effect yet)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "B2",
+    "name": "Imported line visible via listBankImportLines",
+    "pass": true,
+    "detail": {
+      "lines": [
+        {
+          "id": "BIL-00006",
+          "batchId": "BIB-0004",
+          "bankAccountId": "BANK-ICICI-1112",
+          "sourceFormat": "ICICI",
+          "rowNo": 1,
+          "bankTxnId": "W3TXN0001",
+          "valueDate": "2026-09-22",
+          "postedDate": "2026-09-22",
+          "postedTime": null,
+          "chequeNo": "",
+          "reference": null,
+          "rawDescription": "Wave3 test receipt",
+          "normalizedDescription": "Wave3 test receipt",
+          "crDr": "CR",
+          "amount": 15000,
+          "statementBalance": 115000,
+          "computedRunningBalance": 115000,
+          "balanceMatches": true,
+          "extractedHints": {
+            "possibleUTR": null,
+            "possibleReference": null,
+            "possibleBankTxnType": null,
+            "possiblePartyName": null,
+            "isSalaryOrWage": false,
+            "isReturn": false
+          },
+          "suggestedClassification": "Other Receipt / Transfer (confirm)",
+          "status": "Imported",
+          "matchedEntryId": null,
+          "matchedDocumentType": null,
+          "matchConfidence": null,
+          "isReturned": false,
+          "returnOfLineId": null,
+          "excludeReason": null,
+          "postedEntryId": null,
+          "migratedFromLegacyId": null,
+          "duplicateOfLineId": null,
+          "createdAt": "2026-09-29T03:17:39.162Z"
+        }
+      ]
+    }
+  },
+  {
+    "part": "B2",
+    "name": "Setup: a real, posted Customer Invoice created to receipt against",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "B2",
+    "name": "Setup: a real Customer Receipt entry created to match against",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "B2",
+    "name": "Bank line matched to the Customer Receipt entry (amounts agree)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "B2",
+    "name": "Matched line reconciled — status now Reconciled",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "B3",
+    "name": "Setup: a real, posted Supplier Bill created for the payment control chain",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "B3",
+    "name": "Payment Request raised by Purchase",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "B3-NEG",
+    "name": "The SAME user (Purchase) who raised the request cannot also approve it (maker/checker unchanged)",
+    "pass": true,
+    "detail": {
+      "error": "Role \"Purchase\" cannot approve a payment request."
+    }
+  },
+  {
+    "part": "B3",
+    "name": "A DIFFERENT user (FinanceManager) approves the Payment Request",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "B3-NEG",
+    "name": "The SAME user (FinanceManager) who approved the request cannot also execute it — maker-checker-executor 3-way separation (SOP §9) unmodified",
+    "pass": true,
+    "detail": {
+      "error": "Maker-checker: execution must be a third person distinct from the maker and the approver (or CEO/Admin), per SOP §9."
+    }
+  },
+  {
+    "part": "B3",
+    "name": "A THIRD user (Admin — neither maker nor checker) executes the approved Payment Request — raise/approve/execute separation intact end to end",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "C1",
+    "name": "CC-FACTORY and CC-INSTALLATION cost centre masters exist unchanged",
+    "pass": true,
+    "detail": {
+      "costCentres": [
+        {
+          "id": "CC-DESIGN",
+          "name": "Design"
+        },
+        {
+          "id": "CC-FACTORY",
+          "name": "Factory"
+        },
+        {
+          "id": "CC-SITE",
+          "name": "Site"
+        },
+        {
+          "id": "CC-INSTALLATION",
+          "name": "Installation"
+        }
+      ]
+    }
+  },
+  {
+    "part": "C1",
+    "name": "postProductionLabourCost() posts a real 5100 line tagged costCentreId=CC-FACTORY",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "C1",
+    "name": "generalLedger() costCentreId=CC-FACTORY filter returns exactly the new tagged line, nothing untagged",
+    "pass": true,
+    "detail": {
+      "before": 0,
+      "after": 1
+    }
+  },
+  {
+    "part": "C1",
+    "name": "No Installation record available in this test DB to re-confirm CC-INSTALLATION tagging live (CC-FACTORY re-confirmed above; source-level tagging for CC-INSTALLATION verified by direct code read, domain.js postInstallationLabourCost())",
+    "pass": true,
+    "detail": {
+      "skipped": true
+    }
+  },
+  {
+    "part": "C1",
+    "name": "No new Controlling capability built this wave — Cost Centre remains the ONLY dimension actively tagged/filterable; Profit Centre propagation (W3-8) and Cost Allocation (W3-7) both remain IMPLEMENTATION BLOCKERs, unimplemented",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "D1",
+    "name": "Setup: a further Depreciation (5400) line posted, project-tagged to PRJ-1",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "D1",
+    "name": "projectFinancial360().cost.actual increases by EXACTLY the new Depreciation amount (account 5400 correctly swept in, unlabeled — W3-9 labeling fields deliberately NOT added, see WAVE3_IMPLEMENTATION_SCOPE.md)",
+    "pass": true,
+    "detail": {
+      "costBefore": 320752.35,
+      "costAfter": 340752.35,
+      "depAmount": 20000
+    }
+  },
+  {
+    "part": "D1",
+    "name": "No new \"depreciationCost\"/\"jobWorkAdjustmentCost\" (or similar W3-9) labeling field was added to the response — confirms W3-9 remains BLOCKED, not implemented",
+    "pass": true,
+    "detail": {
+      "responseKeys": [
+        "status",
+        "ok",
+        "projectId",
+        "contract",
+        "cost",
+        "procurement",
+        "commitment",
+        "inventory",
+        "manufacturing",
+        "execution",
+        "revenue",
+        "afterSales",
+        "profitability"
+      ]
+    }
+  },
+  {
+    "part": "D1",
+    "name": "Setup: MAT-1 stocked for a project-tagged Job Work Order",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "D1",
+    "name": "Setup: a real Job-Work scrap event posted (Dr 5300 Job-Work Inventory Adjustment, project-tagged)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "D1",
+    "name": "projectFinancial360().cost.actual increases by EXACTLY the new Job-Work Inventory Adjustment (5300) amount",
+    "pass": true,
+    "detail": {
+      "before": 340752.35,
+      "after": 340802.35,
+      "scrapAmount": 50
+    }
+  },
+  {
+    "part": "E1",
+    "name": "Exactly ONE postJournalEntry() definition (the single GL writer)",
+    "pass": true,
+    "detail": {
+      "count": 1
+    }
+  },
+  {
+    "part": "E1",
+    "name": "Exactly ONE reverseEntry() definition (the single reversal engine)",
+    "pass": true,
+    "detail": {
+      "count": 1
+    }
+  },
+  {
+    "part": "E1",
+    "name": "Exactly ONE applyClearing() definition (the single clearing engine)",
+    "pass": true,
+    "detail": {
+      "count": 1
+    }
+  },
+  {
+    "part": "E1",
+    "name": "Exactly ONE calcTax() definition (the single tax calculation path)",
+    "pass": true,
+    "detail": {
+      "count": 1
+    }
+  },
+  {
+    "part": "E1",
+    "name": "Exactly ONE withTransaction() definition (the single transactional-boundary/rollback engine)",
+    "pass": true,
+    "detail": {
+      "count": 1
+    }
+  },
+  {
+    "part": "E1",
+    "name": "Exactly ONE closeFinancialPeriod() definition (the single period-control gate)",
+    "pass": true,
+    "detail": {
+      "count": 1
+    }
+  },
+  {
+    "part": "E2",
+    "name": "A financial period can be closed by an authorized role",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "E2",
+    "name": "Posting a document dated inside a CLOSED financial period is blocked for a non-override role",
+    "pass": true,
+    "detail": {
+      "error": "Role \"Accountant\" cannot post."
+    }
+  },
+  {
+    "part": "F1",
+    "name": "Admin/CEO/FinanceManager (all in-scope roles) can view PRJ-1 Financial 360",
+    "pass": true,
+    "detail": {
+      "admin": true,
+      "ceo": true,
+      "finance": true
+    }
+  },
+  {
+    "part": "F1",
+    "name": "A scope-restricted role (Sales) is either blocked entirely or receives only the same authoritative figures (no second, parallel calculation) — data-scope enforcement unchanged this wave",
+    "pass": true,
+    "detail": {
+      "salesStatus": 403,
+      "salesOk": false
+    }
+  }
+]

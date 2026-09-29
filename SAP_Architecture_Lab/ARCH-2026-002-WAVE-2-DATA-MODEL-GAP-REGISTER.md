@@ -1,0 +1,28 @@
+# ARCH-2026-002 — Wave 2 Data-Model Gap Register
+
+**Date:** 2026-09-22. Wave 2 Phase 0 deliverable, §18. Every field below has a documented business
+purpose — none is proposed merely because it seems useful.
+
+| Entity | Fields (proposed, if authorized) | Relationships | Lifecycle | Owner | Scope Dimensions | Accounting Relationship | Inventory Relationship | Project Relationship | Migration Risk | Reporting Impact |
+|---|---|---|---|---|---|---|---|---|---|---|
+| PO Amendment | `poId, changedFields[], oldValue, newValue, reason, amendedBy, approvedBy` | Belongs to an existing PO | Draft→Approved (mirrors PO's own approval tiers) | Procurement | Project (via PO) | None directly — re-triggers commitment recalculation if amount changes | None directly | Commitment must be re-derived, not double-counted | LOW — additive, no existing PO record touched unless explicitly amended | New Amendment History report |
+| Production Output → Finished Goods | A new inventory movement type (e.g. `'ProductionReceipt'`) on the EXISTING `postInventoryMovement()` — no new writer | `completeProductionOrder` would call the existing single writer with `productionOrderId` as source | N/A — an additive call inside an existing function | Manufacturing (creates), Inventory (owns the resulting stock) | Project (via order) | Would require a Finished-Goods GL account (e.g., new account under 1200-series) — **an accounting-policy decision, not invented here** | Direct — the actual gap this would close | Actual cost (material+labour) would need to value the FG receipt — a real design question | MEDIUM — touches the single inventory writer's call surface; must prove no double-posting against existing Job Cost Sheet math | Job Cost Sheet/Product Costing would need to reconcile against the new FG value |
+| Production Scrap (as a distinct transaction) | `productionOrderId, qty, reason, disposition, recordedBy` | Belongs to a Production Order | Single-step record | Manufacturing | Project (via order) | Optional write-off posting, mirroring Job Work Scrap's existing pattern | Optional `postInventoryMovement()` call if scrapped material is tracked | Cost impact via disposition | LOW-MEDIUM — additive, mirrors an already-proven pattern (Job Work Scrap) | New Scrap report |
+| Demand → Production Order linkage | A new optional field on `DB.materialRequirements` (e.g. `isProductionDemand: boolean`) or a thin new mapping table `DB.productionSuggestions` | Links an APPROVED, BOM-tagged Material Requirement to a suggested Production Order | Suggestion → (human) Confirm → real Production Order via existing `createProductionOrder` | Manufacturing, sourced from Project | Project | None directly | None directly | None directly | LOW — additive, does not change `createProductionOrder`'s own contract | New "Production Suggestions" view, extends `materialReplenishmentReport()`'s existing logic |
+| Gate Pass | `documentType, documentId, vehicleNo, driverName, securityGuardId, outTime, inTime` | References a Delivery Challan, Job Work dispatch, or Site issue | Draft→Out→In (gate-level, not financial) | Site Execution / Job Work (whichever triggers it) | Project/Site (via referenced document) | None | None directly (a physical-control record, not an inventory movement) | None | LOW — purely additive, physical-security layer, no financial/inventory coupling | New Gate Register report |
+| Transporter / Vehicle master | `transporterName, gstin, vehicleNo, vehicleType, active` | Referenced (optionally) by Delivery Challan, Job Work dispatch, Installation dispatch | Standard master CRUD | Master Data | N/A | None | None | None | LOW — additive; existing free-text fields remain valid for any document not opted into the master | E-way Bill / Delivery reports could gain a structured transporter filter |
+| Inspection / NCR (distinct from QC Checklist) | `sourceType, sourceId, findings, severity, correctiveActionRequired, status` | Optionally references a QC Checklist, Snag, or standalone | Open→InProgress→Closed | Quality | Project/Site | None directly | None directly | None | MEDIUM — a genuinely new entity, not an extension; must not fold into or fork the existing QC Checklist state machine | New NCR register/report |
+| Warehouse (as a data-scope dimension) | A new `scopeType:'Warehouse'` case in `hasScopeAccess()`, plus a `warehouseId` field on relevant users | N/A (extends the existing scope engine, does not replace it) | N/A | Administration & Governance (the scope engine's owner) | Warehouse (new) | None | None directly — a security dimension, not a data structure | None | MEDIUM — extends a security-critical function; must be regression-proven against every existing Project/Site/Customer/Branch scope check (zero behavior change for those) | None directly |
+
+## Notes
+
+- **No field above is proposed for Warehouse scope, Production Output/Scrap, Demand-linkage, Gate Pass,
+  Transporter master, or NCR unless a future, explicitly-authorized Wave 2 implementation CR decides to
+  build it** — this register documents what WOULD be needed if authorized, per this CR's own §18
+  instruction; nothing here is built or migrated in this Phase 0 pass.
+- Every accounting-relationship cell that says "a real design question" or "an accounting-policy
+  decision, not invented here" is intentionally left unresolved — see
+  `ARCH-2026-002-WAVE-2-DECISIONS.md` for the corresponding management decision.
+- PO Amendment, Production Scrap, and Gate Pass all deliberately mirror an ALREADY-PROVEN existing
+  pattern in this codebase (PO approval tiers, Job Work Scrap, Delivery Challan respectively) rather
+  than inventing a new pattern — consistent with this engagement's "reuse, don't duplicate" discipline.

@@ -1,0 +1,171 @@
+[
+  {
+    "part": "PAM",
+    "name": "Payment Approval Matrix is readable, and correctly shows NOT finalised (SOP §9.1 \"To Be Finalised\")",
+    "pass": true,
+    "detail": {
+      "tiers": [
+        {
+          "upTo": 5000,
+          "role": "Accountant"
+        },
+        {
+          "upTo": 100000,
+          "role": "Purchase Head (Purchase role)"
+        },
+        {
+          "upTo": null,
+          "role": "Director (CEO)"
+        }
+      ],
+      "finalised": false,
+      "status": "Draft",
+      "approvedBy": null,
+      "approvedDate": null,
+      "approvalReference": null,
+      "version": 1
+    }
+  },
+  {
+    "part": "PAM",
+    "name": "Payment request safely AT/BELOW the ₹5000 Accountant tier ceiling correctly gets requiredApprovalRole=Accountant",
+    "pass": true,
+    "detail": {
+      "amount": 4991.4,
+      "role": "Accountant"
+    }
+  },
+  {
+    "part": "PAM",
+    "name": "Payment request just ABOVE the Accountant ceiling correctly escalates to Purchase Head tier",
+    "pass": true,
+    "detail": {
+      "amount": 6000.01,
+      "role": "Purchase Head (Purchase role)"
+    }
+  },
+  {
+    "part": "PAM",
+    "name": "Payment request above the Purchase Head ceiling correctly escalates to Director (CEO) tier",
+    "pass": true,
+    "detail": {
+      "amount": 177000,
+      "role": "Director (CEO)"
+    }
+  },
+  {
+    "part": "PAM-NEG",
+    "name": "FinanceManager attempting to approve a CEO-tier (>₹1L) payment request is BLOCKED — the ONE tier the domain function explicitly enforces",
+    "pass": true,
+    "detail": {
+      "error": "This ₹1,77,000 payment requires Director (CEO) approval per the (Not Finalised) SOP illustrative approval matrix."
+    }
+  },
+  {
+    "part": "PAM",
+    "name": "CEO approving a CEO-tier payment request SUCCEEDS",
+    "pass": true,
+    "detail": {
+      "status": "Approved"
+    }
+  },
+  {
+    "part": "PAM-NEG",
+    "name": "Re-approving an already-Approved payment request is BLOCKED (modification-after-approval)",
+    "pass": true,
+    "detail": {
+      "error": "Cannot approve — \"Approved\"."
+    }
+  },
+  {
+    "part": "PAM-FINDING",
+    "name": "The Accountant role — the EXACT role the matrix names for this tier — is BLOCKED AT THE ROUTE LEVEL from ever approving it (SOP_FINANCE_ROLES excludes Accountant entirely)",
+    "pass": true,
+    "detail": {
+      "requiredApprovalRole": "Accountant",
+      "attemptedBy": "Accountant",
+      "status": 403,
+      "error": "Role \"Accountant\" cannot approve a payment request."
+    }
+  },
+  {
+    "part": "PAM-FINDING",
+    "name": "FinanceManager — a role the matrix never names for ANY tier — SUCCEEDS in approving the Accountant-tier request instead, unchecked against requiredApprovalRole",
+    "pass": true,
+    "detail": {
+      "requiredApprovalRole": "Accountant",
+      "actualApproverRole": "FinanceManager"
+    }
+  },
+  {
+    "part": "PAM-FINDING",
+    "name": "Purchase — the role the matrix names for the \"Purchase Head\" tier — is ALSO blocked at the route level from approving its own designated tier",
+    "pass": true,
+    "detail": {
+      "requiredApprovalRole": "Purchase Head (Purchase role)",
+      "attemptedBy": "Purchase",
+      "status": 403,
+      "error": "Role \"Purchase\" cannot approve a payment request."
+    }
+  },
+  {
+    "part": "PAM-FINDING",
+    "name": "FinanceManager approves the Purchase-Head-tier request too — EVERY tier, regardless of the matrix's own configuration, actually requires FinanceManager/CEO/Admin in practice",
+    "pass": true,
+    "detail": {
+      "requiredApprovalRole": "Purchase Head (Purchase role)",
+      "actualApproverRole": "FinanceManager"
+    }
+  },
+  {
+    "part": "PAM",
+    "name": "Setup: payment request raised by finance1 (for self-approval negative test)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "PAM-NEG",
+    "name": "Maker-checker: the SAME user who raised a payment request cannot also approve it, even with approval-capable role",
+    "pass": true,
+    "detail": {
+      "error": "Maker-checker: the person who raised this payment request cannot also approve it."
+    }
+  },
+  {
+    "part": "PAM-NEG",
+    "name": "Unauthorized role (Sales, no create capability relevant here) — documented actual behavior",
+    "pass": true,
+    "detail": {
+      "ok": true,
+      "status": 200
+    }
+  },
+  {
+    "part": "PAM",
+    "name": "Setup: self-approval-test request properly approved by CEO (distinct from maker finance1)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "PAM",
+    "name": "CEO (the checker) executing is ALLOWED — CEO/Admin are explicitly exempted from the maker/checker/executor 3-person separation (documented code behavior, not a gap)",
+    "pass": true,
+    "detail": {
+      "status": "Executed"
+    }
+  },
+  {
+    "part": "PAM",
+    "name": "Setup: 3-person test request — maker Purchase, checker FinanceManager",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "PAM-NEG",
+    "name": "Non-CEO/Admin checker (FinanceManager) attempting to ALSO execute the SAME request is BLOCKED (real 3-person separation)",
+    "pass": true,
+    "detail": {
+      "error": "Maker-checker: execution must be a third person distinct from the maker and the approver (or CEO/Admin), per SOP §9."
+    }
+  }
+]

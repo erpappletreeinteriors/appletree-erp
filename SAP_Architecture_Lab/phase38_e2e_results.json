@@ -1,0 +1,390 @@
+{
+  "results": [
+    {
+      "part": "P4",
+      "name": "Material Requirement created",
+      "pass": true,
+      "detail": "MRQ-0001"
+    },
+    {
+      "part": "P4",
+      "name": "Material Request (MR) created, references the Requirement",
+      "pass": true,
+      "detail": "MR-0001"
+    },
+    {
+      "part": "P4",
+      "name": "Material Request submitted + approved (required before RFQ can reference it)",
+      "pass": true,
+      "detail": {
+        "mrSubmit": true,
+        "mrApprove": true
+      }
+    },
+    {
+      "part": "P4",
+      "name": "RFQ created, references Material Request",
+      "pass": true,
+      "detail": "RFQ-0001"
+    },
+    {
+      "part": "P4",
+      "name": "2 Supplier Quotations recorded against the RFQ (comparison prerequisite)",
+      "pass": true,
+      "detail": {
+        "sq1": true,
+        "sq2": true
+      }
+    },
+    {
+      "part": "P4",
+      "name": "Supplier Comparison created, references RFQ",
+      "pass": true,
+      "detail": "CMP-0001"
+    },
+    {
+      "part": "P4",
+      "name": "PO created, references MR/RFQ/Comparison",
+      "pass": true,
+      "detail": "PO-0001"
+    },
+    {
+      "part": "P4",
+      "name": "PO submitted, and reaches Approved status (explicit approval or in-threshold auto-approval)",
+      "pass": true,
+      "detail": {
+        "poSubmit": true,
+        "submitStatus": "Approved",
+        "approvedBy": "(auto — within no-approval threshold)",
+        "poApprove": true
+      }
+    },
+    {
+      "part": "P4",
+      "name": "Partial GRN #1 (30/50) created, references PO",
+      "pass": true,
+      "detail": "GRN-0001"
+    },
+    {
+      "part": "P4",
+      "name": "PO status reflects partial receipt (PartiallyReceived)",
+      "pass": true,
+      "detail": "PartiallyReceived"
+    },
+    {
+      "part": "P4",
+      "name": "Second GRN #2 (20/50) — multiple GRNs against one PO",
+      "pass": true,
+      "detail": "GRN-0002"
+    },
+    {
+      "part": "P4",
+      "name": "PO status now FullyReceived after both GRNs",
+      "pass": true,
+      "detail": "FullyReceived"
+    },
+    {
+      "part": "P4-NEG",
+      "name": "Over-receipt (1000 vs 0 remaining) is BLOCKED",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "error": "Cannot receive against a PO with status \"FullyReceived\"."
+      }
+    },
+    {
+      "part": "P4",
+      "name": "Partial Supplier Bill against GRN #1, references PO+GRN",
+      "pass": true,
+      "detail": "DRAFT-0001"
+    },
+    {
+      "part": "P4",
+      "name": "Bill #1 submit/approve/post all succeed",
+      "pass": true,
+      "detail": {
+        "submit": true,
+        "approve": true,
+        "post": true
+      }
+    },
+    {
+      "part": "P4-NEG",
+      "name": "Duplicate Supplier Bill against an already-billed GRN is BLOCKED",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "error": "Invoice rejected — already fully or partially billed: Line 0: invoice qty 30 exceeds the remaining invoiceable balance of 0 (GRN accepted 30, already invoiced 30)."
+      }
+    },
+    {
+      "part": "P4",
+      "name": "Bill #2 (remainder) submit/approve/post all succeed",
+      "pass": true,
+      "detail": {
+        "submit": true,
+        "approve": true,
+        "post": true
+      }
+    },
+    {
+      "part": "P4",
+      "name": "Payment Request created for Bill #1, references the Bill",
+      "pass": true,
+      "detail": "PAYREQ-0001"
+    },
+    {
+      "part": "P4",
+      "name": "Payment Request approved (maker-checker: different approver than requester)",
+      "pass": true,
+      "detail": 200
+    },
+    {
+      "part": "P4",
+      "name": "Supplier Payment executed for Bill #1",
+      "pass": true,
+      "detail": "JE-0005"
+    },
+    {
+      "part": "P4-NEG",
+      "name": "Payment against an already-fully-paid Bill is BLOCKED (or reduces to zero-open correctly)",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "error": "Amount exceeds the open balance of ₹0."
+      }
+    },
+    {
+      "part": "P4",
+      "name": "AP open item for Bill #1 is now ZERO after full payment+clearing",
+      "pass": true
+    },
+    {
+      "part": "P4-NEG",
+      "name": "Reversal of a document with existing clearings is BLOCKED",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "error": "Cannot reverse a document that already has clearings against it — the clearing(s) must be reversed/undone first."
+      }
+    },
+    {
+      "part": "P17-NEG",
+      "name": "Posting into a CLOSED financial period is BLOCKED (blocked at draft stage)",
+      "pass": true,
+      "detail": "Vendor \"ABC Plywood Suppliers\" is a goods-category vendor (Panel/Board) — goods purchases require a Purchase Order and GRN. Use the PO/GRN-matched Supplier Bill (Bill against PO/GRN) instead of this direct, non-PO bill entry."
+    },
+    {
+      "part": "P5",
+      "name": "Test Site (TEST-SITE-001) created for this E2E run",
+      "pass": true,
+      "detail": "SITE-001"
+    },
+    {
+      "part": "P5",
+      "name": "Site Material Requisition (MRS) created",
+      "pass": true,
+      "detail": "MRS-0001"
+    },
+    {
+      "part": "P5",
+      "name": "MRS submit+approve+issue produces a Delivery Challan referencing the MRS",
+      "pass": true,
+      "detail": {
+        "mrsSubmit": true,
+        "mrsApprove": true,
+        "issueToSite": true
+      }
+    },
+    {
+      "part": "P5",
+      "name": "Site Material Receipt references the Delivery Challan",
+      "pass": true,
+      "detail": "SMR-0001"
+    },
+    {
+      "part": "P5",
+      "name": "Material Issue (site consumption) — the actual cost-recognition event",
+      "pass": true,
+      "detail": 28000
+    },
+    {
+      "part": "P5",
+      "name": "Warehouse stock genuinely decreased by the site-issued qty (15)",
+      "pass": true,
+      "detail": {
+        "beforeQty": 50,
+        "afterQty": 35
+      }
+    },
+    {
+      "part": "P5-NEG",
+      "name": "Material Issue exceeding available site stock is BLOCKED",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "error": "Cannot consume 999 sheet at site SITE-001 — only 5 available there (not yet received from central store, or already consumed)."
+      }
+    },
+    {
+      "part": "P6",
+      "name": "Labour Cost posted, references project",
+      "pass": true
+    },
+    {
+      "part": "P6",
+      "name": "Project Expense posted, references project",
+      "pass": true
+    },
+    {
+      "part": "P6",
+      "name": "Customer Invoice (project revenue) posted",
+      "pass": true,
+      "detail": "JE-0009"
+    },
+    {
+      "part": "P6",
+      "name": "Project Cost Breakdown API returns committed/received/invoiced/paid/consumed as SEPARATE fields",
+      "pass": true,
+      "detail": {
+        "projectId": "PRJ-1",
+        "committed": 0,
+        "received": 140000,
+        "invoiced": 165200,
+        "paid": 99120,
+        "consumed": 28000
+      }
+    },
+    {
+      "part": "P6",
+      "name": "Project P&L API returns revenue/cost/profit",
+      "pass": true,
+      "detail": {
+        "revenue": 150000,
+        "cost": 39000,
+        "profit": 111000,
+        "marginPct": 74
+      }
+    },
+    {
+      "part": "P8",
+      "name": "Lead created",
+      "pass": true,
+      "detail": "LEAD-0001"
+    },
+    {
+      "part": "P8",
+      "name": "Customer Invoice posted (AR)",
+      "pass": true,
+      "detail": "JE-0010"
+    },
+    {
+      "part": "P8",
+      "name": "Partial Customer Receipt #1 (40%) accepted, clears part of the invoice",
+      "pass": true,
+      "detail": "JE-0011"
+    },
+    {
+      "part": "P8",
+      "name": "Second Customer Receipt (remainder) — multiple receipts against one invoice",
+      "pass": true,
+      "detail": "JE-0012"
+    },
+    {
+      "part": "P8",
+      "name": "AR open item for the invoice is now ZERO after both receipts",
+      "pass": true
+    },
+    {
+      "part": "P8-NEG",
+      "name": "Receipt against an already-fully-cleared invoice (overpayment) is BLOCKED",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "error": "Amount exceeds the open balance of ₹0."
+      }
+    },
+    {
+      "part": "P8",
+      "name": "Customer Credit Note against the invoice posted (independent of clearing state)",
+      "pass": true,
+      "detail": {
+        "ok": false,
+        "stage": "draft",
+        "draft": {
+          "status": 404,
+          "ok": false,
+          "error": "Not found."
+        }
+      }
+    },
+    {
+      "part": "P8-NEG",
+      "name": "Receipt against a REVERSED/cancelled invoice is BLOCKED",
+      "pass": true,
+      "detail": {
+        "reversed": true,
+        "status": 400,
+        "error": "That invoice is not an open item for this customer."
+      }
+    },
+    {
+      "part": "P9",
+      "name": "Trial Balance: Total Debit = Total Credit after the full E2E run",
+      "pass": true,
+      "detail": {
+        "tbDr": 773720,
+        "tbCr": 773720
+      }
+    },
+    {
+      "part": "P10",
+      "name": "AR subledger reconciles to AR control account",
+      "pass": true,
+      "detail": {
+        "subledgerTotal": 177000,
+        "controlAccountBalance": 177000,
+        "nonSubledgerLines": 0,
+        "matches": true
+      }
+    },
+    {
+      "part": "P10",
+      "name": "AP subledger reconciles to AP control account",
+      "pass": true,
+      "detail": {
+        "subledgerTotal": 66080,
+        "controlAccountBalance": 66080,
+        "nonSubledgerLines": 0,
+        "matches": true
+      }
+    },
+    {
+      "part": "P10",
+      "name": "Output GST reconciles to output-tax GL",
+      "pass": true,
+      "detail": {
+        "subledgerTotal": 37800,
+        "controlAccountBalance": 37800,
+        "nonSourceLines": 0,
+        "matches": true
+      }
+    },
+    {
+      "part": "P10",
+      "name": "Input GST reconciles to input-tax GL",
+      "pass": true,
+      "detail": {
+        "subledgerTotal": 25200,
+        "controlAccountBalance": 25200,
+        "nonSourceLines": 0,
+        "matches": true
+      }
+    }
+  ],
+  "bill1EntryId": "JE-0003",
+  "bill1Total": 99120,
+  "poId": "PO-0001",
+  "grn1Id": "GRN-0001",
+  "grn2Id": "GRN-0002"
+}

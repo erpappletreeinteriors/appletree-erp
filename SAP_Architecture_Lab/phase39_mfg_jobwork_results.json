@@ -1,0 +1,309 @@
+[
+  {
+    "part": "SETUP",
+    "name": "Received 150 units MAT-1 into WH-1 (for Manufacturing/Job Work stock)",
+    "pass": true
+  },
+  {
+    "part": "SETUP",
+    "name": "Received 250 units MAT-2 into WH-1",
+    "pass": true
+  },
+  {
+    "part": "MFG",
+    "name": "BOM created",
+    "pass": true,
+    "detail": "BOM-0001"
+  },
+  {
+    "part": "MFG",
+    "name": "BOM submit+approve",
+    "pass": true,
+    "detail": {
+      "submit": true,
+      "approve": true
+    }
+  },
+  {
+    "part": "MFG-NEG",
+    "name": "Production Order against an UNAPPROVED BOM is BLOCKED",
+    "pass": true,
+    "detail": {
+      "status": 400,
+      "error": "BOM must exist and be Approved."
+    }
+  },
+  {
+    "part": "MFG",
+    "name": "Production Order created against APPROVED BOM, correct initial status",
+    "pass": true,
+    "detail": {
+      "id": "PROD-0001",
+      "status": "Released"
+    }
+  },
+  {
+    "part": "MFG-NEG",
+    "name": "Production Order on a project the actor does NOT manage is BLOCKED",
+    "pass": true,
+    "detail": {
+      "status": 403,
+      "error": "Role \"ProjectManager\" cannot create a Production Order for project PRJ-2."
+    }
+  },
+  {
+    "part": "MFG",
+    "name": "Material Consumption issued per BOM line, status→InProgress",
+    "pass": true,
+    "detail": {
+      "ok": true,
+      "issues": 2
+    }
+  },
+  {
+    "part": "MFG-NEG",
+    "name": "Duplicate material issue against the same (already InProgress) Production Order",
+    "pass": true,
+    "detail": {
+      "status": 400,
+      "ok": false,
+      "error": "Cannot issue 200 sheet — only 50 available in WH-1 (negative stock is blocked, not silently allowed).",
+      "note": "documented as-observed, not assumed"
+    }
+  },
+  {
+    "part": "MFG",
+    "name": "Production Labour Cost posted, real GL entry",
+    "pass": true,
+    "detail": "JE-0005"
+  },
+  {
+    "part": "MFG",
+    "name": "Job Card created, references Production Order",
+    "pass": true,
+    "detail": "JC-0001"
+  },
+  {
+    "part": "MFG",
+    "name": "Job Card start+complete",
+    "pass": true,
+    "detail": {
+      "start": true,
+      "complete": true
+    }
+  },
+  {
+    "part": "MFG-NEG",
+    "name": "Duplicate Job Card (same operation) creation — documented behavior",
+    "pass": true,
+    "detail": {
+      "ok": true,
+      "note": "no uniqueness constraint found; multiple job cards per operation may be legitimate (rework/multi-shift) — not assumed a defect without confirming business rule"
+    }
+  },
+  {
+    "part": "MFG-NEG",
+    "name": "Unauthorized role (Sales) creating a BOM is BLOCKED",
+    "pass": true,
+    "detail": {
+      "status": 403,
+      "error": "Role \"Sales\" cannot perform this action (requires one of: Admin, CEO, Estimator)."
+    }
+  },
+  {
+    "part": "MFG",
+    "name": "Production Order completed",
+    "pass": true,
+    "detail": "Completed"
+  },
+  {
+    "part": "MFG-NEG",
+    "name": "Material issue against a COMPLETED Production Order is BLOCKED (invalid status transition)",
+    "pass": true,
+    "detail": {
+      "status": 400,
+      "error": "Cannot issue 200 sheet — only 50 available in WH-1 (negative stock is blocked, not silently allowed)."
+    }
+  },
+  {
+    "part": "MFG-NEG",
+    "name": "Cancellation of a COMPLETED Production Order is BLOCKED",
+    "pass": true,
+    "detail": {
+      "status": 400,
+      "error": "Cannot cancel a \"Completed\" production order — a completed order must be closed, not cancelled."
+    }
+  },
+  {
+    "part": "MFG",
+    "name": "Job Cost Sheet returns materialCost/labourCost/totalActualCost",
+    "pass": true,
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "productionOrderId": "PROD-0001",
+      "prodNo": "PROD/2026-27/0001",
+      "materialCost": 387000,
+      "labourCost": 12000,
+      "totalActualCost": 399000,
+      "plannedMaterialCost": 387000,
+      "plannedQty": 10,
+      "actualQty": 10
+    }
+  },
+  {
+    "part": "MFG",
+    "name": "Product Costing report returns materialCost/standardUnitCost",
+    "pass": true,
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "bomId": "BOM-0001",
+      "description": "Phase 39 E2E — Kitchen Cabinet BOM",
+      "materialCost": 38700,
+      "labourOverheadPct": 15,
+      "labourOverhead": 5805,
+      "standardUnitCost": 44505,
+      "note": "Labour/overhead is a disclosed 15% default, not an approved Appletree costing policy."
+    }
+  },
+  {
+    "part": "JW",
+    "name": "Job Worker (unregistered, for APOB negative test) created",
+    "pass": true,
+    "detail": "JW-001"
+  },
+  {
+    "part": "JW",
+    "name": "Job Worker (registered) created",
+    "pass": true,
+    "detail": "JW-002"
+  },
+  {
+    "part": "JW",
+    "name": "Job Work dispatch (to registered job worker) created, Delivery Challan produced",
+    "pass": true,
+    "detail": {
+      "jwo": "JWO-0001",
+      "dc": "DC-0001"
+    }
+  },
+  {
+    "part": "JW",
+    "name": "Warehouse stock decreased by exactly the dispatched qty (10) on dispatch",
+    "pass": true,
+    "detail": {
+      "before": 97.5,
+      "after": 87.5
+    }
+  },
+  {
+    "part": "JW-NEG",
+    "name": "Dispatch to a nonexistent Job Worker is BLOCKED",
+    "pass": true,
+    "detail": {
+      "status": 400,
+      "error": "Job Worker not found."
+    }
+  },
+  {
+    "part": "JW-NEG",
+    "name": "Dispatch of a nonexistent material is BLOCKED",
+    "pass": true,
+    "detail": {
+      "status": 400,
+      "error": "Cannot dispatch: Unknown material \"MAT-NONEXISTENT-999\"."
+    }
+  },
+  {
+    "part": "JW-NEG",
+    "name": "Unauthorized role (Sales) dispatching Job Work is BLOCKED",
+    "pass": true,
+    "detail": {
+      "status": 403,
+      "error": "Role \"Sales\" cannot dispatch material to a Job Worker."
+    }
+  },
+  {
+    "part": "JW",
+    "name": "Partial return (5/10) accepted, JWO status PartiallyReturned",
+    "pass": true,
+    "detail": {
+      "status": "PartiallyReturned"
+    }
+  },
+  {
+    "part": "JW",
+    "name": "Warehouse stock credited back by exactly the returned qty (5) on partial return",
+    "pass": true,
+    "detail": {
+      "postDispatch": 87.5,
+      "postReturn": 92.5
+    }
+  },
+  {
+    "part": "JW-NEG",
+    "name": "Over-return beyond remaining dispatched qty is BLOCKED",
+    "pass": true,
+    "detail": {
+      "status": 400,
+      "error": "Cannot return: Line 0: returning 999 would exceed the 10 originally dispatched (already accounted for: 5)."
+    }
+  },
+  {
+    "part": "JW",
+    "name": "Scrap disposition (remaining 5) accepted",
+    "pass": true,
+    "detail": {
+      "jwoStatus": "Returned"
+    }
+  },
+  {
+    "part": "JW",
+    "name": "Warehouse stock unchanged by scrap disposition (scrapped material never re-enters custody)",
+    "pass": true,
+    "detail": {
+      "postReturn": 92.5,
+      "postScrap": 92.5
+    }
+  },
+  {
+    "part": "JW",
+    "name": "Net warehouse stock change across full dispatch+return+scrap cycle equals -5 (10 dispatched, 5 returned, 5 scrapped) — no double count",
+    "pass": true,
+    "detail": {
+      "before": 97.5,
+      "after": 92.5
+    }
+  },
+  {
+    "part": "JW",
+    "name": "Second dispatch (to UNREGISTERED job worker) created",
+    "pass": true,
+    "detail": "JWO-0002"
+  },
+  {
+    "part": "JW-NEG",
+    "name": "Direct Dispatch from an UNREGISTERED job worker with NO active APOB is BLOCKED (required control)",
+    "pass": true,
+    "detail": {
+      "status": 400,
+      "error": "APOB REQUIRED — this job worker is unregistered; Apple Tree must declare this premises as its own Additional Place of Business (SOP §2.2/Section 2(85)) before a direct dispatch from here is compliant. No active APOB declaration is on record.",
+      "apobRequired": true
+    }
+  },
+  {
+    "part": "JW",
+    "name": "APOB Declaration created for the unregistered job worker",
+    "pass": true,
+    "detail": "APOB-001"
+  },
+  {
+    "part": "JW",
+    "name": "Direct Dispatch NOW SUCCEEDS once an active APOB declaration is on file",
+    "pass": true,
+    "detail": {
+      "status": "DirectDispatched"
+    }
+  }
+]

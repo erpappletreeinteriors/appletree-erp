@@ -71,26 +71,19 @@ function _crashFault(point){
 // (JE-0988/0989/0990) were reversed via reverseEntry() before this code was removed, per this
 // audit's policy against direct edits to financial history.
 
-// ERP-059C Step 7 — explicit, environment-variable-driven DB path. Before this phase, DB_FILE was
-// ALWAYS path.join(__dirname, 'db.json') — anchored to wherever this SOURCE FILE physically lives
-// on disk, completely independent of the process's cwd or which PORT it was told to listen on. This
-// is exactly why every isolated-test-server exercise all session had to physically COPY domain.js/
-// server.js into a scratch directory to get a disposable database — merely running the original
-// file with a different cwd/PORT does NOT isolate it, a mistake this very phase's own safety test
-// (tests/erp_059c_production_isolation_tests.js) almost made while being written, caught and
+// ERP-059C Step 7 / CR-2026-002 — explicit, environment-variable-driven DB path. Before ERP-059C,
+// DB_FILE was ALWAYS path.join(__dirname, 'db.json') — anchored to wherever this SOURCE FILE
+// physically lives on disk, completely independent of the process's cwd or which PORT it was told
+// to listen on. This is exactly why every isolated-test-server exercise all session had to physically
+// COPY domain.js/server.js into a scratch directory to get a disposable database — merely running the
+// original file with a different cwd/PORT does NOT isolate it, a mistake this very phase's own safety
+// test (tests/erp_059c_production_isolation_tests.js) almost made while being written, caught and
 // disclosed in ERP-059C-PRODUCTION-SAFETY-REPORT.md. DB_PATH lets a test/dev instance point
-// explicitly at a disposable file without needing to copy source files at all. When APP_ENV=test,
-// DB_PATH is now REQUIRED — fails closed rather than silently defaulting to whatever db.json
-// happens to sit next to this file, which could be the real one.
-const DB_FILE = process.env.DB_PATH
-  ? path.resolve(process.env.DB_PATH)
-  : (() => {
-      if(process.env.APP_ENV === 'test'){
-        console.error('[FATAL] APP_ENV=test but DB_PATH is not set. Refusing to start: a test instance must be given an explicit, disposable database path instead of defaulting to the db.json next to this source file, which may be the real one. Set DB_PATH=/path/to/scratch/db.json.');
-        process.exit(1);
-      }
-      return path.join(__dirname, 'db.json');
-    })();
+// explicitly at a disposable file without needing to copy source files at all. CR-2026-002 moved this
+// resolution (plus the fail-closed guard, now also covering APP_ENV=development, plus PORT) into the
+// single shared server/env.js module — see that file for the full resolution logic and rationale.
+const ENV = require('./env');
+const DB_FILE = ENV.DB_FILE;
 const DB_DIR = path.dirname(DB_FILE);
 const BACKUP_DIR = path.join(DB_DIR, 'backups');
 const LOCK_FILE = path.join(DB_DIR, 'db.json.lock');
@@ -271,7 +264,12 @@ const SEED = {
     {code:'INV', label:'Sales Invoice', prefix:'INV', nextSeq:1},
     {code:'PO', label:'Purchase Order', prefix:'PO', nextSeq:1},
     {code:'RCPT', label:'Customer Receipt', prefix:'RCPT', nextSeq:1},
-    {code:'PAY', label:'Vendor Payment', prefix:'PAY', nextSeq:1},
+    // Phase 39 — fixed per PHASE37_NOMENCLATURE_CHANGE_PLAN.md's MUST-CHANGE item #1: this was the
+    // sole surviving "Vendor Payment" label anywhere in the codebase; every other surface
+    // (sourceType, UI heading, menu label, report name) already said "Supplier Payment" for the
+    // identical document type. Display label only — code/prefix ('PAY') unchanged, so no
+    // numbering/GL/voucher impact.
+    {code:'PAY', label:'Supplier Payment', prefix:'PAY', nextSeq:1},
     {code:'CN', label:'Credit Note', prefix:'CN', nextSeq:1},
     {code:'DN', label:'Debit Note', prefix:'DN', nextSeq:1},
     {code:'BILL', label:'Supplier Bill', prefix:'BILL', nextSeq:1},
@@ -315,15 +313,36 @@ const SEED = {
     {code:'JC', label:'Job Card', prefix:'JC', nextSeq:1},
     // Phase 33 — Finance SOP compliance document types
     {code:'PR', label:'Purchase Requisition', prefix:'PR', nextSeq:1},
-    {code:'MRS', label:'Material Requisition Slip (Site)', prefix:'MRS', nextSeq:1},
+    {code:'MRS', label:'Material Requisition — Site', prefix:'MRS', nextSeq:1},
     {code:'DC', label:'Delivery Challan', prefix:'DC', nextSeq:1},
     {code:'SMR', label:'Site Material Receipt', prefix:'SMR', nextSeq:1},
     {code:'PCV', label:'Petty Cash Voucher', prefix:'PCV', nextSeq:1},
     {code:'PCF', label:'Petty Cash Float', prefix:'PCF', nextSeq:1},
+    {code:'SRET', label:'Site Return', prefix:'SRET', nextSeq:1},
     // Phase 34 — Job Work / APOB + ITC reversal document types.
     {code:'JWO', label:'Job Work Order', prefix:'JWO', nextSeq:1},
     {code:'EWB', label:'E-way Bill Record', prefix:'EWB', nextSeq:1},
-    {code:'ITCR', label:'ITC Reversal', prefix:'ITCR', nextSeq:1}
+    {code:'ITCR', label:'ITC Reversal', prefix:'ITCR', nextSeq:1},
+    // Phase 39 CRITICAL FIX (DEF-P38-02, expanded) — found live during Payment Approval Matrix/
+    // defect-closure work: the SAME defect class Phase 14's own comment above (search "P0-4 FIX")
+    // already found and documented ONCE — a doc-type registered ONLY via a migration-guard patch
+    // (`if(!DB.glDocumentTypes.find(...)) DB.glDocumentTypes.push(...)`, which runs once at module
+    // load against an EXISTING db.json) rather than also added HERE, in the base SEED literal that
+    // freshDB()/resetToFreshSeed() actually reads — was silently repeated 5 more times by later
+    // phases (each carrying an identical "P0-4 FIX"/"same gap class" comment at its own migration-
+    // guard call site, evidently without cross-referencing this literal). Live-proven this phase:
+    // POST /api/test/reset followed by creating a BOM returned `docNo:null` — nextDocNumber('BOM')
+    // found no registry entry because resetToFreshSeed() rebuilds DB from ONLY this literal, never
+    // re-running the once-only migration guards. Same true for XMI/XBA/CR/MRQ/SRET (SRET being the
+    // original, narrower DEF-P38-02 finding — now confirmed both real and part of a wider class, not
+    // merely a documentation question). The 5 lines below close the class; their migration-guard
+    // siblings deeper in this file are left in place (harmless now — `if(!DB.glDocumentTypes.find
+    // (...))` is a no-op once the code already exists here) for any real db.json saved before this fix.
+    {code:'XMI', label:'Excess Material Issue Approval', prefix:'XMI', nextSeq:1},
+    {code:'BOM', label:'Bill of Materials', prefix:'BOM', nextSeq:1},
+    {code:'XBA', label:'Excess Billing Approval', prefix:'XBA', nextSeq:1},
+    {code:'CR', label:'Change Request', prefix:'CR', nextSeq:1},
+    {code:'MRQ', label:'Material Requirement', prefix:'MRQ', nextSeq:1}
   ]
 };
 // Real Appletree supplier-master detail, additive to the existing 10 vendors (§7) —
@@ -362,12 +381,475 @@ const ROLE_ACTIONS = {
   SiteInCharge:   {view:true, create:true,  edit:true,  submit:true,  approve:false, post:false, reverse:false, clear:false, pay:false, masterData:false, export:true,  configure:false},
   Viewer:         {view:true, create:false, edit:false, submit:false, approve:false, post:false, reverse:false, clear:false, pay:false, masterData:false, export:false, configure:false}
 };
+// ============================================================
+// ARCH-2026-001A — Enterprise RBAC Foundation (2026-09-21)
+// ============================================================
+// Implements the frozen target model USER -> BUSINESS ROLE -> DUTIES -> PRIVILEGES -> ACTIONS ->
+// DATA SCOPE -> APPROVAL AUTHORITY -> SoD -> SERVER-SIDE AUTHORIZATION -> AUDIT (see
+// ARCH-2026-001-RBAC-TARGET-DESIGN.md). This is FOUNDATIONAL infrastructure only, not a business
+// workflow or domain change:
+//   - The 10 existing roles (ROLES, above) remain the ONLY roles a user is actually assigned; each
+//     maps 1:1 to a new "Business Role" of the same key/name — no renaming, no new business role
+//     invented "merely to make the migration convenient" (ARCH-2026-001A §9).
+//   - can(actor, action) below — the pre-existing, 99+-call-site permission primitive — is now
+//     POWERED BY this engine via a "Global.<tag>" bridge privilege that is MECHANICALLY DERIVED from
+//     ROLE_ACTIONS at module-load time (never hand re-typed into a second table), so its behavior is
+//     unchanged BY CONSTRUCTION. This is verified by a dedicated 120-assertion equivalence test
+//     (10 roles x 12 legacy tags) in tests/erp_arch_2026_001a_rbac_foundation_tests.js, which must
+//     pass before this refactor is trusted. can() also keeps a defensive fallback to the original
+//     direct ROLE_ACTIONS lookup for any actor not backed by a real DB.users record (e.g. a
+//     synthetic actor object used by some test/demo helpers), so nothing that worked before can be
+//     newly broken by this change.
+//   - The additional resource-specific privileges below (PurchaseOrder.*, SupplierBill.*,
+//     PaymentRequest.*, Project.*) prove the full Duty/Privilege/Action shape on a representative
+//     slice, grounded in ALREADY-EXISTING data/behavior (ROLE_ACTIONS, poApprovalAuthorityMatrix's
+//     financialApprovalAuthority flag) rather than invented business rules. They are NOT wired into
+//     any existing route's enforcement — every existing route continues to use can()/roles/authCheck
+//     exactly as before. D.hasPrivilege()/D.effectivePrivilegesForUser() expose them for future,
+//     separately-authorized CRs (ARCH-2026-001b onward) to adopt gradually, one route at a time.
+//   - Data Scope (DB.roleScopes), Approval Authority (DB.approvalAuthorities), and SoD
+//     (DB.sodRules/DB.sodExceptions) below are FRAMEWORKS — a data shape plus an evaluator function —
+//     seeded with descriptive/reference rows that document, but do not replace or re-implement,
+//     already-existing, already-tested mechanisms (the four approval-rule tables and the two
+//     maker-checker enforcement sites described in ARCH-2026-001A-PREIMPLEMENTATION-CHECKPOINT.md
+//     §6-§7). No existing table, function, or enforcement site is modified by this CR. No scope
+//     restriction is invented for any existing user — DB.roleScopes starts empty, and every user's
+//     effective access is unchanged (see the migration function below, and
+//     ARCH-2026-001A-ROLE-MIGRATION-REPORT.md for the verification evidence).
+//   - Security-model events (role/duty/privilege assignment changes) are written through the SAME
+//     pre-existing logAudit()/DB.auditLog path used everywhere else in this file, with dedicated
+//     `type` values — no second, parallel audit array is created (preserves §17's "do not create
+//     duplicate audit systems").
+
+const RBAC_ACTIONS = ['VIEW','CREATE','EDIT','SUBMIT','APPROVE','POST','EXECUTE','REVERSE','CANCEL','DELETE','EXPORT','PRINT'];
+
+// ---- Privilege registry: central catalog, never scattered through unrelated application code ----
+const RBAC_LEGACY_TAGS = ['view','create','edit','submit','approve','post','reverse','clear','pay','masterData','export','configure'];
+const RBAC_PRIVILEGES = {}; // key -> {key, resource, action, description}
+RBAC_LEGACY_TAGS.forEach(tag=>{
+  const key = 'Global.'+tag;
+  RBAC_PRIVILEGES[key] = {key, resource:'Global', action:tag, description:`Legacy bridge privilege for the existing "${tag}" permission tag (backward-compatibility only — mechanically derived from ROLE_ACTIONS, never hand-maintained).`};
+});
+function _rbacDefPriv(resource, action, description){
+  const key = resource+'.'+action;
+  RBAC_PRIVILEGES[key] = {key, resource, action, description};
+  return key;
+}
+[
+  ['PurchaseOrder', 'VIEW', 'View Purchase Orders'],
+  ['PurchaseOrder', 'CREATE', 'Create a Purchase Order'],
+  ['PurchaseOrder', 'EDIT', 'Edit a Draft Purchase Order'],
+  ['PurchaseOrder', 'SUBMIT', 'Submit a Purchase Order for approval'],
+  ['PurchaseOrder', 'APPROVE', 'Approve a Purchase Order — role set derived directly from the existing poApprovalAuthorityMatrix.financialApprovalAuthority flag, not invented'],
+  ['PurchaseOrder', 'CANCEL', 'Cancel a Purchase Order'],
+  ['SupplierBill', 'VIEW', 'View Supplier Bills — role set derived from the existing GL_VISIBLE_ROLES set'],
+  ['SupplierBill', 'CREATE', 'Create/draft a Supplier Bill'],
+  ['SupplierBill', 'APPROVE', 'Approve a Supplier Bill for payment'],
+  ['PaymentRequest', 'VIEW', 'View Payment Requests'],
+  ['PaymentRequest', 'CREATE', 'Create (maker) a Payment Request'],
+  ['PaymentRequest', 'APPROVE', 'Approve (checker) a Payment Request'],
+  ['PaymentRequest', 'EXECUTE', 'Execute (third-person payer) an approved Payment Request'],
+  ['Project', 'VIEW', 'View Project records'],
+  ['Project', 'CREATE', 'Create a Project'],
+  ['Project', 'EDIT', 'Edit a Project'],
+  // ARCH-2026-001B — route-layer migration additions. Each role set below was read directly from
+  // the exact legacy check it replaces (see ARCH-2026-001B-LEGACY-AUTH-INVENTORY.md), never invented.
+  ['MaterialIssueSite', 'CREATE', 'Create a site-scoped Material Issue — role set mirrors the pre-existing assertCanCreateMaterialIssue() site branch: Admin, CEO, Purchase, FinanceManager (SiteInCharge access is via the separate isSiteInChargeOf() scope check, unchanged)'],
+  ['MaterialIssueWarehouse', 'CREATE', 'Create a warehouse-to-project Material Issue — role set mirrors the pre-existing assertCanCreateMaterialIssue() warehouse branch: Admin, CEO, Purchase (ProjectManager access is via the separate isProjectManagerOf() scope check, unchanged)'],
+  ['PurchaseRequisition', 'APPROVE', 'Approve a Purchase Requisition — role set mirrors the pre-existing PURCHASE_APPROVAL_ROLES set plus SiteInCharge, exactly as approvePurchaseRequisition() already enforced'],
+  ['SiteMaterialRequisition', 'APPROVE', 'Approve a Site Material Requisition (MRS) — role set mirrors the pre-existing inline role array in approveSiteMaterialRequisition()'],
+  ['AuditLog', 'VIEW', 'View the security/business audit log — role set mirrors the pre-existing inline check on GET /api/audit-log'],
+].forEach(([r,a,d])=>_rbacDefPriv(r,a,d));
+
+// ---- Duty registry: named functional-responsibility bundles of privilege keys ----
+const RBAC_DUTIES = {}; // key -> {key, name, privileges:[keys]}
+function _rbacDefDuty(key, name, privileges){ RBAC_DUTIES[key] = {key, name, privileges}; }
+// Legacy-bridge duties: one auto-generated duty per existing role, containing exactly the Global.*
+// privileges that role already has =true in ROLE_ACTIONS — mechanically derived, never hand-typed,
+// so this cannot drift from the pre-existing table.
+ROLES.forEach(role=>{
+  const privs = RBAC_LEGACY_TAGS.filter(tag=>ROLE_ACTIONS[role] && ROLE_ACTIONS[role][tag]===true).map(tag=>'Global.'+tag);
+  _rbacDefDuty('LegacyBridge.'+role, `Legacy Bridge — ${role}`, privs);
+});
+// Resource-specific duties (the proof-of-concept slice named in ARCH-2026-001A §7's own examples).
+_rbacDefDuty('ProcurementManagement', 'Procurement Management', ['PurchaseOrder.VIEW','PurchaseOrder.CREATE','PurchaseOrder.EDIT','PurchaseOrder.SUBMIT']);
+_rbacDefDuty('ProcurementApproval', 'Procurement Approval', ['PurchaseOrder.APPROVE','PurchaseOrder.CANCEL']);
+_rbacDefDuty('AccountsPayable', 'Accounts Payable', ['SupplierBill.VIEW','SupplierBill.CREATE','PaymentRequest.VIEW','PaymentRequest.CREATE']);
+_rbacDefDuty('AccountsPayableApproval', 'Accounts Payable Approval', ['SupplierBill.APPROVE','PaymentRequest.APPROVE']);
+_rbacDefDuty('TreasuryExecution', 'Treasury Execution', ['PaymentRequest.EXECUTE']);
+_rbacDefDuty('ProjectViewing', 'Project Viewing', ['Project.VIEW']);
+_rbacDefDuty('ProjectAdministration', 'Project Administration', ['Project.VIEW','Project.CREATE','Project.EDIT']);
+_rbacDefDuty('ReadOnlyProcurementFinance', 'Read-Only Procurement & Finance Visibility', ['PurchaseOrder.VIEW','SupplierBill.VIEW','PaymentRequest.VIEW']);
+// ARCH-2026-001B additions.
+_rbacDefDuty('MaterialIssueFull', 'Material Issue — Site & Warehouse', ['MaterialIssueSite.CREATE','MaterialIssueWarehouse.CREATE']);
+_rbacDefDuty('MaterialIssueSiteOnly', 'Material Issue — Site Only', ['MaterialIssueSite.CREATE']);
+_rbacDefDuty('RequisitionApproval', 'Requisition Approval (Purchase Requisition + Site Material Requisition)', ['PurchaseRequisition.APPROVE','SiteMaterialRequisition.APPROVE']);
+_rbacDefDuty('AuditVisibility', 'Audit Log Visibility', ['AuditLog.VIEW']);
+
+// ---- Business Role registry: 1:1 with the existing 10 roles for this foundational CR ----
+const RBAC_BUSINESS_ROLES = {}; // key -> {key, legacyRole, name, duties:[keys]}
+function _rbacDefBizRole(legacyRole, extraDuties){
+  RBAC_BUSINESS_ROLES[legacyRole] = { key:legacyRole, legacyRole, name:legacyRole, duties: ['LegacyBridge.'+legacyRole, ...(extraDuties||[])] };
+}
+// Extra-duty grants below are grounded in already-existing data, not invented: Admin/CEO get
+// ProjectAdministration because only they have create/edit=true in ROLE_ACTIONS; CEO/FinanceManager
+// (not Admin/Purchase) get ProcurementApproval/AccountsPayableApproval/TreasuryExecution because
+// those two roles are exactly the ones poApprovalAuthorityMatrix.roles marks
+// financialApprovalAuthority:true — Admin is deliberately excluded, consistent with the existing
+// Phase 12 P0 fix's own principle ("System Administration Authority != Financial Approval
+// Authority").
+// ARCH-2026-001B extra-duty grants (MaterialIssueFull/SiteOnly, RequisitionApproval,
+// AuditVisibility) are likewise read directly from the exact legacy checks they replace — see
+// ARCH-2026-001B-LEGACY-AUTH-INVENTORY.md for the per-occurrence evidence.
+_rbacDefBizRole('Admin', ['ProcurementManagement','AccountsPayable','ProjectAdministration','MaterialIssueFull','RequisitionApproval','AuditVisibility']);
+_rbacDefBizRole('CEO', ['ProcurementManagement','ProcurementApproval','AccountsPayable','AccountsPayableApproval','TreasuryExecution','ProjectAdministration','MaterialIssueFull','RequisitionApproval','AuditVisibility']);
+_rbacDefBizRole('Accountant', ['AccountsPayable']);
+_rbacDefBizRole('FinanceManager', ['ProcurementApproval','AccountsPayable','AccountsPayableApproval','TreasuryExecution','MaterialIssueSiteOnly','RequisitionApproval']);
+_rbacDefBizRole('ProjectManager', ['ProjectViewing']);
+_rbacDefBizRole('Purchase', ['ProcurementManagement','MaterialIssueFull','RequisitionApproval']);
+_rbacDefBizRole('Sales', []);
+_rbacDefBizRole('Estimator', []);
+_rbacDefBizRole('SiteInCharge', ['ProjectViewing','RequisitionApproval']);
+_rbacDefBizRole('Viewer', ['ReadOnlyProcurementFinance','ProjectViewing']);
+
+// ---- Approval Authority framework (§19): descriptive/reference rows only — the authoritative
+// enforcement remains the existing tables/functions named below, untouched by this CR. ----
+const RBAC_APPROVAL_AUTHORITIES_SEED = [
+  { id:'AA-1', transactionType:'PurchaseOrder', description:'Amount-tiered PO approval (₹500,000 auto / ₹2,000,000 FinanceManager / above CEO), per BOS §1.6.', sourceTable:'DB.poApprovalRules', sourceFunction:'requiredPOApprovalRole(amount)', authorityTable:'DB.poApprovalAuthorityMatrix', authorityFunction:'poApprovalAuthorityFor(role)', status:'ACTIVE — existing mechanism, referenced not replaced by ARCH-2026-001A' },
+  { id:'AA-2', transactionType:'QuotationDiscount', description:'Pct-tiered discount approval (5% auto / 10% FinanceManager / above CEO), per BOS §1.6.', sourceTable:'DB.discountApprovalRules', sourceFunction:'requiredDiscountApprovalRole(pct)', authorityTable:null, authorityFunction:null, status:'ACTIVE — existing mechanism, referenced not replaced by ARCH-2026-001A' },
+  { id:'AA-3', transactionType:'PaymentRequest', description:'Amount-tiered payment approval per SOP §9 (illustrative — "Not Finalised" per the existing matrix\'s own status field, unchanged by this CR).', sourceTable:'DB.paymentApprovalMatrix', sourceFunction:'paymentApprovalRoleFor(amount)', authorityTable:null, authorityFunction:null, status:'ACTIVE — existing mechanism, referenced not replaced by ARCH-2026-001A' }
+];
+// ---- SoD framework (§18): descriptive/reference rows + a generic evaluator, proven by unit test,
+// NOT called from any existing enforcement path — the authoritative enforcement remains the existing
+// code sites named below, untouched by this CR. ----
+const RBAC_SOD_RULES_SEED = [
+  { id:'SOD-1', name:'Payment Request Maker-Checker', description:'The same user may not both create (maker) and approve (checker) the same Payment Request.', enforcedBy:'approvePaymentRequest() — existing check: req.maker===actor.id rejected', severity:'HIGH', status:'ACTIVE (pre-existing enforcement, formalized as data by ARCH-2026-001A)' },
+  { id:'SOD-2', name:'Payment Request Maker/Checker != Executor', description:'SOP §9: at least 2, ideally 3, different people across create/approve/execute.', enforcedBy:'executePaymentRequest() and the payment-request workflow — existing pattern', severity:'HIGH', status:'ACTIVE (pre-existing enforcement, formalized as data by ARCH-2026-001A)' },
+  { id:'SOD-3', name:'Excess Billing / Excess Material Issue Second-Person Approval', description:'The same user who raises an excess-billing/material-issue override cannot approve their own override.', enforcedBy:'assertCanApproveExcessBilling() and the Excess Material Issue Approval maker-checker pattern', severity:'MEDIUM', status:'ACTIVE (pre-existing enforcement, formalized as data by ARCH-2026-001A)' },
+  { id:'SOD-4', name:'Snag Verifier != Resolver', description:'The Snag verifier cannot be the same person who resolved it, except CEO/Admin.', enforcedBy:'Snag verification workflow (Execution & Delivery module) — existing pattern', severity:'MEDIUM', status:'ACTIVE (pre-existing enforcement, formalized as data by ARCH-2026-001A)' },
+  // ARCH-2026-001D — 2 new P2P rules, extending (not replacing) the 4 existing reference rules above.
+  // Both are genuinely NEW preventive server-side enforcement (unlike SOD-1..4, which formalized
+  // ALREADY-existing hardcoded checks as data) — see ARCH-2026-001D-SOD-RULE-MATRIX.md for the full
+  // capability-conflict rationale and ARCH-2026-001D-SOD-OPEN-DECISIONS.md for the deliberate absence
+  // of an Admin/CEO exemption on either.
+  { id:'SOD-5', name:'Vendor Master Maintenance vs Payment Execution', description:'The user who created a Vendor Master record must not be the same user who executes a Supplier Payment to that vendor.', enforcedBy:'executePaymentRequest() — NEW check this CR: checkSoD(\'SOD-5\', {makerId:vendor.createdBy, checkerId:actor.id})', severity:'HIGH', status:'ACTIVE — NEW preventive enforcement implemented by ARCH-2026-001D' },
+  { id:'SOD-6', name:'GRN Recording vs Matched Supplier Bill Creation', description:'The user who recorded a GRN must not be the same user who creates the PO-matched Supplier Bill against it.', enforcedBy:'draftSupplierInvoiceFromPO() — NEW check this CR: checkSoD(\'SOD-6\', {makerId:grn.createdBy, checkerId:createdByUserId})', severity:'HIGH', status:'ACTIVE — NEW preventive enforcement implemented by ARCH-2026-001D' },
+  // ARCH-2026-002 Wave 2 implementation — 5 new preventive rules closing the 3 zero-coverage
+  // operational chains found by Wave 2 Phase 0 (ARCH-2026-002-WAVE-2-SECURITY-BASELINE.md §0-1),
+  // plus the explicitly-named Job Work->Supplier-Bill linked-document bypass and the CAPA closure
+  // gap. Same shape as SOD-5/SOD-6, no automatic Admin/CEO exemption (matches the SOD-5/SOD-6
+  // precedent for rules enforced through this formal engine, not the older inline creator!=approver
+  // convention used elsewhere) — see WAVE2_SOD-RESULTS.md for the disclosed rationale.
+  { id:'SOD-7', name:'Production Order Creator vs Completer', description:'The user who created a Production Order must not be the same user who completes it — prevents one user from planning and executing an entire production run alone.', enforcedBy:'completeProductionOrder() — NEW check this CR: checkSoD(\'SOD-7\', {makerId:prod.createdBy, checkerId:actor.id})', severity:'MEDIUM', status:'ACTIVE — NEW preventive enforcement implemented by ARCH-2026-002 Wave 2' },
+  { id:'SOD-8', name:'Job Work Order Creator vs Linked Supplier Bill Creator', description:'The user who dispatched a Job Work Order must not be the same user who creates the Supplier Bill for its processing charges — prevents settlement through linked-document navigation bypassing separation.', enforcedBy:'draftSupplierInvoice()/draftSupplierInvoiceFromPO() — NEW check this CR: checkSoD(\'SOD-8\', {makerId:jwo.createdBy, checkerId:createdByUserId})', severity:'HIGH', status:'ACTIVE — NEW preventive enforcement implemented by ARCH-2026-002 Wave 2' },
+  { id:'SOD-9', name:'Job Work Order Creator vs Settlement Actor', description:'The user who dispatched a Job Work Order must not be the same user who records its return, scrap, or direct dispatch — prevents one user from dispatching and self-settling alone.', enforcedBy:'returnFromJobWorker()/recordJobWorkScrap()/directDispatchFromJobWorker() — NEW check this CR: checkSoD(\'SOD-9\', {makerId:jwo.createdBy, checkerId:actor.id})', severity:'MEDIUM', status:'ACTIVE — NEW preventive enforcement implemented by ARCH-2026-002 Wave 2' },
+  { id:'SOD-10', name:'QC Checklist Creator vs Result Submitter', description:'The user who created a QC checklist must not be the same user who submits its Pass/Fail result — prevents self-attestation on a control that directly gates Handover.', enforcedBy:'submitQCResult() — NEW check this CR: checkSoD(\'SOD-10\', {makerId:qc.createdBy, checkerId:actor.id})', severity:'HIGH', status:'ACTIVE — NEW preventive enforcement implemented by ARCH-2026-002 Wave 2' },
+  { id:'SOD-11', name:'CAPA Effectiveness-Checker vs Closer', description:'The user who confirmed a CAPA\'s effectiveness must not be the same user who closes the case — completes CAPA\'s own existing owner/verifier/effectiveness-checker separation chain.', enforcedBy:'closeCAPACase() — NEW check this CR: checkSoD(\'SOD-11\', {makerId:capa.effectivenessCheckedBy, checkerId:actor.id})', severity:'MEDIUM', status:'ACTIVE — NEW preventive enforcement implemented by ARCH-2026-002 Wave 2' }
+];
+function checkSoD(ruleId, {makerId, checkerId}={}){
+  const rule = DB.sodRules.find(r=>r.id===ruleId);
+  if(!rule) return {ok:false, error:`Unknown SoD rule "${ruleId}".`};
+  if(makerId && checkerId && makerId===checkerId){
+    const exception = DB.sodExceptions.find(e=>e.ruleId===ruleId && e.userId===makerId && e.active!==false);
+    if(exception) return {ok:true, violated:false, exception:true};
+    return {ok:true, violated:true, rule};
+  }
+  return {ok:true, violated:false};
+}
+// ARCH-2026-001D §9 — Detective SoD scan. Admin/CEO-only (security diagnostics are never exposed to
+// an unauthorized user). Identifies EXISTING conflicts across the P2P chain — including ones that
+// predate this CR's preventive checks (SOD-5/SOD-6 only block NEW attempts going forward; this finds
+// any conflict already present in the data, e.g. from before this CR was implemented).
+function detectSoDConflicts(actor){
+  if(!actor || !['Admin','CEO'].includes(actor.role)) return {ok:false, error:`Role "${actor && actor.role}" cannot view SoD conflict diagnostics.`};
+  const conflicts = [];
+  DB.paymentApprovals.filter(r=>r.status==='Executed' && r.executedBy).forEach(r=>{
+    const vendor = DB.vendors.find(v=>v.id===r.vendorId);
+    if(vendor && vendor.createdBy && vendor.createdBy===r.executedBy){
+      conflicts.push({ ruleId:'SOD-5', ruleName:'Vendor Master Maintenance vs Payment Execution', userId:r.executedBy,
+        resourceType:'PaymentRequest', resourceId:r.id, relatedResourceType:'Vendor', relatedResourceId:vendor.id,
+        effectiveStatus:'CONFIRMED CONFLICT', occurredAt:r.executedAt });
+    }
+  });
+  DB.jeDrafts.filter(d=>d.grnId && d.createdByUserId).forEach(d=>{
+    const grn = DB.grns.find(g=>g.id===d.grnId);
+    if(grn && grn.createdBy && grn.createdBy===d.createdByUserId){
+      conflicts.push({ ruleId:'SOD-6', ruleName:'GRN Recording vs Matched Supplier Bill Creation', userId:d.createdByUserId,
+        resourceType:'SupplierBillDraft', resourceId:d.id, relatedResourceType:'GRN', relatedResourceId:grn.id,
+        effectiveStatus: d.postedEntryId ? 'CONFIRMED CONFLICT (POSTED)' : 'CONFIRMED CONFLICT (DRAFT)', occurredAt:d.createdAt });
+    }
+  });
+  logAudit({type:'SoDDetectiveScanRun', conflictCount:conflicts.length, userId:actor.id, role:actor.role});
+  return {ok:true, conflicts, scannedAt:nowIso()};
+}
+// ARCH-2026-001D §20/§21 — SoD exception administration. Admin/CEO-only (protects the configuration
+// server-side); explicit, auditable, attributable; a user can never grant themselves an exception
+// (assertNoSelfGrant below blocks it structurally, not just by convention).
+function grantSoDException({ruleId, userId, reason, actor}){
+  if(!actor || !['Admin','CEO'].includes(actor.role)) return {ok:false, error:`Role "${actor && actor.role}" cannot grant an SoD exception.`};
+  if(!DB.sodRules.find(r=>r.id===ruleId)) return {ok:false, error:`Unknown SoD rule "${ruleId}".`};
+  if(!DB.users.find(u=>u.id===userId)) return {ok:false, error:'User not found.'};
+  if(userId===actor.id) return {ok:false, error:'An SoD exception cannot be self-granted — a different Admin/CEO user must grant it.'};
+  if(!reason || !reason.trim()) return {ok:false, error:'A documented reason is required to grant an SoD exception.'};
+  const existing = DB.sodExceptions.find(e=>e.ruleId===ruleId && e.userId===userId && e.active!==false);
+  if(existing) return {ok:false, error:'An active exception for this rule/user already exists.'};
+  const ex = { id:'SODEX-'+String(DB.sodExceptions.length+1).padStart(4,'0'), ruleId, userId, reason:reason.trim(), grantedBy:actor.id, grantedAt:nowIso(), active:true, revokedBy:null, revokedAt:null };
+  DB.sodExceptions.push(ex); save();
+  logAudit({type:'SoDExceptionGranted', exceptionId:ex.id, ruleId, targetUserId:userId, reason:ex.reason, userId:actor.id, role:actor.role});
+  return {ok:true, exception:ex};
+}
+function revokeSoDException({exceptionId, actor}){
+  if(!actor || !['Admin','CEO'].includes(actor.role)) return {ok:false, error:`Role "${actor && actor.role}" cannot revoke an SoD exception.`};
+  const ex = DB.sodExceptions.find(e=>e.id===exceptionId);
+  if(!ex) return {ok:false, error:'Exception not found.'};
+  if(!ex.active) return {ok:false, error:'That exception is already inactive.'};
+  ex.active = false; ex.revokedBy = actor.id; ex.revokedAt = nowIso(); save();
+  logAudit({type:'SoDExceptionRevoked', exceptionId:ex.id, ruleId:ex.ruleId, targetUserId:ex.userId, userId:actor.id, role:actor.role});
+  return {ok:true, exception:ex};
+}
+
+// ============================================================
+// ARCH-2026-001E — Approval Authority (2026-09-21)
+// ============================================================
+// A CENTRALIZED, READ-ONLY diagnostic composing the frozen formula:
+//   CAN APPROVE = base permission AND data scope AND no SoD conflict AND approval authority
+// for the 4 transaction types that already have a real, tested approval mechanism in this codebase
+// (PurchaseOrder, QuotationDiscount, PaymentRequest, DesignReview). This function does NOT replace
+// or duplicate any existing enforcement — approvePurchaseOrder()/approveQuotationDiscount()/
+// approvePaymentRequest()/reviewDesign() remain the sole, authoritative, already-tested enforcement
+// for each transaction type; resolveApprovalAuthority() mirrors their EXACT existing logic (read
+// fresh from each function, not assumed) so it can be asked "would this actor be allowed to approve
+// this specific record" WITHOUT attempting the mutation — e.g. for a future UI affordance, or for
+// this CR's own test suite to assert expected outcomes before exercising the real routes. Every
+// per-type rule below reuses the existing tables/functions named in
+// ARCH-2026-001-RBAC-TARGET-DESIGN.md's own RBAC_APPROVAL_AUTHORITIES_SEED mapping (see that
+// constant above) — no new threshold, role, or scope dimension was invented.
+const APPROVAL_TRANSACTION_TYPES = ['PurchaseOrder','QuotationDiscount','PaymentRequest','DesignReview'];
+function resolveApprovalAuthority(transactionType, actor, record){
+  if(!APPROVAL_TRANSACTION_TYPES.includes(transactionType)) return {ok:false, error:`Unknown transaction type "${transactionType}". Supported: ${APPROVAL_TRANSACTION_TYPES.join(', ')}.`};
+  if(!actor || !actor.role) return {ok:false, error:'A valid actor is required.'};
+  if(!record) return {ok:false, error:'A valid transaction record is required.'};
+
+  const r = { transactionType, requiredRole:null, hasApprovalAuthority:false, isCreator:false,
+    selfApprovalPermitted:null, scopeOk:true, sodOk:true, validState:true, canApprove:false };
+
+  if(transactionType==='PurchaseOrder'){
+    r.validState = record.status==='Submitted';
+    r.requiredRole = requiredPOApprovalRole(record.total);
+    const authority = poApprovalAuthorityFor(actor.role);
+    r.hasApprovalAuthority = !r.requiredRole || actor.role===r.requiredRole || authority.financialApprovalAuthority===true;
+    r.isCreator = record.createdBy===actor.id;
+    if(r.isCreator && r.requiredRole){
+      r.selfApprovalPermitted = !!(authority.selfApprovalAllowed && authority.selfApprovalLimit!=null && record.total<=authority.selfApprovalLimit);
+    }
+    // No scope-restricted role (ProjectManager) currently holds PO financial approval authority —
+    // reflects the CURRENT poApprovalAuthorityMatrix data, not invented: scopeOk stays true.
+    // No dedicated SoD rule applies to PO approval itself (SOD-5/SOD-6 apply to different steps).
+    r.canApprove = r.validState && r.hasApprovalAuthority && (!r.isCreator || !r.requiredRole || r.selfApprovalPermitted===true);
+  } else if(transactionType==='QuotationDiscount'){
+    r.validState = record.status==='PendingApproval';
+    r.requiredRole = requiredDiscountApprovalRole(record.discountPct);
+    r.hasApprovalAuthority = !r.requiredRole || actor.role===r.requiredRole || actor.role==='Admin';
+    r.isCreator = record.createdBy===actor.id;
+    r.selfApprovalPermitted = ['CEO','Admin'].includes(actor.role); // matches approveQuotationDiscount()'s exact exemption — no threshold concept exists here
+    r.canApprove = r.validState && r.hasApprovalAuthority && (!r.isCreator || r.selfApprovalPermitted);
+  } else if(transactionType==='PaymentRequest'){
+    r.validState = record.status==='PendingApproval';
+    r.requiredRole = paymentApprovalRoleFor(record.amount);
+    const SOP_FINANCE_ROLES = new Set(['Admin','CEO','FinanceManager']); // mirrors server.js's own constant of the same name
+    r.hasApprovalAuthority = SOP_FINANCE_ROLES.has(actor.role) && (r.requiredRole!=='Director (CEO)' || ['CEO','Admin'].includes(actor.role));
+    r.isCreator = record.maker===actor.id; // SOD-1 — no exemption exists for this one, matches approvePaymentRequest() exactly
+    r.selfApprovalPermitted = false;
+    r.canApprove = r.validState && r.hasApprovalAuthority && !r.isCreator;
+  } else if(transactionType==='DesignReview'){
+    r.validState = record.status!=='Approved';
+    r.hasApprovalAuthority = ['Admin','CEO','ProjectManager'].includes(actor.role);
+    r.scopeOk = actor.role!=='ProjectManager' || hasScopeAccess(actor,'Project',record.projectId);
+    r.isCreator = record.submittedBy===actor.id;
+    r.selfApprovalPermitted = ['CEO','Admin'].includes(actor.role); // matches reviewDesign()'s new ARCH-2026-001E check exactly
+    r.canApprove = r.validState && r.hasApprovalAuthority && r.scopeOk && (!r.isCreator || r.selfApprovalPermitted);
+  }
+  return {ok:true, ...r};
+}
+
+// ---- Effective Permission Engine (§14): ONE authoritative function, not `if(role==="X")` scattered
+// across routes. ----
+function _rbacResolveBusinessRoleKeyForUser(user){
+  // Foundational CR: exactly one Business Role per user. An explicit DB.userRoles assignment (set by
+  // the migration below, or by assignUserRole()) is consulted first; if none exists yet for some
+  // reason, this falls back to the user's own legacy role string — so effective access can NEVER
+  // regress to "no access" merely because a migration row is missing.
+  const assignment = DB.userRoles && DB.userRoles.find(ur=>ur.userId===user.id && ur.active!==false);
+  return (assignment && assignment.businessRoleKey) || user.role;
+}
+function effectiveDutyKeysForBusinessRole(businessRoleKey){
+  const br = RBAC_BUSINESS_ROLES[businessRoleKey];
+  return br ? br.duties.slice() : [];
+}
+function effectivePrivilegeKeysForBusinessRole(businessRoleKey){
+  const duties = effectiveDutyKeysForBusinessRole(businessRoleKey);
+  const set = new Set();
+  duties.forEach(dk=>{ const d = RBAC_DUTIES[dk]; if(d) d.privileges.forEach(p=>set.add(p)); });
+  return set;
+}
+function effectivePrivilegesForUser(userIdOrActor){
+  const userId = typeof userIdOrActor==='string' ? userIdOrActor : (userIdOrActor && userIdOrActor.id);
+  const user = DB.users.find(u=>u.id===userId);
+  if(!user) return new Set();
+  return effectivePrivilegeKeysForBusinessRole(_rbacResolveBusinessRoleKeyForUser(user));
+}
+function hasPrivilege(actor, privilegeKey){
+  if(!actor || !actor.id) return false;
+  return effectivePrivilegesForUser(actor.id).has(privilegeKey);
+}
+
+// ---- Security administration foundation (§20): Admin/CEO-only, every change audited via the
+// existing logAudit()/DB.auditLog path (no duplicate audit system). ----
+function assignUserRole({userId, businessRoleKey, actor}){
+  if(!actor || !['Admin','CEO'].includes(actor.role)) return {ok:false, error:`Role "${actor && actor.role}" cannot assign business roles.`};
+  if(!RBAC_BUSINESS_ROLES[businessRoleKey]) return {ok:false, error:`Unknown business role "${businessRoleKey}".`};
+  const user = DB.users.find(u=>u.id===userId);
+  if(!user) return {ok:false, error:'User not found.'};
+  const existing = DB.userRoles.find(ur=>ur.userId===userId && ur.active!==false);
+  const oldState = existing ? existing.businessRoleKey : null;
+  if(existing) existing.active = false;
+  const rec = { id:'UR-'+String(DB.userRoles.length+1).padStart(6,'0'), userId, businessRoleKey, assignedAt:nowIso(), assignedBy:actor.id, active:true };
+  DB.userRoles.push(rec); save();
+  logAudit({type:'SecurityRoleAssigned', userId:actor.id, role:actor.role, targetUserId:userId, oldState, newState:businessRoleKey});
+  return {ok:true, userRole:rec};
+}
+function getEffectivePermissionsReport(userId, actor){
+  if(!actor || !['Admin','CEO'].includes(actor.role)) return {ok:false, error:`Role "${actor && actor.role}" cannot view effective-permission reports.`};
+  const user = DB.users.find(u=>u.id===userId);
+  if(!user) return {ok:false, error:'User not found.'};
+  const brKey = _rbacResolveBusinessRoleKeyForUser(user);
+  const duties = effectiveDutyKeysForBusinessRole(brKey);
+  const privileges = Array.from(effectivePrivilegeKeysForBusinessRole(brKey)).sort();
+  return {ok:true, userId, username:user.username, legacyRole:user.role, businessRole:brKey, duties, privileges};
+}
+
 // Phase 24 §5/§6 — moved here (from server.js) so the two highest-risk functions in the system,
 // postDraft() and reverseEntry(), can enforce their OWN base permission internally instead of
 // relying solely on the route layer remembering to call it — exactly the class of gap the Phase 23
 // duplicate-door finding exposed for createMaterialIssue(). server.js keeps a local
 // `const can = D.can;` alias so its 99 existing call sites are unchanged.
-function can(actor, action){ return !!(ROLE_ACTIONS[actor.role] && ROLE_ACTIONS[actor.role][action]); }
+function can(actor, action){
+  if(!actor) return false;
+  // ARCH-2026-001A — now powered by the effective-permission engine via the mechanically-derived
+  // Global.<tag> bridge privilege, so behavior is identical to the original direct
+  // ROLE_ACTIONS[actor.role][action] lookup BY CONSTRUCTION (see the 120-assertion equivalence test).
+  // Defensive fallback to the original direct lookup for any actor not backed by a real DB.users
+  // record (e.g. a synthetic actor object used by some test/demo helper) — nothing that worked
+  // before this refactor can be newly broken by it.
+  if(!DB.users || !DB.users.find(u=>u.id===actor.id)) return !!(ROLE_ACTIONS[actor.role] && ROLE_ACTIONS[actor.role][action]);
+  return hasPrivilege(actor, 'Global.'+action);
+}
+
+// ============================================================
+// ARCH-2026-001C — Data Scope Enforcement (2026-09-21)
+// ============================================================
+// Implements the DATA SCOPE layer of the frozen target model (USER -> BUSINESS ROLE -> DUTIES ->
+// PRIVILEGES -> ACTIONS -> DATA SCOPE -> APPROVAL AUTHORITY -> SoD -> SERVER-SIDE AUTHORIZATION ->
+// AUDIT). Per ARCH-2026-001B-LEGACY-AUTH-INVENTORY.md, 78 checks were deferred to this CR because
+// they gate access by WHICH RECORD (project/site/customer/branch), not by WHICH ACTION.
+//
+// SCOPE DIMENSIONS WITH REAL DATA-MODEL SUPPORT (verified by inspection before writing any code —
+// see ARCH-2026-001C-DATA-SCOPE-AUDIT.md §2): Project (DB.projects.projectManagerId +
+// actor.assignedProjects, via the pre-existing isProjectManagerOf()), Site
+// (DB.sites.siteInChargeUserId, via the pre-existing isSiteInChargeOf()), Customer
+// (actor.assignedCustomers, the pre-existing Sales-role convention), Branch
+// (actor.assignedBranches, via the pre-existing branchAllowed()). These 4 functions are NOT
+// reimplemented here — hasScopeAccess() below is a thin, centralized DISPATCHER that calls them,
+// exactly as can()/hasPrivilege() centralize ROLE_ACTIONS without duplicating it.
+//
+// SCOPE DIMENSIONS WITHOUT DATA-MODEL SUPPORT (confirmed absent, NOT invented): Warehouse (no
+// warehouseInChargeUserId-equivalent field on DB.warehouses, no actor.assignedWarehouses field
+// anywhere), Cost Centre, Profit Centre, Department (same — no per-user assignment field exists for
+// any of these). Building per-user restriction for these would invent a relationship this
+// application's data model does not have, which §4 of this CR explicitly forbids. Recorded as OPEN
+// in ARCH-2026-001C-OPEN-DECISIONS.md, not silently skipped.
+//
+// FINANCIAL PERIOD is a pre-existing, separate, TIME-based posting control (DB.financialPeriods
+// .status + an optional override role — see the closed-period gate this file already enforces
+// elsewhere) — it is not a per-user scope-ASSIGNMENT dimension and is unrelated to this CR; it is
+// exercised unchanged by the existing regression suite, not modified.
+//
+// GLOBAL/UNRESTRICTED DEFAULT: preserves the EXISTING, already-working precedent (branchAllowed()'s
+// own comment: "only enforced when a user actually has assignedBranches set... most roles have none
+// set and are unrestricted, same as today") — a user with no scope assignment for a dimension, or
+// whose role is not the one dimension's restricted role, remains UNRESTRICTED for that dimension.
+// This is not a new policy choice made by this CR; it is the codebase's own established convention,
+// now centralized. A stricter fail-closed default was considered and NOT adopted, because adopting
+// it would newly restrict existing users with no scope assignment — forbidden by this CR's own §9
+// absent an explicit frozen-architecture requirement to do so (none exists).
+//
+// MULTI-ROLE SCOPE SEMANTICS: N/A for this CR. DB.users.role is a single string field — this
+// codebase has no multi-role assignment capability today (ARCH-2026-001A's DB.userRoles is a 1:1
+// migration mirror of that same single role, not a multi-role grant). Union/intersection/priority
+// semantics cannot be implemented for a capability that does not exist; recorded as OPEN in
+// ARCH-2026-001C-OPEN-DECISIONS.md rather than invented.
+function hasScopeAccess(actor, scopeType, scopeId){
+  if(!scopeId) return true; // nothing to check against
+  switch(scopeType){
+    case 'Project': return actor.role!=='ProjectManager' || isProjectManagerOf(actor, scopeId);
+    case 'Site': return actor.role!=='SiteInCharge' || isSiteInChargeOf(actor, scopeId);
+    case 'Customer': return actor.role!=='Sales' || (actor.assignedCustomers||[]).includes(scopeId);
+    case 'Branch': return branchAllowed(actor, scopeId);
+    default: return true;
+  }
+}
+// Resolves the AUTHORITATIVE scope of a record from the database itself — never from a client
+// request payload (§5/§13's explicit requirement). `resourceType` selects the resolution path;
+// `record` is the real, already-loaded DB record (or its id, for the indirect PaymentRequest case).
+// Direct-field resources: the scope value is a field already present on the record (grounded in the
+// existing schema, not invented). Indirect resources: resolved by walking to the real parent record.
+function resolveResourceScope(resourceType, record){
+  if(!record) return {};
+  switch(resourceType){
+    case 'Project': return {Project: record.id};
+    // ARCH-2026-001C finding: DB.sites has NO projectId field — Sites are a standalone company-wide
+    // master, not a sub-entity of Project, in this application's actual data model (verified by
+    // inspecting createSite()/the sites seed shape before writing this function — see
+    // ARCH-2026-001C-DATA-SCOPE-AUDIT.md). Site scope is therefore independent of Project scope;
+    // no Project dimension is resolved for a Site record, since inventing one would violate this
+    // CR's own §4 ("do not invent relationships that do not exist in the application").
+    case 'Site': return {Site: record.id};
+    case 'MaterialIssue': case 'SiteMaterialRequisition':
+      // Both carry real projectId + siteId fields (confirmed: createMaterialIssue(), createSiteMaterialRequisition()).
+      return {Project: record.projectId || null, Site: record.siteId || null};
+    case 'MaterialRequirement': case 'ChangeRequest':
+      // Confirmed: neither createMaterialRequirement() nor createChangeRequest() takes a branchId —
+      // Branch is NOT resolved here (would be an invented relationship, forbidden by §4).
+      return {Project: record.projectId || null};
+    case 'SupplierBill':
+      // Confirmed: draftSupplierInvoice() takes both projectId and branchId as real fields.
+      return {Project: record.projectId || null, Branch: record.branchId || null};
+    case 'Customer': return {Customer: record.id};
+    // PaymentRequest carries no projectId of its own — its authoritative scope is the underlying
+    // Supplier Bill's GL line, exactly the inheritance chain named in this CR's own §13 example
+    // (Payment Request -> Supplier Bill -> Purchase Order -> Project). Resolved via the SAME
+    // authoritative read supplierOpenItems() already uses (`apLine.projectId`), not a new lookup.
+    case 'PaymentRequest': {
+      const je = DB.journalEntries.find(e=>e.id===record.invoiceEntryId);
+      const apLine = je && je.lines.find(l=>l.vendorId===record.vendorId && l.account===AP_ACCOUNT);
+      return {Project: (apLine && apLine.projectId) || null};
+    }
+    default: return {};
+  }
+}
+// The combined guard: resolves a record's authoritative scope, then checks every applicable
+// dimension. Returns {ok:true} or {ok:false, error, dimension}. A resourceType that resolves no
+// dimensions (empty {}) passes trivially — that resource has no scope dimension in this data model,
+// same as reading `resolveResourceScope()` returning {} for anything not listed above.
+function assertScopeAccess(actor, resourceType, record){
+  const scope = resolveResourceScope(resourceType, record);
+  for(const dim of Object.keys(scope)){
+    if(!hasScopeAccess(actor, dim, scope[dim])){
+      return {ok:false, error:`Role "${actor.role}" does not have ${dim} scope authority over "${scope[dim]}".`, dimension:dim};
+    }
+  }
+  return {ok:true};
+}
 
 // ---------- Phase 6B: business-process enums (one place, not scattered through UI) ----------
 const LEAD_STATUSES = ['NEW','CONTACTED','QUALIFIED','ESTIMATION','QUOTATION','NEGOTIATION','WON','LOST','ON HOLD'];
@@ -460,6 +942,13 @@ function freshDB(){
     // rather than silently relying on undefined-defaults-to-1 fallbacks scattered in call sites.
     materials: JSON.parse(JSON.stringify(SEED.materials)).map(m=>({...m, purchaseUom:m.purchaseUom||m.uom, purchaseConversionFactor:m.purchaseConversionFactor||1})),
     journalEntries: [], jeDrafts: [], purchaseOrders: [], clearings: [], auditLog: [],
+    // ARCH-2026-001A — RBAC foundation collections. userRoles is populated by the migration guard
+    // below (both for a fresh seed and for an existing db.json); roleScopes starts empty (no scope
+    // restriction invented); approvalAuthorities/sodRules are descriptive/reference seeds (see the
+    // RBAC_APPROVAL_AUTHORITIES_SEED/RBAC_SOD_RULES_SEED comments above); sodExceptions starts empty.
+    userRoles: [], roleScopes: [],
+    approvalAuthorities: JSON.parse(JSON.stringify(RBAC_APPROVAL_AUTHORITIES_SEED)),
+    sodRules: JSON.parse(JSON.stringify(RBAC_SOD_RULES_SEED)), sodExceptions: [],
     users, loginHistory: [],
     // Phase 42 — Idempotency-Key store. See checkIdempotencyKey()/recordIdempotencyKey() below.
     idempotencyKeys: [],
@@ -846,7 +1335,7 @@ if(!DB.accounts.find(a=>a.id==='5500')) DB.accounts.push({id:'5500', name:'Gain/
 ['purchaseRequisitions','sites','siteMaterialRequisitions','deliveryChallans','siteMaterialReceipts','siteReturns',
  'pettyCashFloats','pettyCashVouchers','tdsDeductions','cashControlExceptions','paymentApprovals']
   .forEach(k=>{ if(!DB[k]) DB[k]=[]; });
-[['PR','Purchase Requisition'],['MRS','Material Requisition Slip (Site)'],['DC','Delivery Challan'],
+[['PR','Purchase Requisition'],['MRS','Material Requisition — Site'],['DC','Delivery Challan'],
  ['SMR','Site Material Receipt'],['SRET','Site Return'],['PCV','Petty Cash Voucher'],['PCF','Petty Cash Float']]
   .forEach(([code,label])=>{ if(!DB.glDocumentTypes.find(d=>d.code===code)) DB.glDocumentTypes.push({code, label, prefix:code, nextSeq:1}); });
 if(!DB.accounts.find(a=>a.id==='2300')) DB.accounts.push({id:'2300', name:'TDS Payable', type:'Liability'});
@@ -1026,6 +1515,27 @@ if(DB.materialRequirements) DB.materialRequirements.forEach(m=>{
 // missing arrays wiped on every load" defect class from an earlier phase — this is the fix pattern
 // that avoids it, applied at creation time instead of discovered after the fact).
 if(!DB.reportVariants) DB.reportVariants = [];
+// ARCH-2026-001A — RBAC foundation migration guards. Same discipline as every prior phase's guard
+// above: `if(!DB[k])`, never destructive, patches an already-persisted db.json that predates this
+// collection so it is never silently missing on the next load (the exact "13 arrays wiped on load"
+// defect class this engagement has previously found and fixed in a sibling project).
+if(!DB.userRoles) DB.userRoles = [];
+if(!DB.roleScopes) DB.roleScopes = [];
+if(!DB.approvalAuthorities) DB.approvalAuthorities = JSON.parse(JSON.stringify(RBAC_APPROVAL_AUTHORITIES_SEED));
+if(!DB.sodRules) DB.sodRules = JSON.parse(JSON.stringify(RBAC_SOD_RULES_SEED));
+if(!DB.sodExceptions) DB.sodExceptions = [];
+// Deterministic, access-preserving migration: every existing user gets exactly one EXPLICIT
+// userRoles assignment, businessRoleKey === their current role name (1:1). This is provably a
+// no-op for effective access even before it runs — effectivePrivilegesForUser() already falls back
+// to user.role when no assignment row exists — it exists purely to make the assignment explicit,
+// auditable data rather than an implicit fallback forever. Runs once: only when DB.userRoles is
+// still empty (fresh seed or a pre-ARCH-2026-001A db.json), never re-runs against a db.json that
+// already has real assignment data (which could include intentional future role changes).
+if(DB.users && DB.users.length && DB.userRoles.length===0){
+  DB.users.forEach((u,i)=>{
+    DB.userRoles.push({ id:'UR-'+String(i+1).padStart(6,'0'), userId:u.id, businessRoleKey:u.role, assignedAt: nowIso(), assignedBy:'ARCH-2026-001A-migration', active:true });
+  });
+}
 
 // Phase 21 §3 — atomic persistence (audit finding: direct fs.writeFileSync(DB_FILE,...) on every
 // single mutating call, with no atomic-swap pattern — a process kill mid-write could corrupt or
@@ -2300,6 +2810,32 @@ function reverseEntry(entryId, reason, actor){
   if(orig.sourceType==='Reversal'){
     return rejectReversal(`Cannot reverse ${orig.id} — it is itself a reversal entry (of ${orig.reversalOfId}). Reversing a reversal would recreate the original transaction's economic effect with no corresponding inventory/document movement behind it. If the original transaction is genuinely needed again, post it again as a new, independently-authorized document.`);
   }
+  // ARCH-2026-002 Wave 3 hardening — DEFECT FOUND & FIXED (live-proven during this wave's own
+  // "reversal of a fixed-asset lifecycle transaction" edge-case test, one of the exact scenarios
+  // this wave's CR calls out for coverage). Unlike GRN/MaterialIssue above, reverseEntry() had NO
+  // special-case handling for FixedAssetCapitalization/FixedAssetDisposal at all — it just flipped
+  // the GL lines. Live-reproduced: capitalize a ₹1,00,000 asset (GL 1400 debited, register cost
+  // ₹1,00,000, reconciliation costMatches:true), then reverse that capitalization entry — the call
+  // succeeded (200 ok), GL account 1400 correctly dropped back to ₹0 for that asset, but
+  // `asset.status` stayed 'Capitalized' (nothing in capitalizeFixedAsset/disposeFixedAsset's own
+  // code path is ever notified a reversal happened), so the Fixed Asset Register still reports the
+  // asset "on the books" at its full cost — `reconcileFixedAssets()` immediately and permanently
+  // shows costMatches:false, with no compensating mechanism anywhere in this Lab to close that gap
+  // (contrast Depreciation reversal, which IS self-consistent: assetAccumulatedDepreciation() sums
+  // only entries with docCategory==='Depreciation' && !reversedByEntryId, so reversing a
+  // depreciation entry correctly and automatically reduces accumulated depreciation — no fix
+  // needed there). The same disposal-side risk exists symmetrically (a reversed disposal would
+  // restore GL balances while the asset stays permanently 'Disposed'). Fixed the same way this
+  // function already handles the analogous reversal-of-a-reversal case immediately above: refuse
+  // the operation outright rather than allow a silent Register<->GL divergence, and point the
+  // caller at the correct alternative (a new, independently-authorized Fixed Asset transaction).
+  // This is a defensive guard on EXISTING reverseEntry() behavior, not a new capability, and does
+  // not touch any of the 7 items WAVE3_IMPLEMENTATION_SCOPE.md classifies as an IMPLEMENTATION
+  // BLOCKER.
+  if(orig.sourceType==='FixedAssetCapitalization' || orig.sourceType==='FixedAssetDisposal'){
+    const kind = orig.sourceType==='FixedAssetCapitalization' ? 'Capitalization' : 'Disposal';
+    return rejectReversal(`Cannot reverse ${orig.id} — it is a Fixed Asset ${kind} entry. Reversing it would remove the asset's cost/accumulated-depreciation from the General Ledger while leaving the Fixed Asset Register's own status and lifecycle fields unchanged, permanently breaking the Fixed Asset Register <-> GL reconciliation (no compensating mechanism exists in this Lab, unlike Depreciation reversal which is self-consistent). If the ${kind.toLowerCase()} was genuinely wrong, correct it via a new, independently-authorized Fixed Asset transaction instead of reversing this GL entry directly.`, {assetId:orig.sourceId, assetSourceType:orig.sourceType});
+  }
   if(DB.clearings.some(c=>c.invoiceEntryId===entryId)){
     return rejectReversal('Cannot reverse a document that already has clearings against it — the clearing(s) must be reversed/undone first.');
   }
@@ -2760,6 +3296,16 @@ function draftSupplierInvoice({vendorId, projectId, baseAmount, taxCode, date, n
     const jwo = DB.jobWorkOrders.find(x=>x.id===jobWorkOrderId);
     if(!jwo) return {ok:false, error:`Job Work Order "${jobWorkOrderId}" does not exist.`};
     if(jwo.projectId && jwo.projectId!==projectId) return {ok:false, error:`Job Work Order "${jobWorkOrderId}" belongs to project "${jwo.projectId}" — a supplier bill for it must be raised against that same project, not "${projectId}".`};
+    // ARCH-2026-002 Wave 2 — SOD-8: the user who dispatched this Job Work Order must not be the same
+    // user who books the Supplier Bill for its processing charges — prevents settlement through
+    // linked-document navigation bypassing separation. No automatic Admin/CEO exemption. Uses
+    // durableFailureAudit (see completeProductionOrder's own comment on why a bare logAudit() here
+    // would be silently rolled back by the enclosing withTransaction() boundary).
+    const sod8 = checkSoD('SOD-8', {makerId: jwo.createdBy, checkerId: createdByUserId});
+    if(sod8.violated){
+      return {ok:false, error:`SoD violation: the user who dispatched Job Work Order ${jwo.jwoNo||jobWorkOrderId} cannot also create the Supplier Bill for its processing charges (rule SOD-8).`,
+        durableFailureAudit:{type:'SoDViolationBlocked', ruleId:'SOD-8', jobWorkOrderId, reason:'Same user dispatched the Job Work Order and is attempting to create the linked Supplier Bill.'}};
+    }
   }
   // P0-3 FIX — this generic, non-PO path used to be reachable for ANY vendor, including a real
   // goods vendor, with zero PO/GRN/3-way-match check at all (LIVE PROVEN in the prior audit: a
@@ -3226,6 +3772,25 @@ function nextQuotationNo(){ return nextDocNumber('QTN') || ('QTN/'+String(DB.quo
 function createQuotation({leadId, estimationRequestId, costingVersionId, customerId, prospectName, validityDays, discountPct, terms, paymentTerms, notes, actor}){
   const costing = DB.costingVersions.find(c=>c.id===costingVersionId);
   if(!costing) return {ok:false, error:'Costing version not found.'};
+  // Phase 41 CRITICAL FIX — found live during the Lead->Estimation->Quotation browser UAT pass
+  // (the exact "wrong source reference" negative scenario the phase brief itself names): this
+  // function accepted `leadId`, `estimationRequestId`, and `costingVersionId` as three
+  // INDEPENDENTLY-supplied references with zero check that they actually form one real chain.
+  // Live-reproduced: a quotation was created citing a genuine, unrelated LEAD-0002 while its
+  // estimationRequestId/costingVersionId actually belonged to LEAD-0001's real estimation — the
+  // resulting quotation's `leadId` field was simply wrong, silently. Same defect CLASS already
+  // fixed elsewhere in this file for a different pair of fields (see draftCustomerInvoice()/
+  // draftCustomerAdvance()'s project-vs-customer cross-check) — not a new validation concept, the
+  // same pattern applied to the one place in this chain it was still missing.
+  if(costing.estimationRequestId && estimationRequestId && costing.estimationRequestId!==estimationRequestId){
+    return {ok:false, error:`Costing version "${costingVersionId}" belongs to Estimation Request "${costing.estimationRequestId}", not "${estimationRequestId}" — cannot create a quotation mixing costing from a different estimation.`};
+  }
+  if(estimationRequestId){
+    const er = DB.estimationRequests.find(e=>e.id===estimationRequestId);
+    if(er && leadId && er.leadId!==leadId){
+      return {ok:false, error:`Estimation Request "${estimationRequestId}" belongs to Lead "${er.leadId}", not "${leadId}" — cannot create a quotation mixing an estimation from a different lead.`};
+    }
+  }
   // Phase 39 CRITICAL FIX — found live: a discountPct of 150 was accepted with no bound check at
   // all, producing a real quotation (QTN-0018) with finalPrice = -₹250,247.50 — a mathematically
   // impossible negative customer-facing selling price. `+discountPct||0` also silently converted
@@ -3480,6 +4045,17 @@ function reviewDesign({designId, status, remarks, actor}){
   if(!d) return {ok:false, error:'Design not found.'};
   if(!DESIGN_STATUSES.includes(status)) return {ok:false, error:`Invalid status "${status}".`};
   if(d.status==='Approved') return {ok:false, error:'This design version is already Approved and cannot be silently overwritten — submit a new version instead.'};
+  // ARCH-2026-001E — real, evidenced gap found by audit: every OTHER approve-style function in this
+  // codebase (approvePurchaseOrder, approveQuotationDiscount, approveChangeRequest, approveBOM, ...)
+  // already blocks the creator/submitter from also being the approver (except CEO/Admin, the SAME
+  // exemption already used everywhere else). reviewDesign() was the one outlier missing this check —
+  // fixed here using the IDENTICAL existing convention, not a new invented policy. Scoped to the
+  // actual risk (self-APPROVAL) rather than every status this combined review/reject/approve function
+  // can set — moving a design to UnderReview or RevisionRequested is not a self-approval risk and
+  // this codebase's own existing SoD checks elsewhere are likewise scoped to the approval act itself.
+  if(status==='Approved' && d.submittedBy===actor.id && !['CEO','Admin'].includes(actor.role)){
+    return {ok:false, error:'Segregation of duties: design submitter cannot also approve their own design.'};
+  }
   d.status=status; d.reviewerId=actor.id; d.remarks=remarks||''; if(status==='Approved') d.approvedDate=nowIso();
   save();
   logAudit({type:'DesignReviewed', designId, projectId:d.projectId, newState:status, userId:actor.id, role:actor.role});
@@ -4801,6 +5377,18 @@ function draftSupplierInvoiceFromPO({poId, grnId, invoiceLines, taxCode, date, n
   if(!po || !grn) return {ok:false, error:'PO or GRN not found.'};
   if(grn.reversed) return {ok:false, error:`Cannot invoice against GRN ${grn.grnNo} — it was reversed on ${grn.reversedAt}. The physical receipt it recorded no longer stands.`};
   if(grn.poId!==poId) return {ok:false, error:'That GRN does not belong to the selected PO.'};
+  // ARCH-2026-001D SOD-6 — GRN Recording vs Matched Supplier Bill Creation. Preventive: the user who
+  // recorded this GRN must not be the same user creating the PO-matched Supplier Bill against it
+  // (classic P2P fictitious-receipt control — rejected at the earliest point, per this file's own
+  // "reject at the earliest possible point" principle, rather than waiting until payment execution).
+  // No automatic Admin/CEO exemption — see ARCH-2026-001D-SOD-OPEN-DECISIONS.md.
+  {
+    const sod6 = checkSoD('SOD-6', {makerId: grn.createdBy, checkerId: createdByUserId});
+    if(sod6.violated){
+      logAudit({type:'SoDViolationBlocked', ruleId:'SOD-6', grnId, poId, userId:createdByUserId, role:createdByRole, reason:'Same user recorded the GRN and is attempting to create the matched Supplier Bill.'});
+      return {ok:false, error:`SoD violation: the user who recorded GRN ${grn.grnNo} cannot also create the Supplier Bill matched against it (rule SOD-6).`};
+    }
+  }
   // Quick Control Fixes phase — same optional Job Work Fee traceability check as draftSupplierInvoice()
   // above, for completeness/consistency (a PO/GRN-matched bill is not the typical path for a job-work
   // processing fee, but the field is supported here too rather than leaving one of the two supplier-
@@ -4809,6 +5397,12 @@ function draftSupplierInvoiceFromPO({poId, grnId, invoiceLines, taxCode, date, n
     const jwo = DB.jobWorkOrders.find(x=>x.id===jobWorkOrderId);
     if(!jwo) return {ok:false, error:`Job Work Order "${jobWorkOrderId}" does not exist.`};
     if(jwo.projectId && jwo.projectId!==po.projectId) return {ok:false, error:`Job Work Order "${jobWorkOrderId}" belongs to project "${jwo.projectId}" — a supplier bill for it must be raised against that same project, not "${po.projectId}".`};
+    // ARCH-2026-002 Wave 2 — SOD-8, same rule as draftSupplierInvoice()'s own jobWorkOrderId branch.
+    const sod8 = checkSoD('SOD-8', {makerId: jwo.createdBy, checkerId: createdByUserId});
+    if(sod8.violated){
+      return {ok:false, error:`SoD violation: the user who dispatched Job Work Order ${jwo.jwoNo||jobWorkOrderId} cannot also create the Supplier Bill for its processing charges (rule SOD-8).`,
+        durableFailureAudit:{type:'SoDViolationBlocked', ruleId:'SOD-8', jobWorkOrderId, poId, reason:'Same user dispatched the Job Work Order and is attempting to create the linked Supplier Bill.'}};
+    }
   }
   if(!grn.qtyInvoicedByLine) grn.qtyInvoicedByLine = {}; // GRNs created before Phase 27 lack the field
   const balanceCheck = checkInvoiceableBalance({grn, invoiceLines});
@@ -5257,15 +5851,20 @@ function isSiteInChargeOf(actor, siteId){
 //     the Site Material SOP chain — requisition approval, receipt recording).
 //   - siteId absent (warehouseId given) → direct warehouse-to-project issue. Scoped to the
 //     ProjectManager who owns THAT project, or to Admin/CEO/Purchase — unchanged from Phase 23.
+// ARCH-2026-001B — base role gate migrated to the centralized privilege engine
+// (MaterialIssueSite.CREATE / MaterialIssueWarehouse.CREATE), proven equivalent to the original
+// inline arrays by tests/erp_arch_2026_001b_route_auth_migration_tests.js. The isSiteInChargeOf()/
+// isProjectManagerOf() scope checks are UNTOUCHED — data-scope enforcement is explicitly out of
+// this CR's scope (belongs to ARCH-2026-001C).
 function assertCanCreateMaterialIssue(actor, {projectId, siteId}){
   if(siteId){
-    if(['Admin','CEO','Purchase','FinanceManager'].includes(actor.role)) return {ok:true};
+    if(hasPrivilege(actor,'MaterialIssueSite.CREATE')) return {ok:true};
     if(isSiteInChargeOf(actor, siteId)) return {ok:true};
     return {ok:false, error: actor.role==='SiteInCharge'
       ? `Role "SiteInCharge" is not in charge of site "${siteId}" — cannot record consumption there.`
       : `Role "${actor.role}" is not authorized to record Site Material Consumption.`};
   }
-  if(['Admin','CEO','Purchase'].includes(actor.role)) return {ok:true};
+  if(hasPrivilege(actor,'MaterialIssueWarehouse.CREATE')) return {ok:true};
   if(isProjectManagerOf(actor, projectId)) return {ok:true};
   return {ok:false, error:`Role "${actor.role}" is not authorized to perform this action.`};
 }
@@ -5639,12 +6238,19 @@ function recordProjectExpense({projectId, category, amount, description, date, b
   }
 }
 // QC Dashboard — read-only aggregation over the EXISTING QC Checklist data (Phase 8). No new data.
+// DEF-2026-001 FIX — this read `c.result` ('Pass'/'Fail'), a field never written anywhere in this
+// file; the actual persisted field is `c.status` (QC_STATUSES: 'Pending'/'InProgress'/'Passed'/
+// 'Failed' — see createQCChecklist()/submitQCResult() above, and the already-correct consumers
+// handoverReadinessCheck()/projectClosureReadiness()). Because c.result was always undefined, every
+// checklist unconditionally fell into the "pending" bucket regardless of its real status. Fixed to
+// read the canonical field/values; InProgress (a partial submission) is intentionally grouped with
+// Pending, matching every other consumer's "anything but Passed is not done" treatment.
 function qcDashboard(){
   const byProject = {};
   DB.qcChecklists.forEach(c=>{
     if(!byProject[c.projectId]) byProject[c.projectId] = {projectId:c.projectId, total:0, passed:0, failed:0, pending:0};
     const b = byProject[c.projectId]; b.total++;
-    if(c.result==='Pass') b.passed++; else if(c.result==='Fail') b.failed++; else b.pending++;
+    if(c.status==='Passed') b.passed++; else if(c.status==='Failed') b.failed++; else b.pending++;
   });
   const rows = Object.values(byProject).map(b=>({...b, passRatePct: b.total>0 ? r2(100*b.passed/b.total) : null}));
   const totals = rows.reduce((s,r)=>({total:s.total+r.total, passed:s.passed+r.passed, failed:s.failed+r.failed, pending:s.pending+r.pending}), {total:0,passed:0,failed:0,pending:0});
@@ -6174,6 +6780,21 @@ function completeProductionOrder({id, actualQty, rejectedQty, actor}){
   const _maxPlausible = prod.plannedQty * 1.5 + 0.001; // generous over-production allowance; not a business policy, just an implausibility ceiling
   if(_aqChk.value > _maxPlausible) return {ok:false, error:`Actual quantity ${_aqChk.value} is implausibly far above the planned quantity of ${prod.plannedQty} — check for a data-entry error.`};
   if(_rqChk.value > _aqChk.value + 0.001) return {ok:false, error:`Rejected quantity ${_rqChk.value} cannot exceed actual quantity ${_aqChk.value}.`};
+  // ARCH-2026-002 Wave 2 — SOD-7: the user who created this Production Order must not be the same
+  // user who completes it, preventing one user from planning and executing an entire production run
+  // alone (Wave 2 Phase 0 finding, zero coverage across the whole execution leg). No automatic
+  // Admin/CEO exemption — see WAVE2_SOD-RESULTS.md.
+  {
+    const sod7 = checkSoD('SOD-7', {makerId: prod.createdBy, checkerId: actor.id});
+    if(sod7.violated){
+      // ERP-059B durable-failure-audit pattern — this rejection is reached inside the request's own
+      // withTransaction() boundary, which restores the FULL DB snapshot (including a bare logAudit()
+      // call) on any {ok:false} return. durableFailureAudit is the one payload proven to survive that
+      // rollback, logged by withTransaction() itself AFTER the restore.
+      return {ok:false, error:`SoD violation: the user who created Production Order ${prod.prodNo} cannot also complete it (rule SOD-7).`,
+        durableFailureAudit:{type:'SoDViolationBlocked', ruleId:'SOD-7', productionOrderId:id, reason:'Same user created the Production Order and is attempting to complete it.'}};
+    }
+  }
   prod.actualQty = _aqChk.value; prod.rejectedQty = _rqChk.value; prod.acceptedQty = _aqChk.value - _rqChk.value;
   prod.completionDate = new Date().toISOString().slice(0,10); prod.completedBy = actor.id;
   prod.status = (_aqChk.value >= prod.plannedQty - 0.001) ? 'Completed' : 'PartiallyCompleted';
@@ -6490,11 +7111,24 @@ function createQCChecklist({projectId, installationId, items, inspector, actor})
     items: items.map(i=>({...i, passFail:i.passFail||'Pending'})), inspector:inspector||actor.id, date:new Date().toISOString().slice(0,10),
     status:'Pending', createdBy:actor.id, createdAt:nowIso() };
   DB.qcChecklists.push(qc); save();
+  // ARCH-2026-002 Wave 2 — W2-2: checklist CREATION was previously unaudited (only submitQCResult()
+  // logged an event) — a real traceability gap disclosed in Wave 2 Phase 0, closed here.
+  logAudit({type:'QCChecklistCreated', qcId:qc.id, projectId, installationId:installationId||null, itemCount:items.length, userId:actor.id, role:actor.role});
   return {ok:true, qc};
 }
 function submitQCResult({id, items, actor}){
   const qc = DB.qcChecklists.find(x=>x.id===id);
   if(!qc) return {ok:false, error:'QC checklist not found.'};
+  // ARCH-2026-002 Wave 2 — SOD-10: the user who created this QC checklist must not be the same user
+  // who submits its Pass/Fail result — prevents self-attestation on a control that directly gates
+  // Handover. No automatic Admin/CEO exemption.
+  {
+    const sod10 = checkSoD('SOD-10', {makerId: qc.createdBy, checkerId: actor.id});
+    if(sod10.violated){
+      return {ok:false, error:`SoD violation: the user who created QC checklist ${qc.qckNo||id} cannot also submit its result (rule SOD-10).`,
+        durableFailureAudit:{type:'SoDViolationBlocked', ruleId:'SOD-10', qcId:id, reason:'Same user created the QC checklist and is attempting to submit its result.'}};
+    }
+  }
   // ERP AUDIT FIX (ERP-032, Critical, part 2 — defense in depth) — createQCChecklist() now refuses
   // to create an empty checklist, but this is the second, independent path that could still reach
   // the same vacuous-truth bug: `[].every(...)` is TRUE, so replacing an existing checklist's items
@@ -7188,6 +7822,19 @@ function closeCAPACase({id, actor}){
   if(!capa) return {ok:false, error:'CAPA case not found.'};
   if(capa.status!=='EFFECTIVENESS') return {ok:false, error:`Cannot close — "${capa.status}", not EFFECTIVENESS.`};
   if(capa.effectivenessResult!=='Effective') return {ok:false, error:`Cannot close — effectiveness check result was "${capa.effectivenessResult}", not Effective. A CAPA whose action did not prove effective must be reopened/re-actioned, not closed.`};
+  // ARCH-2026-002 Wave 2 — SOD-11: the user who confirmed this CAPA's effectiveness must not be the
+  // same user who closes it — completes the owner/verifier/effectiveness-checker separation chain
+  // this CAPA state machine already enforces at every earlier step. No automatic Admin/CEO exemption
+  // (this one new rule uses the formal checkSoD() engine per this CR's own instruction, unlike the
+  // 2 earlier CAPA checks above which use the older inline pattern — a deliberate, disclosed choice,
+  // see WAVE2_SOD-RESULTS.md).
+  {
+    const sod11 = checkSoD('SOD-11', {makerId: capa.effectivenessCheckedBy, checkerId: actor.id});
+    if(sod11.violated){
+      return {ok:false, error:`SoD violation: the user who confirmed CAPA ${capa.capaNo||id}'s effectiveness cannot also close it (rule SOD-11).`,
+        durableFailureAudit:{type:'SoDViolationBlocked', ruleId:'SOD-11', capaId:id, reason:'Same user confirmed CAPA effectiveness and is attempting to close the case.'}};
+    }
+  }
   capa.status='CLOSED'; capa.closedBy=actor.id; save();
   logAudit({type:'CAPAClosed', capaId:id, userId:actor.id, role:actor.role});
   return {ok:true, capa};
@@ -8951,7 +9598,7 @@ function importJournalCSV({csvText, date, narration, branchId, createdByUserId, 
   if(!sim.balanced) errors.push(`Import is not balanced — total debit ₹${sim.totalDebit.toFixed(2)} ≠ total credit ₹${sim.totalCredit.toFixed(2)}.`);
   const batch = { id:'IMP-'+String(DB.importBatches.length+1).padStart(3,'0'), rowCount:parsed.rows.length, errors, valid:errors.length===0, createdBy:createdByUserId, createdAt:nowIso() };
   if(errors.length){ DB.importBatches.push(batch); save(); return {ok:false, error:'Import validation failed.', errors, batch}; }
-  const draft = createDraft({ date, docDate:date, narration:narration||'Imported Journal Entry', docTypeCode:'JE', sourceType:'CSV Import', docCategory:'JournalVoucher',
+  const draft = createDraft({ date, docDate:date, narration:narration||'Imported Journal Voucher', docTypeCode:'JE', sourceType:'CSV Import', docCategory:'JournalVoucher',
     lines, branchId, createdByUserId, createdByRole });
   if(draft.ok){ batch.draftId = draft.draft.id; }
   DB.importBatches.push(batch); save();
@@ -9274,7 +9921,23 @@ function disposeFixedAsset({assetId, disposalDate, disposalProceeds, reason, ove
   const accumDep = assetAccumulatedDepreciation(assetId);
   const nbv = r2(asset.cost - accumDep);
   const gain = r2(proceeds - nbv); // positive = gain, negative = loss
-  const lines = [ {account:'1450', debit:accumDep, credit:0, projectId:asset.projectId} ]; // remove accumulated depreciation
+  // ARCH-2026-002 Wave 3 hardening — DEFECT FOUND & FIXED (live-proven while building this wave's
+  // "reversal of a lifecycle transaction" / historical-asset edge-case tests): this 1450 line used
+  // to be pushed UNCONDITIONALLY, even when accumDep is exactly 0 — which produces a line with
+  // debit:0/credit:0, and postJournalEntry() correctly REJECTS any line with neither a debit nor a
+  // credit ("every line must have exactly one positive side"). Live-reproduced on the most ordinary
+  // possible case: capitalize an asset, then dispose it before ever posting a single depreciation
+  // period (accumDep===0 by construction) — disposeFixedAsset() unconditionally 400'd with that
+  // generic GL-validation error, which is genuinely confusing/wrong for a disposal that has nothing
+  // whatsoever to do with GL line construction, not an accounting-policy rejection. The exact same
+  // reproduction path exists after a legitimate depreciation reversal (see WAVE3_ASSET-RESULTS.md)
+  // brings accumDep back to 0 pre-disposal. Fixed using the SAME already-established pattern this
+  // very function already uses two lines below for `proceeds` and `gain` (conditionally include a
+  // line only when its amount is genuinely nonzero) — not a new idiom, the one missed spot brought
+  // into line with the rest of the function. Double-entry balance is unaffected either way, since a
+  // debit:0/credit:0 line never contributed anything to totalDebit/totalCredit in the first place.
+  const lines = [];
+  if(accumDep>0) lines.push({account:'1450', debit:accumDep, credit:0, projectId:asset.projectId}); // remove accumulated depreciation
   if(proceeds>0) lines.push({account:'1000', debit:proceeds, credit:0, projectId:asset.projectId}); // cash received
   if(gain<0) lines.push({account:'5500', debit:-gain, credit:0, projectId:asset.projectId}); // loss (debit — an expense)
   lines.push({account:'1400', debit:0, credit:asset.cost, projectId:asset.projectId}); // remove full cost
@@ -9434,10 +10097,47 @@ function classifyBankLine(row, hints){
   if(/Labour|putty work|partition|Painting work|frame work/i.test(row.rawDescription)) return 'Labour Payment (confirm)';
   return 'Unknown (confirm)';
 }
-function createBankImportBatch({bankAccountId, csvText, statementAccountNumber, label, actor}){
+// ARCH-2026-002 Wave 1 — Bank Reconciliation consolidation, adapter 2 of 2. Parses the plain generic
+// format (Date,Reference,Description,Amount,Type[Debit/Credit]) this Lab's legacy `importBankStatement()`
+// accepted, producing rows in the SAME shape `parseICICICsv()` produces so both adapters feed one
+// engine. All-or-nothing validation (matches the legacy function's own original behavior exactly —
+// a single bad row rejects the whole import, unlike the ICICI adapter's per-row skip-and-continue).
+function parseGenericBankCsv(csvText, bankAccountId){
+  const lines = String(csvText||'').split(/\r?\n/).filter(l=>l.trim().length);
+  if(lines.length<2) return {rows:[], errors:['CSV needs a header row plus at least one data row.']};
+  const header = lines[0].split(',').map(h=>h.trim());
+  const required = ['Date','Reference','Amount','Type'];
+  const missingCols = required.filter(r=>!header.includes(r));
+  if(missingCols.length) return {rows:[], errors:[`Missing required column "${missingCols[0]}". Expected: Date,Reference,Description,Amount,Type(Debit/Credit) — BANK FORMAT CONFIGURATION REQUIRED if your real statement export differs.`]};
+  const rawRows = lines.slice(1).map(l=>{ const c=l.split(','); const row={}; header.forEach((h,i)=>row[h]=(c[i]||'').trim()); return row; });
+  const errors = [];
+  rawRows.forEach((row,idx)=>{
+    if(!row.Date) errors.push(`Row ${idx+1}: missing Date.`);
+    if(!row.Amount || isNaN(+row.Amount)) errors.push(`Row ${idx+1}: invalid Amount.`);
+    if(!['Debit','Credit'].includes(row.Type)) errors.push(`Row ${idx+1}: Type must be Debit or Credit.`);
+  });
+  if(errors.length) return {rows:[], errors};
+  const rows = rawRows.map((row,idx)=>({
+    rowNo: idx+1,
+    bankTxnId: 'GEN-'+crypto.createHash('sha1').update(`${bankAccountId}|${row.Date}|${row.Reference}|${row.Amount}|${row.Type}`).digest('hex').slice(0,16),
+    valueDate: row.Date, postedDate: row.Date, postedTime: null, chequeNo: null,
+    reference: row.Reference || '',
+    rawDescription: [row.Reference, row.Description].filter(Boolean).join(' — ') || row.Description || row.Reference || '(no description)',
+    crDr: row.Type==='Credit' ? 'CR' : 'DR',
+    amount: r2(+row.Amount), availableBalance: null
+  }));
+  return {rows, errors:[]};
+}
+// `format` selects the INPUT ADAPTER only
+// (`'ICICI'` default, or `'GENERIC'` for the plain Date/Reference/Description/Amount/Type format this
+// Lab's own legacy `importBankStatement()` used) — everything downstream of parsing (duplicate
+// detection, line creation, matching, posting, reconciliation) is the ONE shared engine. Adding a
+// format must never mean adding a second reconciliation engine.
+function createBankImportBatch({bankAccountId, csvText, statementAccountNumber, label, format, actor}){
   if(!bankAccountId || !DB.bankAccounts.find(b=>b.id===bankAccountId)) return {ok:false, error:'A valid bankAccountId is required.'};
-  const {rows, errors:parseErrors} = parseICICICsv(csvText);
-  if(!rows.length) return {ok:false, error:'No valid transaction rows found. '+parseErrors.join(' ')};
+  const fmt = format==='GENERIC' ? 'GENERIC' : 'ICICI';
+  const {rows, errors:parseErrors} = fmt==='GENERIC' ? parseGenericBankCsv(csvText, bankAccountId) : parseICICICsv(csvText);
+  if(!rows.length) return {ok:false, error:'No valid transaction rows found. '+parseErrors.join(' '), errors:parseErrors};
   const bankAccount = DB.bankAccounts.find(b=>b.id===bankAccountId);
   const accountNumberMismatch = statementAccountNumber && bankAccount.accountNumberLast4 && !statementAccountNumber.endsWith(bankAccount.accountNumberLast4)
     ? `Statement account number "${statementAccountNumber}" does not match the configured bank account's last 4 digits ("${bankAccount.accountNumberLast4}") — UNRESOLVED, flagged for accountant/CEO confirmation. Import proceeds against the selected bank account regardless.`
@@ -9456,18 +10156,25 @@ function createBankImportBatch({bankAccountId, csvText, statementAccountNumber, 
   // of severity, per the mission's explicit "one fixed function does not close the defect class" rule.
   return withTransaction(actor, {name:'createBankImportBatch'}, () => {
   const batch = { id: nextId(DB.bankImportBatches, 'BIB-', 4), bankAccountId, statementAccountNumber: statementAccountNumber||null,
-    accountNumberMismatch, label: label||'', importedBy:actor.id, importedByRole:actor.role, importedAt: nowIso(),
+    accountNumberMismatch, label: label||'', sourceFormat: fmt, importedBy:actor.id, importedByRole:actor.role, importedAt: nowIso(),
     rowCount: rows.length, parseErrors, duplicateCount:0, errorCount:0 };
   DB.bankImportBatches.push(batch);
 
   // §15 — running balance validation. Opening balance derived from the FIRST row (balance after
   // that row, minus/plus its own movement) — the statement itself never states an explicit
-  // opening balance line, exactly like a real ICICI export.
-  let running = rows[0].crDr==='CR' ? r2(rows[0].availableBalance - rows[0].amount) : r2(rows[0].availableBalance + rows[0].amount);
+  // opening balance line, exactly like a real ICICI export. The GENERIC adapter (Wave 1) carries no
+  // balance column at all — `availableBalance` is null for every row in that case, so running-balance
+  // validation is skipped (not failed): `balanceMatches` is `null` (not applicable), never `false`,
+  // for those lines.
+  const hasBalanceData = rows[0].availableBalance != null;
+  let running = hasBalanceData ? (rows[0].crDr==='CR' ? r2(rows[0].availableBalance - rows[0].amount) : r2(rows[0].availableBalance + rows[0].amount)) : null;
   const createdLines = [];
   rows.forEach(row=>{
-    running = row.crDr==='CR' ? r2(running + row.amount) : r2(running - row.amount);
-    const balanceMatches = Math.abs(running - row.availableBalance) < 0.02;
+    let balanceMatches = null;
+    if(hasBalanceData){
+      running = row.crDr==='CR' ? r2(running + row.amount) : r2(running - row.amount);
+      balanceMatches = Math.abs(running - row.availableBalance) < 0.02;
+    }
     const hints = extractDescriptionHints(row.rawDescription);
     // §14 — duplicate detection by Transaction ID across ALL prior batches (not just this one),
     // never by description alone.
@@ -9475,19 +10182,20 @@ function createBankImportBatch({bankAccountId, csvText, statementAccountNumber, 
     let status = 'Imported';
     if(isDuplicate) status = 'Duplicate';
     else if(hints.isReturn) status = 'Returned';
-    const line = { id: nextId(DB.bankImportLines, 'BIL-', 5), batchId:batch.id, bankAccountId,
+    const line = { id: nextId(DB.bankImportLines, 'BIL-', 5), batchId:batch.id, bankAccountId, sourceFormat: fmt,
       rowNo:row.rowNo, bankTxnId:row.bankTxnId, valueDate:row.valueDate, postedDate:row.postedDate, postedTime:row.postedTime,
-      chequeNo:row.chequeNo, rawDescription:row.rawDescription, normalizedDescription: row.rawDescription.replace(/\s+/g,' ').trim(),
+      chequeNo:row.chequeNo, reference: row.reference||null, rawDescription:row.rawDescription, normalizedDescription: row.rawDescription.replace(/\s+/g,' ').trim(),
       crDr:row.crDr, amount:row.amount, statementBalance:row.availableBalance, computedRunningBalance:running, balanceMatches,
       extractedHints:hints, suggestedClassification: classifyBankLine(row, hints),
       status, matchedEntryId:null, matchedDocumentType:null, matchConfidence:null,
       isReturned: hints.isReturn, returnOfLineId:null, excludeReason:null, postedEntryId:null,
+      migratedFromLegacyId: null,
       duplicateOfLineId: isDuplicate ? DB.bankImportLines.find(l=>l.bankTxnId===row.bankTxnId).id : null,
       createdAt: nowIso() };
     DB.bankImportLines.push(line);
     createdLines.push(line);
     if(isDuplicate) batch.duplicateCount++;
-    if(!balanceMatches) batch.errorCount++;
+    if(balanceMatches===false) batch.errorCount++;
   });
   // §13 — link each Returned line back to its ORIGINAL transaction by matching the UTR embedded
   // in the return's own description against an earlier line's bankTxnId/UTR — proven possible on
@@ -9558,16 +10266,30 @@ function markBankImportLineReturned({lineId, returnOfLineId, actor}){
 }
 // "Allocate" (§17) — the ONE action that actually creates a real accounting entry from a bank
 // line, through the SAME shared engine, never a parallel posting path. The accountant chooses the
-// OTHER side of the entry (an account); the Bank side (1000) is always automatic and correct.
+// OTHER side of the entry (an account); the Bank side resolves to THIS LINE'S OWN bank account's
+// configured GL code.
+// Phase 39 CRITICAL FIX — found live during Banking validation: this function hardcoded the Bank
+// side to account '1000' unconditionally, ignoring the line's own `bankAccountId` entirely. That
+// was correct only BEFORE Phase 24 Part A4 introduced real per-bank-account GL segregation for
+// postCustomerReceipt()/postSupplierPayment()/createBankTransfer() (each resolves its bank side to
+// that specific account's own `glAccount` — see those functions immediately above/below) — this
+// sibling function was never updated to match and kept posting every allocation to the shared
+// account 1000 regardless of which bank account the imported statement actually belonged to. Live-
+// proven: allocating a line imported against a bank account whose glAccount is NOT '1000' silently
+// misposted the GL entry to account 1000 (unrelated to the real bank) while that bank account's own
+// balance never moved — permanently breaking reconciliation for any non-default bank/cash account.
+// Fixed by resolving the SAME way the three sibling functions already do, not a new mechanism.
 function postBankImportLine({lineId, glAccount, projectId, customerId, vendorId, narration, overrideReason, actor}){
   { const _a = assertCanPostBankImportLine(actor); if(!_a.ok) return _a; }
   const line = DB.bankImportLines.find(l=>l.id===lineId);
   if(!line) return {ok:false, error:'Bank import line not found.'};
   if(['Posted','Duplicate','Excluded'].includes(line.status)) return {ok:false, error:`Cannot post — line is "${line.status}".`};
   if(!glAccount || !DB.accounts.find(a=>a.id===glAccount)) return {ok:false, error:'A valid GL account is required for the other side of this entry.'};
+  const _bankAcct = DB.bankAccounts.find(b=>b.id===line.bankAccountId);
+  const bankGlAccount = _bankAcct ? _bankAcct.glAccount : '1000';
   const lines = line.crDr==='CR'
-    ? [ {account:'1000', debit:line.amount, credit:0, projectId, customerId, vendorId}, {account:glAccount, debit:0, credit:line.amount, projectId, customerId, vendorId} ]
-    : [ {account:glAccount, debit:line.amount, credit:0, projectId, customerId, vendorId}, {account:'1000', debit:0, credit:line.amount, projectId, customerId, vendorId} ];
+    ? [ {account:bankGlAccount, debit:line.amount, credit:0, projectId, customerId, vendorId}, {account:glAccount, debit:0, credit:line.amount, projectId, customerId, vendorId} ]
+    : [ {account:glAccount, debit:line.amount, credit:0, projectId, customerId, vendorId}, {account:bankGlAccount, debit:0, credit:line.amount, projectId, customerId, vendorId} ];
   const _jesLenBeforeBIL = DB.journalEntries.length;
   const result = postJournalEntry({ date:line.valueDate, narration:narration||`Bank import allocation — ${line.rawDescription.slice(0,80)}`,
     sourceType:'BankImportAllocation', sourceId:line.id, voucherNo:nextDocNumber('JE', line.valueDate), docCategory:'BankImportAllocation',
@@ -9614,7 +10336,9 @@ function bankImportReconciliationSummary(bankAccountId){
   const outstandingPayments = lines.filter(l=>l.crDr==='DR' && !['Posted','Reconciled','Excluded','Returned'].includes(l.status));
   const unmatched = lines.filter(l=>l.status==='Imported');
   const returned = lines.filter(l=>l.isReturned);
-  const balanceMismatches = lines.filter(l=>!l.balanceMatches);
+  // Wave 1 fix: `balanceMatches` is `null` (not applicable) for GENERIC-format/migrated lines with
+  // no statement balance column — those must never be counted as mismatches (===false, not falsy).
+  const balanceMismatches = lines.filter(l=>l.balanceMatches===false);
   return { bankAccountId, statementBalance, erpBankBalance,
     difference: statementBalance!==null ? r2(statementBalance - erpBankBalance) : null,
     outstandingDeposits: outstandingDeposits.map(l=>({id:l.id, date:l.valueDate, amount:l.amount, description:l.normalizedDescription})),
@@ -10380,67 +11104,118 @@ function createBankTransfer({fromAccountId, toAccountId, amount, date, narration
   logAudit({type:'BankTransferPosted', fromAccountId, toAccountId, amount:+amount, entryId:result.entry.id, userId:actor.id, role:actor.role});
   return {ok:true, entry:result.entry};
 }
-// CSV format (generic, since no real ICICI statement export was supplied — the exact real
-// format is BANK FORMAT CONFIGURATION REQUIRED, documented not guessed): Date,Reference,
-// Description,Amount,Type(Debit/Credit). Import is metadata-only — it creates UNRECONCILED
-// statement lines, never a GL posting of any kind.
+// ============================================================
+// ARCH-2026-002 Wave 1 — Bank Reconciliation consolidation (Phase 0 finding: 2 parallel, independently-
+// wired, both-live subsystems existed here — `DB.bankStatementLines`/this legacy generic-CSV path, and
+// `DB.bankImportLines`/the newer ICICI-aware path). Target architecture (per the authorizing CR):
+// ONE Bank Reconciliation domain/service; import formats are ADAPTERS feeding it, never a second
+// engine. `DB.bankStatementLines` is now a FROZEN HISTORICAL ARCHIVE — nothing writes to it below this
+// point; `migrateLegacyBankStatementLines()` copies its pre-existing records (additively, non-
+// destructively) into the unified `DB.bankImportLines` engine, and the 4 functions below become thin,
+// behavior-preserving compatibility wrappers over that one engine so every existing route
+// (`/api/bank-statement/*`) and the existing "Bank Recon" UI screen keep working unmodified, while now
+// reading/writing the SAME single source of truth the "Bank Import" screen already used.
+// ============================================================
+
+// Maps a unified `bankImportLines` record back to the legacy `bankStatementLines` field shape
+// (`date`/`description`/`type`/etc.) so the existing "Bank Recon" UI screen's rendering code needs no
+// change. Read-only presentation mapping — never used for storage.
+function _toLegacyBankLineShape(bil){
+  return {
+    id: bil.id, bankAccountId: bil.bankAccountId,
+    date: bil.valueDate, reference: bil.reference || '', description: bil.rawDescription || '',
+    amount: bil.amount, type: bil.crDr==='CR' ? 'Credit' : 'Debit',
+    status: bil.status==='Reconciled' ? 'Reconciled' : 'Unmatched',
+    matchedEntryId: bil.matchedEntryId, reconciledDate: bil.status==='Reconciled' ? (bil.reconciledDate||null) : null,
+    reconciledBy: bil.status==='Reconciled' ? (bil.reconciledBy||null) : null,
+    importedBy: bil.importedBy||null, importedAt: bil.createdAt
+  };
+}
+
+// Idempotent — safe to call more than once (e.g. on every server start, or manually). Skips any legacy
+// line already migrated (tracked via `migratedFromLegacyId`). Never modifies or deletes
+// `DB.bankStatementLines` — that collection remains the permanent, untouched historical record.
+function migrateLegacyBankStatementLines({actor}){
+  const toMigrate = DB.bankStatementLines.filter(bsl => !DB.bankImportLines.some(bil => bil.migratedFromLegacyId===bsl.id));
+  if(!toMigrate.length) return {ok:true, migratedCount:0, alreadyMigratedCount:DB.bankStatementLines.length};
+  return withTransaction(actor, {name:'migrateLegacyBankStatementLines'}, () => {
+    let migrationBatch = DB.bankImportBatches.find(b=>b.sourceFormat==='LEGACY_MIGRATION');
+    if(!migrationBatch){
+      migrationBatch = { id: nextId(DB.bankImportBatches,'BIB-',4), bankAccountId:null, statementAccountNumber:null,
+        accountNumberMismatch:null, label:'Legacy bankStatementLines migration (ARCH-2026-002 Wave 1)',
+        sourceFormat:'LEGACY_MIGRATION', importedBy:actor.id, importedByRole:actor.role, importedAt:nowIso(),
+        rowCount:0, parseErrors:[], duplicateCount:0, errorCount:0 };
+      DB.bankImportBatches.push(migrationBatch);
+    }
+    const migrated = toMigrate.map(bsl=>{
+      const entry = bsl.matchedEntryId ? DB.journalEntries.find(e=>e.id===bsl.matchedEntryId) : null;
+      const line = { id: nextId(DB.bankImportLines,'BIL-',5), batchId:migrationBatch.id, bankAccountId:bsl.bankAccountId, sourceFormat:'LEGACY_MIGRATION',
+        rowNo:null, bankTxnId:'MIG-'+bsl.id, valueDate:bsl.date, postedDate:bsl.date, postedTime:null, chequeNo:null,
+        reference:bsl.reference||'', rawDescription:bsl.description||'', normalizedDescription:(bsl.description||'').replace(/\s+/g,' ').trim(),
+        crDr: bsl.type==='Credit' ? 'CR' : 'DR', amount:bsl.amount, statementBalance:null, computedRunningBalance:null, balanceMatches:null,
+        extractedHints:extractDescriptionHints(bsl.description||''), suggestedClassification:'Migrated (legacy)',
+        status: bsl.status==='Reconciled' ? 'Reconciled' : 'Imported',
+        matchedEntryId: bsl.matchedEntryId||null, matchedDocumentType: entry ? (entry.docCategory||entry.sourceType||null) : null, matchConfidence:null,
+        isReturned:false, returnOfLineId:null, excludeReason:null, postedEntryId:null,
+        migratedFromLegacyId: bsl.id, reconciledDate: bsl.reconciledDate||null, reconciledBy: bsl.reconciledBy||null,
+        createdAt: bsl.importedAt||nowIso() };
+      DB.bankImportLines.push(line);
+      migrationBatch.rowCount++;
+      return line;
+    });
+    logAudit({type:'LegacyBankStatementLinesMigrated', count:migrated.length, migrationBatchId:migrationBatch.id, userId:actor.id, role:actor.role});
+    return {ok:true, migratedCount:migrated.length, alreadyMigratedCount:DB.bankStatementLines.length-migrated.length, lines:migrated};
+  });
+}
+
+// Compatibility wrapper — delegates to the unified `createBankImportBatch()` engine with the GENERIC
+// adapter. Preserves the exact old `{ok, lines}` / `{ok:false, error, errors}` response shape the
+// existing "Bank Recon" UI screen already expects, so that screen needs no change.
 function importBankStatement({bankAccountId, csvText, actor}){
   const ba = DB.bankAccounts.find(b=>b.id===bankAccountId);
   if(!ba) return {ok:false, error:'Bank account not found.'};
-  const lines = (csvText||'').split(/\r?\n/).filter(l=>l.trim().length);
-  if(lines.length<2) return {ok:false, error:'CSV needs a header row plus at least one data row.'};
-  const header = lines[0].split(',').map(h=>h.trim());
-  const required = ['Date','Reference','Amount','Type'];
-  for(const r of required) if(!header.includes(r)) return {ok:false, error:`Missing required column "${r}". Expected: Date,Reference,Description,Amount,Type(Debit/Credit) — BANK FORMAT CONFIGURATION REQUIRED if your real statement export differs.`};
-  const rows = lines.slice(1).map(l=>{ const c=l.split(','); const row={}; header.forEach((h,i)=>row[h]=(c[i]||'').trim()); return row; });
-  const errors = [];
-  rows.forEach((row,idx)=>{
-    if(!row.Date) errors.push(`Row ${idx+1}: missing Date.`);
-    if(!row.Amount || isNaN(+row.Amount)) errors.push(`Row ${idx+1}: invalid Amount.`);
-    if(!['Debit','Credit'].includes(row.Type)) errors.push(`Row ${idx+1}: Type must be Debit or Credit.`);
-  });
-  if(errors.length) return {ok:false, error:'Bank statement import validation failed.', errors};
-  const created = rows.map(row=>{
-    const line = { id: nextId(DB.bankStatementLines, 'BSL-', 5), bankAccountId, date:row.Date, reference:row.Reference||'', description:row.Description||'',
-      amount:r2(+row.Amount), type:row.Type, status:'Unmatched', matchedEntryId:null, reconciledDate:null, reconciledBy:null, importedBy:actor.id, importedAt:nowIso() };
-    DB.bankStatementLines.push(line); return line;
-  });
-  save();
-  logAudit({type:'BankStatementImported', bankAccountId, count:created.length, userId:actor.id, role:actor.role});
-  return {ok:true, lines:created};
+  const result = createBankImportBatch({bankAccountId, csvText, format:'GENERIC', actor});
+  if(!result.ok) return {ok:false, error: result.errors ? 'Bank statement import validation failed.' : result.error, errors: result.errors};
+  return {ok:true, lines: result.lines};
 }
+// Compatibility wrapper — resolves either a real `BIL-` id or a legacy `BSL-` id (via
+// `migratedFromLegacyId`), then delegates to the unified engine's match+reconcile pair (a `Posted`
+// line — already GL-allocated through the newer engine — is reconciled directly, matching being
+// inapplicable to a line that already names its own posted entry). Returns the legacy line shape.
 function matchBankStatementLine({lineId, entryId, actor}){
-  const line = DB.bankStatementLines.find(l=>l.id===lineId);
-  if(!line) return {ok:false, error:'Statement line not found.'};
-  if(line.status==='Reconciled') return {ok:false, error:'Already reconciled.'};
-  const entry = DB.journalEntries.find(e=>e.id===entryId);
-  if(!entry) return {ok:false, error:'Accounting document not found.'};
-  const bankLine = entry.lines.find(l=>l.account==='1000');
-  if(!bankLine) return {ok:false, error:'That accounting document has no Bank (1000) line — cannot match.'};
-  // Bank-statement Debit/Credit is from the BANK's perspective, the OPPOSITE polarity of our own
-  // GL: a statement "Credit" (money deposited into our account) is a DEBIT to our own asset
-  // account (Bank, 1000) in double-entry terms, and vice versa for a statement "Debit"
-  // (withdrawal). DEFECT FOUND & FIXED (Phase 15 smoke test) — the first version compared them
-  // with matching polarity, so every real receipt/payment failed to match.
-  const entryAmount = line.type==='Credit' ? bankLine.debit : bankLine.credit;
-  if(Math.abs(entryAmount - line.amount) > 0.01) return {ok:false, error:`Amount mismatch — statement line ₹${line.amount.toLocaleString('en-IN')} vs document ₹${entryAmount.toLocaleString('en-IN')}.`};
-  line.status = 'Reconciled'; line.matchedEntryId = entryId; line.reconciledDate = new Date().toISOString().slice(0,10); line.reconciledBy = actor.id;
-  save();
-  logAudit({type:'BankStatementLineMatched', lineId, entryId, userId:actor.id, role:actor.role});
-  return {ok:true, line};
+  let bil = DB.bankImportLines.find(l=>l.id===lineId) || DB.bankImportLines.find(l=>l.migratedFromLegacyId===lineId);
+  if(!bil) return {ok:false, error:'Statement line not found.'};
+  if(bil.status==='Reconciled') return {ok:false, error:'Already reconciled.'};
+  if(bil.status==='Posted'){
+    const r = reconcileBankImportLine({lineId:bil.id, actor});
+    if(!r.ok) return r;
+    return {ok:true, line:_toLegacyBankLineShape(r.line)};
+  }
+  const m = matchBankImportLine({lineId:bil.id, entryId, actor});
+  if(!m.ok) return m;
+  const r = reconcileBankImportLine({lineId:bil.id, actor});
+  if(!r.ok) return r;
+  return {ok:true, line:_toLegacyBankLineShape(r.line)};
 }
+// Compatibility wrapper — same id-resolution as above, delegates to the unified engine's unmatch.
 function unmatchBankStatementLine({lineId, actor}){
-  const line = DB.bankStatementLines.find(l=>l.id===lineId);
-  if(!line) return {ok:false, error:'Statement line not found.'};
-  line.status = 'Unmatched'; line.matchedEntryId = null; line.reconciledDate = null; line.reconciledBy = null;
-  save();
-  logAudit({type:'BankStatementLineUnmatched', lineId, userId:actor.id, role:actor.role});
-  return {ok:true, line};
+  let bil = DB.bankImportLines.find(l=>l.id===lineId) || DB.bankImportLines.find(l=>l.migratedFromLegacyId===lineId);
+  if(!bil) return {ok:false, error:'Statement line not found.'};
+  const r = unmatchBankImportLine({lineId:bil.id, actor});
+  if(!r.ok) return r;
+  return {ok:true, line:_toLegacyBankLineShape(r.line)};
 }
+// Compatibility wrapper — now reads the ONE unified collection for this bank account (which, after
+// migration, correctly includes every line ever imported for that account regardless of which screen
+// originally imported it — a real fix to the pre-consolidation defect where the same bank account's
+// reconciliation state was silently split across two disjoint views). Excludes Duplicate/Excluded
+// lines from both buckets (neither is a real outstanding item); Posted lines are treated as
+// outstanding/unmatched (a further `reconcile` step is still required), matching the unified engine's
+// own state machine.
 function bankReconciliationStatus(bankAccountId){
-  const lines = DB.bankStatementLines.filter(l=>l.bankAccountId===bankAccountId);
-  const matched = lines.filter(l=>l.status==='Reconciled');
-  const unmatched = lines.filter(l=>l.status==='Unmatched');
+  const lines = DB.bankImportLines.filter(l=>l.bankAccountId===bankAccountId && !['Duplicate','Excluded'].includes(l.status));
+  const matched = lines.filter(l=>l.status==='Reconciled').map(_toLegacyBankLineShape);
+  const unmatched = lines.filter(l=>l.status!=='Reconciled').map(_toLegacyBankLineShape);
   return { bankAccountId, totalLines:lines.length, matchedCount:matched.length, unmatchedCount:unmatched.length,
     unmatchedItems: unmatched, matchedItems: matched };
 }
@@ -10648,7 +11423,11 @@ function submitPurchaseRequisition({id, actor}){
 function approvePurchaseRequisition({id, actor}){
   const pr = DB.purchaseRequisitions.find(x=>x.id===id); if(!pr) return {ok:false, error:'PR not found.'};
   if(pr.status!=='Submitted') return {ok:false, error:`Cannot approve — "${pr.status}", not Submitted.`};
-  if(!PURCHASE_APPROVAL_ROLES.has(actor.role) && actor.role!=='SiteInCharge') return {ok:false, error:`Role "${actor.role}" is not authorized to approve a Purchase Requisition.`};
+  // ARCH-2026-001B — migrated to the centralized privilege engine (PurchaseRequisition.APPROVE),
+  // whose role set was read directly from PURCHASE_APPROVAL_ROLES + SiteInCharge (unchanged data,
+  // see RBAC_PRIVILEGES). The amount-threshold sub-check below is untouched (approval-authority
+  // territory, out of scope for this CR — belongs to ARCH-2026-001E).
+  if(!hasPrivilege(actor,'PurchaseRequisition.APPROVE')) return {ok:false, error:`Role "${actor.role}" is not authorized to approve a Purchase Requisition.`};
   if(pr.siteId && actor.role==='SiteInCharge'){
     const estTotal = pr.items.reduce((s,it)=>s+((+it.estimatedRate||0)*(+it.qty||0)),0);
     const limit = (DB.purchaseApprovalConfig&&DB.purchaseApprovalConfig.sitePettyDailyLimit) || 5000;
@@ -10779,7 +11558,11 @@ function submitSiteMaterialRequisition({id, actor}){
 function approveSiteMaterialRequisition({id, actor}){
   const mrs = DB.siteMaterialRequisitions.find(x=>x.id===id); if(!mrs) return {ok:false, error:'MRS not found.'};
   if(mrs.status!=='Submitted') return {ok:false, error:`Cannot approve — "${mrs.status}", not Submitted.`};
-  if(!['SiteInCharge','Purchase','FinanceManager','CEO','Admin'].includes(actor.role)) return {ok:false, error:`Role "${actor.role}" cannot approve a Site Material Requisition.`};
+  // ARCH-2026-001B — migrated to the centralized privilege engine (SiteMaterialRequisition.APPROVE),
+  // whose role set was read directly from this exact inline array (unchanged). The threshold and
+  // maker-checker sub-checks below are untouched (approval-authority / SoD territory, out of scope
+  // for this CR).
+  if(!hasPrivilege(actor,'SiteMaterialRequisition.APPROVE')) return {ok:false, error:`Role "${actor.role}" cannot approve a Site Material Requisition.`};
   const estValue = mrs.items.reduce((s,it)=>{ const m=DB.materials.find(mt=>mt.id===it.materialId); return s + ((+it.qty||0)*((m&&m.standardCost)||0)); },0);
   const limit = (DB.purchaseApprovalConfig&&DB.purchaseApprovalConfig.sitePettyDailyLimit)||5000;
   if(actor.role==='SiteInCharge' && estValue>limit) return {ok:false, error:`Estimated value ₹${estValue.toLocaleString('en-IN')} exceeds the site-petty daily limit — must be approved by Purchase/FinanceManager/CEO/Admin (SOP §8).`};
@@ -11096,6 +11879,21 @@ function executePaymentRequest({id, date, paymentMethodId, bankAccountId, overri
   if([req.maker, req.checker].includes(actor.id) && !['CEO','Admin'].includes(actor.role)){
     return {ok:false, error:'Maker-checker: execution must be a third person distinct from the maker and the approver (or CEO/Admin), per SOP §9.'};
   }
+  // ARCH-2026-001D SOD-5 — Vendor Master Maintenance vs Payment Execution. Preventive: the user who
+  // created this payment's vendor master record must not be the same user executing payment to that
+  // vendor (classic P2P fictitious-vendor control). Unlike the pre-existing maker/checker/executor
+  // check immediately above (which carries an ALREADY-APPROVED CEO/Admin exemption, unchanged by this
+  // CR), SOD-5 is a NEW rule with NO automatic Admin/CEO exemption — see
+  // ARCH-2026-001D-SOD-OPEN-DECISIONS.md for the real operational tension this creates and why no
+  // exemption was invented.
+  {
+    const vendor = DB.vendors.find(v=>v.id===req.vendorId);
+    const sod5 = checkSoD('SOD-5', {makerId: vendor && vendor.createdBy, checkerId: actor.id});
+    if(sod5.violated){
+      logAudit({type:'SoDViolationBlocked', ruleId:'SOD-5', requestId:id, vendorId:req.vendorId, userId:actor.id, role:actor.role, reason:'Same user created the vendor master and is attempting to execute payment to that vendor.'});
+      return {ok:false, error:`SoD violation: the user who created vendor "${vendor && vendor.name}" cannot also execute payment to that vendor (rule SOD-5).`};
+    }
+  }
   return withTransaction(actor, {name:'executePaymentRequest'}, () => {
     const result = postSupplierPayment({vendorId:req.vendorId, invoiceEntryId:req.invoiceEntryId, amount:req.amount, date, narration:req.narration,
       actor, overrideReason, paymentMethodId, bankAccountId, tdsCategory, tdsOptions, isTransporterPayment});
@@ -11257,6 +12055,15 @@ function returnFromJobWorker({jwoId, returnedLines, actor, overrideReason}){
   if(!['Dispatched','PartiallyReturned'].includes(jwo.status)) return {ok:false, error:`Cannot return — status is "${jwo.status}".`};
   // Phase 34 Part A — closed-project gate, via the JWO's own project.
   { const _po = assertProjectOpenForPosting(jwo.projectId, actor, {overrideReason, action:'record a job-work return'}); if(!_po.ok) return _po; }
+  // ARCH-2026-002 Wave 2 — SOD-9: the user who dispatched this Job Work Order must not be the same
+  // user who records its return — prevents one user from dispatching and self-settling alone.
+  {
+    const sod9 = checkSoD('SOD-9', {makerId: jwo.createdBy, checkerId: actor.id});
+    if(sod9.violated){
+      return {ok:false, error:`SoD violation: the user who dispatched Job Work Order ${jwo.jwoNo||jwoId} cannot also record its return (rule SOD-9).`,
+        durableFailureAudit:{type:'SoDViolationBlocked', ruleId:'SOD-9', jwoId, reason:'Same user dispatched the Job Work Order and is attempting to record its return.'}};
+    }
+  }
   const errors = [];
   (returnedLines||[]).forEach((rl,idx)=>{
     const line = jwo.lines[idx]; if(!line){ errors.push(`Line ${idx}: no matching dispatch line.`); return; }
@@ -11292,6 +12099,14 @@ function recordJobWorkScrap({jwoId, lineIndex, qty, disposition, taxHandlingRef,
   const jwo = DB.jobWorkOrders.find(x=>x.id===jwoId); if(!jwo) return {ok:false, error:'Job Work Order not found.'};
   // Phase 34 Part A — closed-project gate, via the JWO's own project.
   { const _po = assertProjectOpenForPosting(jwo.projectId, actor, {overrideReason, action:'record job-work scrap'}); if(!_po.ok) return _po; }
+  // ARCH-2026-002 Wave 2 — SOD-9, same rule as returnFromJobWorker() — scrap is also a settlement action.
+  {
+    const sod9 = checkSoD('SOD-9', {makerId: jwo.createdBy, checkerId: actor.id});
+    if(sod9.violated){
+      return {ok:false, error:`SoD violation: the user who dispatched Job Work Order ${jwo.jwoNo||jwoId} cannot also record its scrap (rule SOD-9).`,
+        durableFailureAudit:{type:'SoDViolationBlocked', ruleId:'SOD-9', jwoId, reason:'Same user dispatched the Job Work Order and is attempting to record its scrap.'}};
+    }
+  }
   if(!JOB_WORK_SCRAP_DISPOSITIONS.includes(disposition)) return {ok:false, error:`Disposition must be one of: ${JOB_WORK_SCRAP_DISPOSITIONS.join(', ')}.`};
   const line = jwo.lines[lineIndex]; if(!line) return {ok:false, error:'Invalid line index.'};
   const already = (jwo.returnedQtyByLine[lineIndex]||0) + (jwo.scrapQtyByLine[lineIndex]||0);
@@ -11360,6 +12175,14 @@ function directDispatchFromJobWorker({jwoId, lineIndex, qty, customerId, actor, 
   const jwo = DB.jobWorkOrders.find(x=>x.id===jwoId); if(!jwo) return {ok:false, error:'Job Work Order not found.'};
   // Phase 34 Part A — closed-project gate, via the JWO's own project.
   { const _po = assertProjectOpenForPosting(jwo.projectId, actor, {overrideReason, action:'direct-dispatch material from a job worker'}); if(!_po.ok) return _po; }
+  // ARCH-2026-002 Wave 2 — SOD-9, same rule — direct dispatch is also a settlement action.
+  {
+    const sod9 = checkSoD('SOD-9', {makerId: jwo.createdBy, checkerId: actor.id});
+    if(sod9.violated){
+      return {ok:false, error:`SoD violation: the user who dispatched Job Work Order ${jwo.jwoNo||jwoId} cannot also record a direct dispatch from it (rule SOD-9).`,
+        durableFailureAudit:{type:'SoDViolationBlocked', ruleId:'SOD-9', jwoId, reason:'Same user dispatched the Job Work Order and is attempting to record a direct dispatch from it.'}};
+    }
+  }
   const jobWorker = DB.jobWorkers.find(x=>x.id===jwo.jobWorkerId);
   const line = jwo.lines[lineIndex]; if(!line) return {ok:false, error:'Invalid line index.'};
   const already = (jwo.returnedQtyByLine[lineIndex]||0) + (jwo.scrapQtyByLine[lineIndex]||0);
@@ -11590,8 +12413,29 @@ function sopComplianceDashboard(){
 // list so a screen can render "Previous -> Current -> Next" without the user memorizing IDs.
 // ============================================================================================
 function projectDocumentTrace(projectId){
-  if(!projectId || !DB.projects.find(p=>p.id===projectId)) return {ok:false, error:'A valid project is required.'};
+  const proj = projectId ? DB.projects.find(p=>p.id===projectId) : null;
+  if(!projectId || !proj) return {ok:false, error:'A valid project is required.'};
   const chain = [];
+  // DEF-P41-02 FIX — the sales-origin side of the chain (Lead -> Estimation Request -> Costing
+  // Version -> Quotation) was completely absent: wonTransition() already preserves leadId/
+  // quotationId/estimationRequestId on the created Project, but this function never walked those
+  // fields backward, so a won project's own originating documents never appeared in its trace.
+  // Purely additive read-only trace-walking, same technique as the Phase 40 §18 AR/AP fix above.
+  if(proj.leadId){
+    const lead = DB.leads.find(l=>l.id===proj.leadId);
+    if(lead) chain.push({type:'Lead', doc:lead.id, date:lead.date||lead.createdAt?.slice(0,10), status:lead.status});
+  }
+  if(proj.estimationRequestId){
+    const er = DB.estimationRequests.find(e=>e.id===proj.estimationRequestId);
+    if(er) chain.push({type:'Estimation Request', doc:er.id, date:er.requestedDate||er.createdAt?.slice(0,10), status:er.status, previous: proj.leadId});
+    DB.costingVersions.filter(c=>c.estimationRequestId===proj.estimationRequestId).forEach(c=>{
+      chain.push({type:'Costing Version', doc:c.id, date:c.createdAt?.slice(0,10), status:`Version ${c.version}`, previous: er?er.id:undefined, amount:c.sellingPrice});
+    });
+  }
+  if(proj.quotationId){
+    const q = DB.quotations.find(x=>x.id===proj.quotationId);
+    if(q) chain.push({type:'Quotation', doc:q.quotationNo||q.id, date:q.date, status:q.status, previous: proj.costingVersionId || (q.costingVersionId) || proj.estimationRequestId || proj.leadId, amount:q.finalPrice});
+  }
   DB.purchaseRequisitions.filter(p=>p.projectId===projectId).forEach(pr=>{
     chain.push({type:'Purchase Requisition', doc:pr.prNo||pr.id, date:pr.createdAt?.slice(0,10), status:pr.status});
     DB.purchaseOrders.filter(po=>po.purchaseRequisitionId===pr.id).forEach(po=>{
@@ -11611,6 +12455,32 @@ function projectDocumentTrace(projectId){
     return bill && bill.lines.some(l=>l.projectId===projectId);
   }).forEach(pq=>{
     chain.push({type:'Payment Request', doc:pq.id, date:pq.createdAt?.slice(0,10), status:pq.status});
+  });
+  // Phase 40 §18 FIX — the AR-payment / AP-payment / clearing / settlement side of the chain was
+  // completely absent: this function previously never walked a Customer Invoice to its Receipt, or
+  // a Supplier Bill to its actual Payment execution and Clearing record (the Payment Request block
+  // immediately above lists requests as a flat, unlinked list — it never shows whether or how one
+  // was actually settled). Closes Phase 39's own disclosed traceability gap (see
+  // PHASE39_DOCUMENT_TRACEABILITY_REPORT.md / PHASE39_FINAL_VERDICT.md) using ONLY the existing,
+  // already-correct `DB.clearings` ledger (the same one applyClearing() has written to since Phase
+  // 6/7) — no new data structure, no new posting path, purely additive read-only trace-walking.
+  DB.journalEntries.filter(je=>je.docCategory==='CustomerInvoice' && je.lines.some(l=>l.projectId===projectId)).forEach(inv=>{
+    chain.push({type:'Customer Invoice', doc:inv.voucherNo||inv.id, date:inv.date, status: inv.reversedByEntryId?'Reversed':'Posted'});
+    DB.clearings.filter(c=>c.type==='AR' && c.invoiceEntryId===inv.id).forEach(clr=>{
+      const rcpt = DB.journalEntries.find(je=>je.id===clr.paymentEntryId);
+      chain.push({type:'Customer Receipt', doc:rcpt?rcpt.voucherNo||rcpt.id:clr.paymentEntryId, date:rcpt?rcpt.date:clr.date, status:'Posted', previous:inv.voucherNo||inv.id, amount:clr.amount});
+      chain.push({type:'AR Clearing', doc:clr.clearingDocNo||clr.id, date:clr.date, status:'Posted', previous:rcpt?rcpt.voucherNo||rcpt.id:clr.paymentEntryId, amount:clr.amount});
+    });
+  });
+  DB.journalEntries.filter(je=>je.docCategory==='SupplierInvoice' && je.lines.some(l=>l.projectId===projectId)).forEach(bill=>{
+    chain.push({type:'Supplier Bill (AP)', doc:bill.voucherNo||bill.id, date:bill.date, status: bill.reversedByEntryId?'Reversed':'Posted'});
+    DB.clearings.filter(c=>c.type==='AP' && c.invoiceEntryId===bill.id).forEach(clr=>{
+      const pay = DB.journalEntries.find(je=>je.id===clr.paymentEntryId);
+      const pq = DB.paymentApprovals.find(p=>p.paymentEntryId===clr.paymentEntryId);
+      if(pq) chain.push({type:'Payment Request (settled)', doc:pq.id, date:pq.createdAt?.slice(0,10), status:pq.status, previous:bill.voucherNo||bill.id});
+      chain.push({type:'Supplier Payment', doc:pay?pay.voucherNo||pay.id:clr.paymentEntryId, date:pay?pay.date:clr.date, status:'Posted', previous: pq?pq.id:(bill.voucherNo||bill.id), amount:clr.amount});
+      chain.push({type:'AP Clearing', doc:clr.clearingDocNo||clr.id, date:clr.date, status:'Posted', previous:pay?pay.voucherNo||pay.id:clr.paymentEntryId, amount:clr.amount});
+    });
   });
   DB.siteMaterialRequisitions.filter(m=>m.projectId===projectId).forEach(mrs=>{
     chain.push({type:'Site Material Requisition', doc:mrs.mrsNo||mrs.id, date:mrs.createdAt?.slice(0,10), status:mrs.status});
@@ -11848,8 +12718,15 @@ function materialReplenishmentReport(){
 // For a project with no linked quotation (an Admin migration-record project, created directly via
 // createProjectMaster()), plannedCost is honestly reported as null with an explicit reason — never
 // fabricated.
-function projectBudgetVarianceReport(projectId){
-  const projects = projectId ? DB.projects.filter(p=>p.id===projectId) : DB.projects;
+// ARCH-2026-002 Wave 1 fix (Phase 0 Security Baseline §3.1): this report had no project-scope filter
+// — a ProjectManager could omit `projectId` or supply another project's ID and see every project's
+// budget/commitment/actual/margin data company-wide. `hasScopeAccess()` is the SAME centralized scope
+// engine (ARCH-2026-001C) already used by `/api/projects` and every other ARCH-2026-001C-F read-filter
+// fix — no new scope dimension invented, no existing correct access (CEO/Admin/FinanceManager remain
+// company-wide) narrowed.
+function projectBudgetVarianceReport(projectId, actor){
+  let projects = projectId ? DB.projects.filter(p=>p.id===projectId) : DB.projects;
+  if(actor) projects = projects.filter(p=>hasScopeAccess(actor,'Project',p.id));
   const rows = projects.map(p=>{
     const quotation = p.quotationId ? DB.quotations.find(q=>q.id===p.quotationId) : null;
     const costingVersion = quotation && quotation.costingVersionId ? DB.costingVersions.find(c=>c.id===quotation.costingVersionId) : null;
@@ -11907,6 +12784,15 @@ module.exports = {
   withTransaction, setEnforceTransactionBoundary, getEnforceTransactionBoundary,
   assertFiniteNumber, assertPositiveFiniteNumber, assertNonNegativeFiniteNumber, assertNonZeroFiniteNumber,
   ROLES, ROLE_ACTIONS, GL_VISIBLE_ROLES,
+  // ARCH-2026-001A — RBAC foundation exports.
+  RBAC_ACTIONS, RBAC_PRIVILEGES, RBAC_DUTIES, RBAC_BUSINESS_ROLES,
+  RBAC_APPROVAL_AUTHORITIES_SEED, RBAC_SOD_RULES_SEED, checkSoD,
+  detectSoDConflicts, grantSoDException, revokeSoDException,
+  APPROVAL_TRANSACTION_TYPES, resolveApprovalAuthority,
+  effectiveDutyKeysForBusinessRole, effectivePrivilegeKeysForBusinessRole, effectivePrivilegesForUser,
+  hasPrivilege, assignUserRole, getEffectivePermissionsReport,
+  // ARCH-2026-001C — Data Scope exports.
+  hasScopeAccess, resolveResourceScope, assertScopeAccess,
   nextDocNumber, postJournalEntry, createDraft, simulateDraft, findDraft, submitDraft, approveDraft, rejectDraft, postDraft, cancelDraft, reverseEntry,
   calcTax, draftCustomerInvoice, draftSupplierInvoice, allLines, customerOpenItems, supplierOpenItems, applyClearing,
   postCustomerReceipt, postSupplierPayment, reconcileAR, reconcileAP, projectPL, AGE_BUCKETS, customerAgeing, supplierAgeing,
@@ -12014,6 +12900,8 @@ module.exports = {
   // Phase 19 §7-19 — ICICI Bank Import
   parseICICICsv, createBankImportBatch, listBankImportLines, matchBankImportLine, unmatchBankImportLine,
   excludeBankImportLine, markBankImportLineReturned, postBankImportLine, reconcileBankImportLine, bankImportReconciliationSummary,
+  // ARCH-2026-002 Wave 1 — Bank Reconciliation consolidation
+  parseGenericBankCsv, migrateLegacyBankStatementLines,
   // Phase 19 §25 — Annual Document Numbering
   financialYearKey,
   setProjectBranch, projectBranch,

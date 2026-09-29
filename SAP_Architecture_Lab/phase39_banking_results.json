@@ -1,0 +1,316 @@
+[
+  {
+    "part": "BANK",
+    "name": "GL account created for fictional Bank A",
+    "pass": true,
+    "detail": {
+      "id": "TEST39-1001"
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "GL account created for fictional Bank B (cash)",
+    "pass": true,
+    "detail": {
+      "id": "TEST39-1002"
+    }
+  },
+  {
+    "part": "BANK-NEG",
+    "name": "Unauthorized role (Purchase) creating a bank account is BLOCKED",
+    "pass": true,
+    "detail": {
+      "status": 403,
+      "error": "Role \"Purchase\" cannot manage bank accounts."
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Bank Account A created, distinct GL account, real segregation",
+    "pass": true,
+    "detail": {
+      "id": "BANK-001",
+      "glAccount": "TEST39-1001"
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Bank Account B created, distinct GL account, real segregation",
+    "pass": true,
+    "detail": {
+      "id": "BANK-002",
+      "glAccount": "TEST39-1002"
+    }
+  },
+  {
+    "part": "BANK-NEG",
+    "name": "Bank account creation with a GL account already in active use is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "GL account \"TEST39-1001\" is already used by another active bank/cash account — each account needs its OWN distinct GL account for real segregation, not a shared one."
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Customer Invoice created + fully posted (for receipt test)",
+    "pass": true,
+    "detail": {
+      "entryId": "JE-0001"
+    }
+  },
+  {
+    "part": "BANK-NEG",
+    "name": "Customer Receipt against a nonexistent bank account is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Unknown bank/cash account \"BANK-NONEXISTENT-999\"."
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Customer Receipt posted via Bank A, invoice fully cleared",
+    "pass": true,
+    "detail": {
+      "entryId": "JE-0002"
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Bank Account A balance increased by exactly the receipt amount (real segregation, not the shared 1000 account)",
+    "pass": true,
+    "detail": {
+      "before": 0,
+      "after": 94400,
+      "expectedDelta": 94400
+    }
+  },
+  {
+    "part": "BANK-NEG",
+    "name": "Further receipt against an already-fully-CLEARED invoice is BLOCKED (payment-after-clearing)",
+    "pass": true,
+    "detail": {
+      "error": "Amount exceeds the open balance of ₹0."
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Supplier Bill created + fully posted (for payment test)",
+    "pass": true,
+    "detail": {
+      "entryId": "JE-0003"
+    }
+  },
+  {
+    "part": "BANK-NEG",
+    "name": "Unauthorized role (Sales) making a supplier payment is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Role \"Sales\" is not authorized to perform this action."
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Supplier Payment posted via Bank B, bill fully cleared",
+    "pass": true,
+    "detail": {
+      "entryId": "JE-0004"
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Bank Account B balance decreased by exactly the payment amount",
+    "pass": true,
+    "detail": {
+      "before": 0,
+      "after": -59000,
+      "expectedDelta": 59000
+    }
+  },
+  {
+    "part": "BANK-NEG",
+    "name": "Further payment against an already-fully-CLEARED bill is BLOCKED (payment-after-clearing)",
+    "pass": true,
+    "detail": {
+      "error": "Amount exceeds the open balance of ₹0."
+    }
+  },
+  {
+    "part": "BANK-NEG",
+    "name": "Unauthorized role (Accountant, no pay capability) initiating a bank transfer is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Role \"Accountant\" is not authorized to perform this action."
+    }
+  },
+  {
+    "part": "BANK-NEG",
+    "name": "Bank transfer with identical source and destination account is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Source and destination accounts must be different."
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Bank Transfer A->B posted, real balanced GL entry",
+    "pass": true,
+    "detail": {
+      "entryId": "JE-0005"
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Bank A decreased by exactly the transfer amount",
+    "pass": true,
+    "detail": {
+      "before": 94400,
+      "after": 64400
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Bank B increased by exactly the transfer amount",
+    "pass": true,
+    "detail": {
+      "before": -59000,
+      "after": -29000
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Bank Transfer entry reversed, real reversing GL entry",
+    "pass": true,
+    "detail": {
+      "reversalEntryId": "JE-0006"
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "After reversal, Bank A balance returns exactly to its pre-transfer figure",
+    "pass": true,
+    "detail": {
+      "expected": 94400,
+      "actual": 94400
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "After reversal, Bank B balance returns exactly to its pre-transfer figure",
+    "pass": true,
+    "detail": {
+      "expected": -59000,
+      "actual": -59000
+    }
+  },
+  {
+    "part": "BANK-NEG",
+    "name": "Reversing an already-reversed entry is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Already reversed by JE-0006."
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Bank statement import batch #1 created, 2 lines imported",
+    "pass": true,
+    "detail": {
+      "rowCount": 2,
+      "duplicateCount": 0
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Duplicate re-import of the SAME statement correctly flags both lines as Duplicate (not silently re-imported)",
+    "pass": true,
+    "detail": {
+      "duplicateCount": 2
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Import with a statement account number NOT matching the configured bank account is flagged (accountNumberMismatch), not silently accepted or blocked",
+    "pass": true,
+    "detail": {
+      "accountNumberMismatch": "Statement account number \"XXXXXXXXXXXX9999\" does not match the configured bank account's last 4 digits (\"4491\") — UNRESOLVED, flagged for accountant/CEO confirmation. Import proceeds against the selected bank account regardless."
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Imported DR line identified for allocation",
+    "pass": true,
+    "detail": {
+      "lineId": "BIL-00001",
+      "amount": 5000
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Bank import line allocated (posted) to a real GL entry through the shared postJournalEntry() engine",
+    "pass": true,
+    "detail": {
+      "entryId": "JE-0007"
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Bank A balance decreased by exactly the allocated DR line amount",
+    "pass": true,
+    "detail": {
+      "before": 94400,
+      "after": 89400,
+      "expectedDelta": 5000
+    }
+  },
+  {
+    "part": "BANK-NEG",
+    "name": "Re-allocating an already-Posted bank import line is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Cannot post — line is \"Posted\"."
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Posted bank import line marked Reconciled",
+    "pass": true,
+    "detail": {
+      "status": "Reconciled"
+    }
+  },
+  {
+    "part": "BANK",
+    "name": "Bank reconciliation summary returned for Bank A",
+    "pass": true,
+    "detail": {
+      "status": 200,
+      "ok": true,
+      "summary": {
+        "bankAccountId": "BANK-001",
+        "statementBalance": 509000,
+        "erpBankBalance": 89400,
+        "difference": 419600,
+        "outstandingDeposits": [
+          {
+            "id": "BIL-00002",
+            "date": "2026-09-12",
+            "amount": 12000,
+            "description": "IMPS/Phase39 Customer Receipt/CUST-1"
+          },
+          {
+            "id": "BIL-00005",
+            "date": "2026-09-12",
+            "amount": 2000,
+            "description": "NEFT/Phase39 Misc/Other"
+          }
+        ],
+        "outstandingDepositsTotal": 14000,
+        "outstandingPayments": [],
+        "outstandingPaymentsTotal": 0,
+        "unmatchedCount": 2,
+        "returnedCount": 0,
+        "statementLineBalanceMismatches": []
+      }
+    }
+  }
+]

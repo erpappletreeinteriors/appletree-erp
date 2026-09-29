@@ -1,0 +1,11 @@
+Role,Primary UAT Responsibility,Can Create,Can Approve,Notable Restriction,Evidence
+Admin,System administration; backup/restore; user management,Users; Backups,Backups; Restores,Full authority -- top-tier role, no negative test applicable,PHASE_41_BACKUP_RESTORE_AUDIT.md
+CEO,Top-level business approval; final sign-off actions,Anything any role can create,Discounts above FinanceManager tier; Payment execution; Handover,Full authority -- exempted from 3-person maker-checker-executor separation by design,PHASE39_PAYMENT_APPROVAL_MATRIX_REPORT.md
+Accountant,Day-to-day bookkeeping; invoices; receipts,Customer Invoice; Customer Receipt; Journal Voucher,None (execution role, not an approval tier),Cannot self-approve own Customer Invoice,PHASE_40_SECURITY_REPORT.md
+FinanceManager,Financial approvals; discount/PO/payment approval tiers,Journal Voucher; Supplier Payment,Quotation discount 5-10%; PO up to 20L; Payment Request (checker tier),Cannot also execute a payment request it checked (unless CEO/Admin),PHASE39_PAYMENT_APPROVAL_MATRIX_REPORT.md
+ProjectManager,Project execution oversight scoped to assigned projects,Tasks; Timesheets (own projects),Installation/QC/Handover readiness actions on assigned projects,Scoped to assigned projects only -- isProjectManagerOf() checked on every action,sap_architecture_lab.md Phase 6B Revision 8
+Purchase,Procurement execution,PO; GRN; MRS approval/issue; Payment Request (maker),None (maker role for Payment Requests),Blocked from Backup/Restore/Admin actions (4/4 confirmed blocked),PHASE_41_BACKUP_RESTORE_AUDIT.md Section 12
+Sales,Lead/Quotation origination,Lead; Estimation Request; Quotation,None (cannot approve own discount),Cannot self-approve own Quotation discount,PHASE_41_ESTIMATION_QUOTATION_UAT.md step 6
+Estimator,Costing buildup,Costing Version,None,Cannot create a Quotation (Sales-only action),PHASE_41_ESTIMATION_QUOTATION_UAT.md Section 6
+SiteInCharge,Site material requisitioning; site-level operations,MRS; Site Consumption,None,Scoped to site-facing screens only,PHASE_40_SECURITY_REPORT.md
+Viewer,Read-only oversight across Dashboard/Financial Statements/Reports,None,None,11/11 write attempts blocked server-side incl. 1 real non-hidden button click,PHASE_41_VIEWER_UAT.md

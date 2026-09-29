@@ -1,0 +1,12 @@
+Phase 37 — SAP-Grade Nomenclature Audit — Pre-Change Checkpoint
+Date: 2026-09-11
+Verified independently via both `sha256sum` (Git Bash) and PowerShell `Get-FileHash -Algorithm SHA256` — identical results from both tools.
+
+e9d95d74afa32a6c0e8a5564796ff979ae67b16bdeeea77cdf2af83785ca0bc1  server/domain.js  (970,869 bytes, 12,088 lines)
+2ab744217b330ca3bda9f79a212312ad2821d42fabdfe35a98eb41f605f82033  server/server.js  (272,236 bytes, 3,379 lines)
+75886e7a6a568b5a09ff007fa9d13a82cfeec8f9d1d8f181f30abca5031c87ad  client_secure/index.html  (614,229 bytes, 6,446 lines)
+
+This checkpoint captures the exact state of the three primary application files as they stood
+immediately after Phase ERP-059C (commit d96234b), before any Phase 37 nomenclature work begins.
+No terminology change in Phase 37 is authorized until the audit (Parts 1-28), the crosswalk
+(Part 28), and the change plan (Part 29) are complete and reviewed.

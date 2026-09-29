@@ -377,7 +377,33 @@ const MODULE_TREE = [
   {module:'SALES & CRM', icon:'📇', tabs:[{tab:'leads', label:'Leads'}, {tab:'quotations', label:'Quotations'}]},
   {module:'ESTIMATION & COSTING', icon:'📐', tabs:[{tab:'estcost', label:'Estimation & Costing'}, {tab:'boms', label:'BOM'}, {tab:'bomconsumption', label:'BOM Consumption Report'}]},
   {module:'PROJECTS', icon:'🏗️', tabs:[{tab:'projects', label:'Projects'}, {tab:'project360', label:'Project 360'}, {tab:'budgetvariance', label:'Budget vs Commitment vs Actual'}, {tab:'changereq', label:'Change Requests (Variations)'}]},
-  {module:'PROCUREMENT', icon:'🛒', tabs:[{tab:'matreq', label:'Material Requirements'}, {tab:'matreqs', label:'Material Requests'}, {tab:'rfqs', label:'RFQs'}, {tab:'squotes', label:'Supplier Quotations'}, {tab:'comparisons', label:'Comparisons'}, {tab:'pos', label:'Purchase Orders'}, {tab:'grns', label:'GRNs'}, {tab:'procint', label:'Procurement Intelligence'}, {tab:'replenishment', label:'Replenishment Recommendation'}, {tab:'vendorrating', label:'Vendor Rating'}, {tab:'purchvendor', label:'Vendor-wise Purchase Report'}, {tab:'purchreq', label:'Purchase Requisitions'}]},
+  {module:'PROCUREMENT', icon:'🛒', tabs:[{tab:'matreq', label:'Material Requirements'}, {tab:'matreqs', label:'Material Requests'}, {tab:'rfqs', label:'RFQs'}, {tab:'squotes', label:'Supplier Quotations'}, {tab:'comparisons', label:'Comparisons'}, {tab:'pos', label:'Purchase Orders'}, {tab:'grns', label:'GRNs'}, {tab:'procint', label:'Procurement Intelligence'}, {tab:'replenishment', label:'Replenishment Recommendation'}, {tab:'vendorrating', label:'Vendor Rating'}, {tab:'purchvendor', label:'Vendor-wise Purchase Report'}, {tab:'purchreq', label:'Purchase Requisitions'},
+    // Phase 40 CRITICAL FIX (DEF-P40-02) — found live during browser UAT: Purchase has real,
+    // tested domain-level authority to raise a Payment Request (createPaymentRequest() has no role
+    // restriction beyond the generic route check, and this is exactly how the Payment Approval
+    // Matrix's own "Purchase Head" tier is meant to be exercised — see PHASE39_PAYMENT_APPROVAL_
+    // MATRIX_REPORT.md, where purchase1 successfully raised real payment requests via the API), but
+    // 'paymentreq' previously existed ONLY in the FINANCE module, which Purchase's ROLE_MODULES
+    // entry does not include — and, contrary to this file's own design-intent comment above
+    // MODULE_TREE ("a role without a module in its list can still reach any tab in it via an
+    // existing goto()/doclink"), NO such deep-link to 'paymentreq' existed anywhere in the app.
+    // Purchase had no way to find this screen at all. Fixed by adding the SAME tab (shared render
+    // function, shared API, zero new code) to Purchase's own PROCUREMENT module — not by widening
+    // ROLE_MODULES.Purchase to include all of FINANCE, which would have exposed unrelated screens
+    // (Journal Vouchers, Bank Transfer, Trial Balance, etc.) Purchase has no business reason to see.
+    {tab:'paymentreq', label:'Payment Requests'},
+    // Phase 40 CRITICAL FIX (DEF-P40-03) — same defect class as DEF-P40-02, found immediately after
+    // it in the same browser UAT pass: the server's own MRS-approval rejection message explicitly
+    // names Purchase as an authorized approver ("must be approved by Purchase/FinanceManager/CEO/
+    // Admin (SOP §8)"), and the screen's own description text says "once approved, PURCHASE issues
+    // it from a warehouse" — Purchase is not a peripheral actor in this workflow, it is the role
+    // that actually executes the Delivery Challan step. Yet 'sitematerial' previously existed only
+    // in the SITE OPERATIONS module, absent from Purchase's ROLE_MODULES, with — again — no
+    // alternate deep-link anywhere. Fixed the same minimal way: added the tab to Purchase's own
+    // existing PROCUREMENT module rather than widening ROLE_MODULES.Purchase to all of SITE
+    // OPERATIONS (which would expose Labour & Wages, Timesheets, Risk Register etc. Purchase has no
+    // business reason to see).
+    {tab:'sitematerial', label:'Site Material'}]},
   {module:'INVENTORY', icon:'📦', tabs:[{tab:'grnstock', label:'Stock'}, {tab:'movements', label:'Movement Ledger'}, {tab:'invtransfer', label:'Transfer'}, {tab:'invadjust', label:'Adjustment'}, {tab:'matissues', label:'Material Issues'}, {tab:'sitereturn', label:'Material Return (Site)'}, {tab:'returns', label:'Purchase Returns'}, {tab:'damagereports', label:'Damage Reports'}, {tab:'stockreport', label:'Stock Report'}, {tab:'locations', label:'Locations'}, {tab:'stockbyloc', label:'Stock by Location'}, {tab:'stockcounts', label:'Stock Counts'}, {tab:'materialanalysis', label:'Material Analysis'}]},
   {module:'SITE OPERATIONS', icon:'🚧', tabs:[{tab:'labourwages', label:'Labour & Wages'}, {tab:'labourcost', label:'Labour Cost Analysis'}, {tab:'projexpenses', label:'Project Expenses'}, {tab:'qcdash', label:'QC Dashboard'}, {tab:'timesheet', label:'Project Timesheet'}, {tab:'tasks', label:'Tasks'}, {tab:'riskregister', label:'Risk Register'}, {tab:'weeklyscorecard', label:'Weekly Scorecard'}, {tab:'sitematerial', label:'Site Material'}]},
   {module:'PRODUCTION & JOB WORK', icon:'⚙️', tabs:[{tab:'prods', label:'Production Orders'}, {tab:'factorydash', label:'Factory Dashboard'}, {tab:'machines', label:'Machines'}, {tab:'jobcards', label:'Job Cards'}, {tab:'prodschedule', label:'Production Schedule'}, {tab:'jobanalysis', label:'Job Analysis'}, {tab:'jobcostsheet', label:'Job Cost Sheet'}, {tab:'productcosting', label:'Product Costing'}, {tab:'labourperf', label:'Labour Performance'}, {tab:'jobwork', label:'Job Work'}]},
@@ -900,7 +926,7 @@ function mSR_renderSuccessStep(el){
   const matName = window._mSR_materialNameFn || (id=>id);
   el.innerHTML = `<div class="msuccess">
     <div class="micon-big">✅</div>
-    <div class="mtitle">Receipt Recorded</div>
+    <div class="mtitle">Site Receipt Recorded</div>
     ${r.hasDiscrepancy ? `<div class="mmsg warn" style="text-align:left;">Discrepancy recorded — the received quantity differed from what was ordered on at least one line. This has been logged for follow-up.</div>` : ''}
     <div class="mcard" style="text-align:left;margin-top:10px;">
       <div class="mrow"><span class="k">Document</span><span class="v">${esc(r.smr?r.smr.smrNo||r.smr.id:'—')}</span></div>
@@ -2177,7 +2203,19 @@ async function renderBOMs(){
   <button class="ghost" onclick="addBOMLine()">+ Add Line</button>
   <button class="primary" onclick="submitBOM()">Create BOM</button><div id="bomMsg"></div>
   <table style="margin-top:12px;"><thead><tr><th>ID</th><th>Project</th><th>Description</th><th>Version</th><th>Status</th><th>Actions</th></tr></thead><tbody>`;
-  r.boms.forEach(b=>{ h += `<tr><td>${b.id}</td><td>${b.projectId}</td><td>${esc(b.description)}</td><td>v${b.version}</td><td><span class="pill">${b.status}</span></td><td>${b.status==='Draft'?`<button class="ghost" onclick="approveBOM2('${b.id}')">Approve</button>`:''}</td></tr>`; });
+  r.boms.forEach(b=>{
+    // Phase 40 CRITICAL FIX (DEF-P40-04) — found live during browser UAT: this row rendered an
+    // "Approve" action for a Draft BOM, but approveBOM() has always required status 'Submitted'
+    // first (Phase 39's own test script called POST /api/boms/:id/submit directly) — the real
+    // submit step this screen was completely missing. A BOM could never leave Draft through the
+    // UI, and Manufacturing's entire BOM->Production Order chain (which requires an APPROVED BOM)
+    // was consequently unreachable from the browser at all, even though the backend fully
+    // supports it. Fixed by rendering the correct action for each real status.
+    let actions = '';
+    if(b.status==='Draft') actions = `<button class="ghost" onclick="submitBOM2('${b.id}')">Submit</button>`;
+    else if(b.status==='Submitted') actions = `<button class="ghost" onclick="approveBOM2('${b.id}')">Approve</button>`;
+    h += `<tr><td>${b.id}</td><td>${b.projectId}</td><td>${esc(b.description)}</td><td>v${b.version}</td><td><span class="pill">${b.status}</span></td><td>${actions}</td></tr>`;
+  });
   el.innerHTML = h + '</tbody></table>';
 }
 function addBOMLine(){ window._bomLines.push({materialId:'MAT-1', qty:1, uom:'sheet', scrapPct:5}); renderBOMs(); }
@@ -2189,6 +2227,7 @@ async function submitBOM(){
   await renderBOMs();
   document.getElementById('bomMsg').innerHTML = `<div class="msg ${r.ok?'ok':'err'}">${r.ok?(r.bom.id+' created (v'+r.bom.version+')'):('DENIED: '+esc(friendlyError(r)))}</div>`;
 }
+async function submitBOM2(id){ const r = await api('POST',`/api/boms/${id}/submit`); await renderBOMs(); document.getElementById('bomMsg').innerHTML = `<div class="msg ${r.ok?'ok':'err'}">${r.ok?'Submitted':('DENIED: '+esc(friendlyError(r)))}</div>`; }
 async function approveBOM2(id){ const r = await api('POST',`/api/boms/${id}/approve`); await renderBOMs(); document.getElementById('bomMsg').innerHTML = `<div class="msg ${r.ok?'ok':'err'}">${r.ok?'Approved':('DENIED: '+esc(friendlyError(r)))}</div>`; }
 
 // ---------- Reporting Phase 4 — BOM Consumption Report ----------
@@ -3527,7 +3566,7 @@ async function loadDoc(id){
     <tr><td style="font-weight:700;">Difference</td><td colspan="6" class="num" style="font-weight:700;color:${Math.abs(totD-totC)<0.01?'var(--debit)':'var(--credit)'};">${inr(Math.abs(totD-totC))}</td></tr>
   </tbody></table>`;
   if(r.clearings && r.clearings.length){
-    h += `<div class="section"><h4 style="margin:0 0 6px;font-size:12px;">Clearings</h4><table><thead><tr><th>Clearing Doc</th><th>Type</th><th class="num">Amount</th><th>Invoice</th><th>Payment</th></tr></thead><tbody>`;
+    h += `<div class="section"><h4 style="margin:0 0 6px;font-size:12px;">Clearings</h4><table><thead><tr><th>Clearing Doc</th><th>Type</th><th class="num">Amount</th><th>Invoice</th><th>Payment/Receipt Entry</th></tr></thead><tbody>`;
     r.clearings.forEach(c=>{ h += `<tr><td>${c.clearingDocNo}</td><td>${c.type}</td><td class="num">${inr(c.amount)}</td><td><a class="doclink" onclick="loadDoc('${c.invoiceEntryId}')">${c.invoiceEntryId}</a></td><td><a class="doclink" onclick="loadDoc('${c.paymentEntryId}')">${c.paymentEntryId}</a></td></tr>`; });
     h += `</tbody></table></div>`;
   }
@@ -3566,10 +3605,10 @@ function printDocument(){
       <tr><td class="l">Document Number</td><td>${e.voucherNo}</td><td class="l">Posting Date</td><td>${e.date}</td></tr>
       <tr><td class="l">Document Date</td><td>${e.docDate||e.date}</td><td class="l">Due Date</td><td>${e.dueDate||'—'}</td></tr>
       <tr><td class="l">Reference</td><td>${[e.refNo1,e.refNo2,e.refNo3].filter(Boolean).join(' · ')||'—'}</td><td class="l">Branch</td><td>${branchName}</td></tr>
-      <tr><td class="l">Source</td><td>${e.sourceType||'—'} ${e.sourceId||''}</td><td class="l">Business Partner</td><td>${e.party||'—'}</td></tr>
+      <tr><td class="l">Source</td><td>${e.sourceType||'—'} ${e.sourceId||''}</td><td class="l">Party</td><td>${e.party||'—'}</td></tr>
       <tr><td class="l">Remarks</td><td colspan="3">${esc(e.narration)}</td></tr>
     </table>
-    <table class="lines"><thead><tr><th>Account</th><th>Project</th><th>Cost Centre</th><th>Profit Centre</th><th>Tax</th><th>BP</th><th class="r">Debit</th><th class="r">Credit</th><th>Remarks</th></tr></thead>
+    <table class="lines"><thead><tr><th>Account</th><th>Project</th><th>Cost Centre</th><th>Profit Centre</th><th>Tax</th><th>Customer/Vendor</th><th class="r">Debit</th><th class="r">Credit</th><th>Remarks</th></tr></thead>
     <tbody>${rows}<tr class="totals"><td colspan="6">TOTAL</td><td class="r">${inr(totD)}</td><td class="r">${inr(totC)}</td><td></td></tr></tbody></table>
     <div class="footer">Printed ${new Date().toLocaleString('en-IN')} — Status: Posted — Appletree ERP SAP Architecture Lab (internal experimental system, not the production ERP)</div>
     <button onclick="window.print()" style="margin-top:16px;padding:8px 16px;background:#C3B152;border:none;border-radius:6px;cursor:pointer;font-weight:700;">Print</button>
@@ -4244,7 +4283,7 @@ async function loadBILines(){
     <td>${l.rowNo}</td><td>${l.valueDate}</td><td>${esc(l.bankTxnId)}</td>
     <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(l.rawDescription)}">${esc(l.normalizedDescription)}</td>
     <td>${l.crDr}</td><td class="num">${inr(l.amount)}</td>
-    <td style="font-size:11px;">${esc(l.suggestedClassification||'')}${!l.balanceMatches?' ⚠️ balance mismatch':''}</td>
+    <td style="font-size:11px;">${esc(l.suggestedClassification||'')}${l.balanceMatches===false?' ⚠️ balance mismatch':''}</td>
     <td><span class="pill ${biPillClass(l.status)}">${l.status}</span>${l.isReturned&&l.returnOfLineId?` <span style="font-size:10px;color:var(--muted);">(return of ${l.returnOfLineId})</span>`:''}</td>
     <td>
       ${l.status==='Imported'||l.status==='Returned' ? `<button class="ghost" onclick="matchBI('${l.id}')">Match</button> <button class="ghost" onclick="allocateBI('${l.id}')">Allocate</button> <button class="ghost" onclick="excludeBI('${l.id}')">Exclude</button>` : ''}
@@ -4254,7 +4293,7 @@ async function loadBILines(){
   </tbody></table>`;
 }
 async function matchBI(lineId){
-  const entryId = prompt('Journal Entry ID to match against (e.g. JE-0001 — see Document Viewer / Journal Register):'); if(entryId===null) return;
+  const entryId = prompt('Journal Voucher ID to match against (e.g. JE-0001 — see Document Viewer / Journal Register):'); if(entryId===null) return;
   const r = await api('POST',`/api/bank-import/lines/${lineId}/match`,{entryId});
   await loadBILines();
   if(!r.ok) alert(friendlyError(r));
@@ -4616,15 +4655,22 @@ async function renderBankAccounts(){
   const r = await api('GET','/api/bank-accounts');
   const el = document.getElementById('bankaccountsBody');
   if(!r.ok){ el.innerHTML = `<div class="msg err">${esc(friendlyError(r))}</div>`; return; }
-  let h = `<div class="hint">Sub-ledger detail under the single GL Bank account (1000) — records WHICH real account a payment/receipt/statement line belongs to. Only the account visible in the CEO's own screenshot is seeded.</div>
-  <div class="fieldRow"><div><label>Bank Name</label><input id="ba-bank"></div><div><label>Account Name</label><input id="ba-name"></div><div><label>Last 4 digits</label><input id="ba-last4"></div></div>
+  let h = `<div class="hint">Each bank/cash account needs its OWN distinct GL account for real segregation (a payment/receipt/transfer posted against one account never touches another's balance). Create the GL account first on the Chart of Accounts screen if it doesn't exist yet, then reference its code below.</div>
+  <div class="fieldRow"><div><label>Bank Name</label><input id="ba-bank"></div><div><label>Account Name</label><input id="ba-name"></div><div><label>Last 4 digits</label><input id="ba-last4"></div><div><label>GL Account Code</label><input id="ba-glaccount" placeholder="e.g. 1001"></div></div>
   <button class="primary" onclick="submitBankAccount()">Add Bank Account</button><div id="baMsg"></div>
   <table style="margin-top:12px;"><thead><tr><th>Bank</th><th>Account</th><th>Last 4</th><th>GL Account</th></tr></thead><tbody>`;
   r.bankAccounts.forEach(b=>{ h += `<tr><td>${esc(b.bankName)}</td><td>${esc(b.accountName)}</td><td>${b.accountNumberLast4}</td><td>${b.glAccount}</td></tr>`; });
   el.innerHTML = h + '</tbody></table>';
 }
+// Phase 39 CRITICAL FIX — found live during Phase 39 browser workflow testing: this form never
+// collected or sent `glAccount`, which createBankAccount() has REQUIRED unconditionally since
+// Phase 24 Part A4 ("A distinct GL account is required for real bank/cash segregation — it can no
+// longer default silently to account 1000"). Every "Add Bank Account" submission through this
+// screen was guaranteed to fail, for every role, with no way to succeed — the real per-account GL
+// segregation feature (and the fix for DEF-P39-02, the Bank Import Allocation misposting defect)
+// was reachable only via direct API calls, never through the actual application UI.
 async function submitBankAccount(){
-  const r = await api('POST','/api/bank-accounts',{bankName:val('ba-bank'), accountName:val('ba-name'), accountNumberLast4:val('ba-last4')});
+  const r = await api('POST','/api/bank-accounts',{bankName:val('ba-bank'), accountName:val('ba-name'), accountNumberLast4:val('ba-last4'), glAccount:val('ba-glaccount')});
   await renderBankAccounts();
   document.getElementById('baMsg').innerHTML = `<div class="msg ${r.ok?'ok':'err'}">${r.ok?'Bank account added':('DENIED: '+esc(friendlyError(r)))}</div>`;
 }
@@ -5921,7 +5967,7 @@ async function renderSiteMaterial(){
 
   <div class="section"><h3 style="margin:0 0 8px;font-size:13px;">Delivery Challans (site-bound)</h3>
     <table><thead><tr><th>DC No.</th><th>Site</th><th>Warehouse</th><th>Transporter</th><th>Vehicle</th><th>Status</th><th>Site Receipt</th></tr></thead><tbody>
-    ${(dcR.deliveryChallans||[]).filter(d=>d.siteId).map(d=>`<tr><td>${d.dcNo||d.id}</td><td>${d.siteId}</td><td>${d.warehouseId}</td><td>${esc(d.transporterName)}</td><td>${esc(d.vehicleNo)}</td><td><span class="pill">${d.status}</span></td><td><button class="ghost" onclick="siteReceiptForm('${d.id}')">Record Receipt</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">No site delivery challans yet.</td></tr>'}
+    ${(dcR.deliveryChallans||[]).filter(d=>d.siteId).map(d=>`<tr><td>${d.dcNo||d.id}</td><td>${d.siteId}</td><td>${d.warehouseId}</td><td>${esc(d.transporterName)}</td><td>${esc(d.vehicleNo)}</td><td><span class="pill">${d.status}</span></td><td><button class="ghost" onclick="siteReceiptForm('${d.id}')">Record Site Receipt</button></td></tr>`).join('')||'<tr><td colspan="7" class="empty">No site delivery challans yet.</td></tr>'}
     </tbody></table><div id="srForm"></div></div>
 
   <div class="section"><h3 style="margin:0 0 8px;font-size:13px;">Site Consumption</h3>
@@ -5958,7 +6004,7 @@ async function mrsIssue(id){
   document.getElementById('mrsMsg').innerHTML = `<div class="msg ${r.ok?'ok':'err'}">${r.ok?('Issued — Delivery Challan '+r.deliveryChallan.dcNo):('DENIED: '+esc(friendlyError(r)))}</div>`;
 }
 function siteReceiptForm(dcId){
-  document.getElementById('srForm').innerHTML = `<div class="section"><label>Quantity Actually Received (for Delivery Challan ${dcId})</label><input type="number" id="sr-qty"><button class="primary" style="margin-top:8px;" onclick="submitSiteReceipt('${dcId}')">Record Receipt</button></div>`;
+  document.getElementById('srForm').innerHTML = `<div class="section"><label>Quantity Actually Received (for Delivery Challan ${dcId})</label><input type="number" id="sr-qty"><button class="primary" style="margin-top:8px;" onclick="submitSiteReceipt('${dcId}')">Record Site Receipt</button></div>`;
 }
 async function submitSiteReceipt(dcId){
   const r = await api('POST','/api/site-material-receipts',{deliveryChallanId:dcId, receivedItems:[{qtyReceived:val('sr-qty')}]});
@@ -6163,7 +6209,7 @@ async function renderApobEway(){
   const [apobR, jwR, ewbR] = await Promise.all([api('GET','/api/apob-declarations'), api('GET','/api/job-workers'), api('GET','/api/eway-bills')]);
   if(!apobR.ok){ el.innerHTML = `<div class="msg err">${esc(friendlyError(apobR))}</div>`; return; }
   const jwOpts = (jwR.jobWorkers||[]).filter(j=>!j.registered).map(j=>`<option value="${j.id}">${esc(j.name)}</option>`).join('');
-  let h = `<div class="section"><h3 style="margin:0 0 8px;font-size:13px;">APOB Declarations <span class="pill">Needed only for UNREGISTERED job workers before a direct customer dispatch from their premises</span></h3>
+  let h = `<div class="section"><h3 style="margin:0 0 8px;font-size:13px;">APOB (Additional Place of Business) Declarations <span class="pill">Needed only for UNREGISTERED job workers before a direct customer dispatch from their premises</span></h3>
     <div class="fieldRow3"><div><label>Job Worker (unregistered only)</label><select id="apob-jw">${jwOpts||'<option value="">No unregistered job workers</option>'}</select></div><div><label>Location</label><input id="apob-loc"></div><div><label>GST Approval Reference</label><input id="apob-ref"></div></div>
     <button class="primary" onclick="createApob()">Declare APOB</button><div id="apobMsg"></div>
     <table style="margin-top:8px;"><thead><tr><th>ID</th><th>Job Worker</th><th>Location</th><th>Status</th></tr></thead><tbody>
@@ -6420,7 +6466,7 @@ async function renderTDSReport(){
     h += `<div class="empty">No TDS deductions posted yet — TDS is deducted automatically at Supplier Payment time when a category is active and its threshold is crossed (Finance SOP §3).</div>`;
   } else {
     h += `<div class="searchbar"><input id="tds-search" placeholder="Search vendor / category…" oninput="filterRows('tds-search','#tds-body')"></div>
-    <table><thead><tr><th>ID</th><th>Vendor</th><th>Category</th><th>Date</th><th class="num">Bill Amount</th><th class="num">Rate %</th><th class="num">TDS Amount</th><th>Payment</th></tr></thead><tbody id="tds-body">
+    <table><thead><tr><th>ID</th><th>Vendor</th><th>Category</th><th>Date</th><th class="num">Bill Amount</th><th class="num">Rate %</th><th class="num">TDS Amount</th><th>Supplier Payment</th></tr></thead><tbody id="tds-body">
     ${[...r.deductions].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(t=>`<tr data-search="${esc((vendorName(t.vendorId)+' '+t.category).toLowerCase())}">
       <td>${esc(t.id)}</td><td>${esc(vendorName(t.vendorId))}</td><td><span class="pill">${esc(t.category)}</span></td><td>${t.date}</td>
       <td class="num">${inr(t.billAmount)}</td><td class="num">${t.ratePct}%</td><td class="num">${inr(t.tdsAmount)}</td>

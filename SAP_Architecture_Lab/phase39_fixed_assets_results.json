@@ -1,0 +1,275 @@
+[
+  {
+    "part": "FA",
+    "name": "Fixed Asset created (status Purchased)",
+    "pass": true,
+    "detail": {
+      "id": "FA-0001",
+      "status": "Purchased"
+    }
+  },
+  {
+    "part": "FA-NEG",
+    "name": "Unauthorized role (Purchase, no post capability) capitalizing an asset is BLOCKED",
+    "pass": true,
+    "detail": {
+      "status": 403,
+      "error": "Role \"Purchase\" is not authorized to perform this action."
+    }
+  },
+  {
+    "part": "FA-NEG",
+    "name": "Capitalization with missing Useful Life is BLOCKED (never defaulted)",
+    "pass": true,
+    "detail": {
+      "error": "ACCOUNTING POLICY REQUIRED — Useful Life (months) must be explicitly specified; it is never defaulted."
+    }
+  },
+  {
+    "part": "FA-NEG",
+    "name": "Capitalization with missing Depreciation Method is BLOCKED (never defaulted)",
+    "pass": true,
+    "detail": {
+      "error": "ACCOUNTING POLICY REQUIRED — Depreciation Method must be explicitly specified; it is never defaulted."
+    }
+  },
+  {
+    "part": "FA-NEG",
+    "name": "Capitalization with Residual Value >= Cost is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Residual Value must be ≥ 0 and less than the asset cost."
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Fixed Asset capitalized (Bank-funded), real GL entry (Dr 1400 / Cr 1000)",
+    "pass": true,
+    "detail": {
+      "entryId": "JE-0003",
+      "totalDebit": 600000,
+      "totalCredit": 600000
+    }
+  },
+  {
+    "part": "FA-NEG",
+    "name": "Double-capitalization of an already-Capitalized asset is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Cannot capitalize — asset is \"Capitalized\", not Purchased."
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Period 1 (Jan, prorated) depreciation posted, real GL entry (Dr 5400 / Cr 1450)",
+    "pass": true,
+    "detail": {
+      "amount": 12338.71,
+      "expected": 12338.71,
+      "accumulatedDepreciation": 12338.71
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Period 2 (Feb, full month) depreciation posted, amount = full monthly charge",
+    "pass": true,
+    "detail": {
+      "amount": 22500,
+      "accumulatedDepreciation": 34838.71
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Period 3 (Mar) depreciation posted",
+    "pass": true,
+    "detail": {
+      "amount": 22500,
+      "accumulatedDepreciation": 57338.71
+    }
+  },
+  {
+    "part": "FA-NEG",
+    "name": "Depreciation amount exceeding the remaining depreciable value (residual floor) is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Cannot depreciate ₹999999 — only ₹482661.29 remains depreciable before hitting the residual value floor."
+    }
+  },
+  {
+    "part": "FA-NEG",
+    "name": "Unauthorized role (Purchase) posting depreciation is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Role \"Purchase\" is not authorized to perform this action."
+    }
+  },
+  {
+    "part": "FA-NEG",
+    "name": "Depreciation against a NOT-YET-Capitalized asset is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Cannot depreciate — asset is \"Purchased\", not Capitalized."
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Asset transfer (location + custodian change) accepted, transferHistory recorded",
+    "pass": true,
+    "detail": {
+      "location": "Factory — Bay 7",
+      "historyLen": 1
+    }
+  },
+  {
+    "part": "FA-NEG",
+    "name": "Asset transfer with no reason is BLOCKED (mandatory unconditionally)",
+    "pass": true,
+    "detail": {
+      "error": "A reason is required for every asset transfer."
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Setup: PRJ-3 force-closed (CEO override) to enable closed-project negative test",
+    "pass": true,
+    "detail": {
+      "status": "CLOSED"
+    }
+  },
+  {
+    "part": "FA-NEG",
+    "name": "FinanceManager transferring an asset INTO a CLOSED project is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Cannot transfer a fixed asset into this project — project PRJ-3 (Marine Drive — Penthouse) is CLOSED. Only CEO/Admin may post a new transaction against a closed project, and only with an explicit reason."
+    }
+  },
+  {
+    "part": "FA-NEG",
+    "name": "CEO transferring an asset INTO a CLOSED project with NO reason is BLOCKED (reason is mandatory both ways)",
+    "pass": true,
+    "detail": {
+      "error": "A reason is required for every asset transfer."
+    }
+  },
+  {
+    "part": "FA",
+    "name": "CEO transferring an asset INTO a CLOSED project WITH a reason SUCCEEDS (explicit override)",
+    "pass": true,
+    "detail": {
+      "projectId": "PRJ-3"
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Setup: asset transferred back to PRJ-1 (open) before disposal",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "FA-NEG",
+    "name": "Unauthorized role (Purchase) disposing an asset is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Role \"Purchase\" is not authorized to perform this action."
+    }
+  },
+  {
+    "part": "FA",
+    "name": "NBV captured before disposal (for independent gain/loss reconciliation)",
+    "pass": true,
+    "detail": {
+      "nbv": 542661.29,
+      "accumDep": 57338.71
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Asset disposed at a LOSS, gainOrLoss matches independently-computed (proceeds - NBV)",
+    "pass": true,
+    "detail": {
+      "gainOrLoss": -142661.29,
+      "expectedLoss": -142661.29,
+      "proceeds": 400000,
+      "nbvBefore": 542661.29
+    }
+  },
+  {
+    "part": "FA-NEG",
+    "name": "Disposal of an already-Disposed asset is BLOCKED",
+    "pass": true,
+    "detail": {
+      "error": "Cannot dispose — asset is \"Disposed\", not Capitalized."
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Second asset capitalized (AP-funded — vendor payable), real GL entry (Dr 1400 / Cr 2000)",
+    "pass": true,
+    "detail": {}
+  },
+  {
+    "part": "FA",
+    "name": "Second asset: one depreciation period posted",
+    "pass": true,
+    "detail": {
+      "amount": 2250
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Second asset disposed at a GAIN, gainOrLoss matches independently-computed (proceeds - NBV)",
+    "pass": true,
+    "detail": {
+      "gainOrLoss": -2750,
+      "expectedGain2": -2750,
+      "proceeds": 145000,
+      "nbvBefore": 147750
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Fixed Asset Register cost reconciles exactly to GL account 1400",
+    "pass": true,
+    "detail": {
+      "registerCost": 0,
+      "glCost": 0,
+      "costMatches": true,
+      "registerAccumDep": 0,
+      "glAccumDep": 0,
+      "accumDepMatches": true,
+      "assetCount": 0,
+      "disposedCount": 2
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Accumulated Depreciation register reconciles exactly to GL account 1450",
+    "pass": true,
+    "detail": {
+      "registerCost": 0,
+      "glCost": 0,
+      "costMatches": true,
+      "registerAccumDep": 0,
+      "glAccumDep": 0,
+      "accumDepMatches": true,
+      "assetCount": 0,
+      "disposedCount": 2
+    }
+  },
+  {
+    "part": "FA",
+    "name": "Disposed assets correctly EXCLUDED from on-books register (both test assets now disposed)",
+    "pass": true,
+    "detail": {
+      "registerCost": 0,
+      "glCost": 0,
+      "costMatches": true,
+      "registerAccumDep": 0,
+      "glAccumDep": 0,
+      "accumDepMatches": true,
+      "assetCount": 0,
+      "disposedCount": 2
+    }
+  }
+]

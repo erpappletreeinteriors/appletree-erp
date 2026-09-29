@@ -1,0 +1,46 @@
+# WAVE1_IMPLEMENTATION_SCOPE.md
+
+**Date:** 2026-09-22. First task per this Wave 1 implementation CR's §3. Translates
+`ARCH-2026-002-WAVE-1-DESIGN.md` into concrete implementation scope. **Conflict check result: NO
+conflict found between the Wave 1 design and the Phase 0 documents — this document proceeds.**
+
+## Conflict check
+
+`ARCH-2026-002-WAVE-1-DESIGN.md` §1 identified exactly 3 in-scope items (Reporting fix, RBAC/ID
+cleanup, BOM sequencing) plus documented the existing baseline. This new CR's own sections map onto
+those 3 items plus one item the Wave 1 design did not carry (Bank Reconciliation, which
+`ARCH-2026-002-WAVE-PLAN.md` had scoped to Wave 3/Treasury) but which this CR's §4 now explicitly pulls
+forward into Wave 1 with detailed instructions. That is a scope addition made explicitly, in writing,
+by the authorizing CR itself — not a silent expansion by this implementation pass — so it is treated as
+authorized, not a conflict. Plan-to-Produce (Phase 0 item 7) was never in the Wave 1 design and this
+CR's §6 confirms it stays out unless "explicitly included in ARCH-2026-002-WAVE-1-DESIGN.md" — it is
+not, so it stays out. No other discrepancy found.
+
+## Scope table
+
+| # | Phase 0 Finding | Existing Implementation Location | Required Change | Existing Dependency | Required UI | Required Backend | Required Data-Model Change | Required Authorization | Required Data Scope | Required Audit | Required Workflow | Required Reporting | Required Tests | Regression Risk | Acceptance Criteria |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | Reporting & Analytics: `GET /api/reports/budget-variance` has no project-scope filter — ProjectManager sees all projects' budget/cost/margin data (`ARCH-2026-002-SECURITY-BASELINE.md` §3.1) | `projectBudgetVarianceReport()` in `domain.js` (~12488-12490); route in `server.js` | Add `hasScopeAccess(actor,'Project',projectId)` filtering, matching the exact pattern already used by ARCH-2026-001C-F's other read-filter fixes | `hasScopeAccess()` (ARCH-2026-001C) | None — same report screen, now correctly filtered | 1-line-class fix inside the report function/route handler | None | Reuse existing `can()`/role allow-list, unchanged | **This IS the fix** — reuse `hasScopeAccess()`, do not invent a new scope dimension | N/A (read-only, consistent with existing convention of not auditing reads) | None (read-only) | The report itself | New negative test extending `erp_arch_2026_001c_f_residual_scope_tests.js` pattern; regression of the 65/65 data-scope suites | LOW — additive filter, no removal of existing correct behavior | ProjectManager without/with a foreign `projectId` sees ONLY their own assigned project(s); CEO/Admin/FinanceManager (company-wide roles) unaffected; existing correct single-project-PM case still returns identical data |
+| 2 | Treasury: Bank Reconciliation has 2 parallel, independently-wired, both-live subsystems (`ARCH-2026-002-TRANSACTION-OWNERSHIP.md` row 32) — pulled into Wave 1 by this CR's own explicit §4 | Legacy: `importBankStatement`/`matchBankStatementLine`/`unmatchBankStatementLine`/`bankReconciliationStatus` over `DB.bankStatementLines`. Newer: `createBankImportBatch`/`matchBankImportLine`/`postBankImportLine`/`reconcileBankImportLine`/`excludeBankImportLine`/`markBankImportLineReturned` over `DB.bankImportLines` | Consolidate to ONE authoritative reconciliation engine; bank-format-specific parsing (ICICI) becomes an adapter feeding the one engine, not a second engine — see §4 detailed design below | `postJournalEntry()` (the newer path's `postBankImportLine` already posts through it) | Whichever screen(s) currently point at the legacy path must be repointed at the consolidated engine, without breaking any in-progress reconciliation state | New consolidated match/reconcile/unreconcile functions; legacy functions become thin, deprecated wrappers (not deleted) for any historical caller | Migration of `DB.bankStatementLines` records into the `DB.bankImportLines` shape, preserving IDs/timestamps/links; see §4 detailed design | Reuse existing role gates on both paths (already equivalent — both `['Admin','CEO','FinanceManager','Accountant']`-class) | N/A (bank-account-level, no project/customer scope dimension applies to either existing path) | Migration itself must be `logAudit()`-recorded; every consolidated action keeps existing audit calls | Reconciliation state machine (Matched/Posted/Reconciled/Excluded/Returned) must be preserved exactly, not redesigned | Bank reconciliation summary reports must read from the one consolidated collection afterward | New suite: legacy import, ICICI import, duplicate import, reconciliation, unreconciliation, matching, allocation, accounting impact, historical record integrity, concurrent import/reconciliation, authorization, audit trail, migration idempotency, rollback | MEDIUM-HIGH — touches a live, tested, financially-consequential subsystem; mitigated by additive migration (no data deleted) and full regression before/after | Exactly ONE authoritative reconciliation engine exists after this change; every pre-existing `DB.bankStatementLines` record is reachable, correctly stated, and reconciliation-history-intact through the consolidated engine; zero accounting-impact change to any historical entry; `erp_phase39_banking_tests.js` (34/34) and all other regression suites remain 100% green |
+| 3 | Sales & CRM RBAC/ID-numbering cleanup (Phase 0 Open Decision item 4) | `approveQuotationDiscount`/`canSeeLead` (legacy inline role checks); `Lead`/`EstimationRequest`/`CostingVersion`/`Design`/baseline (ad-hoc `.length+1` IDs) | **NOT AUTHORIZED for this Wave 1 pass** — this CR's own text does not explicitly direct this refactor (unlike Bank Reconciliation, which is explicitly detailed in §4), and §11's own instruction is "preserve existing approval mechanisms." Per this CR's own §20 rule ("if a management decision is required, STOP at the decision point and report it"), this remains an open decision, not silently implemented or silently dropped | — | — | — | — | — | — | — | — | — | — | — | LOW if ever done (behavior-preserving refactor), but not being done this pass | **DEFERRED, reported, not implemented.** Left for a future, explicitly-authorized pass. See `WAVE1_ACCEPTANCE.md` unresolved decisions. |
+| 4 | Lead-to-Quotation BOM/BOQ pre-Won gap (Phase 0 Open Decision item 5) | `createBOM()` requires an existing `projectId` — BOM cannot be created pre-Won today | **NOT AUTHORIZED for this Wave 1 pass** — this CR's §5 explicitly conditions any BOM/BOQ change on "if the Wave 1 design explicitly authorizes it," and `ARCH-2026-002-WAVE-1-DESIGN.md` left this as an open decision, not a confirmed requirement. Whether Appletree's real estimation workflow ever needs a pre-Won BOM is a genuine business-process question this implementation pass cannot answer for them | — | — | — | — | — | — | — | — | — | — | — | N/A — no change made | **DEFERRED, reported, not implemented.** The existing Lead→Estimation→Costing→Quotation chain (already WORKING per `ARCH-2026-002-PROCESS-TRACE.md` chain A/B) is left completely unchanged. |
+| 5 | Plan-to-Produce Demand trigger (Phase 0 Open Decision item 7) | Not in Wave 1's domain set at all (Manufacturing is Wave 2) | **NOT IN SCOPE** — this CR's own §6 confirms Wave 1 may only implement this if included in the Wave 1 design; it is not | — | — | — | — | — | — | — | — | — | — | — | N/A | **Out of scope, unchanged, registered for Wave 2 (Manufacturing) or Wave 6 (Advanced Planning/MRP)** — no work performed |
+| 6 | QC checklist audit-log gap (Phase 0 Open Decision item 8, Finding 2) | `createQCChecklist()` — Quality Management, a Wave 2 domain, not Wave 1 | **NOT IN SCOPE for Wave 1** — Quality Management is not one of the 6 Wave 1 domains; fixing it here would be exactly the kind of scope creep §20 forbids ("DO NOT build full Wave 2–6 modules") even though the fix itself is tiny | — | — | — | — | — | — | — | — | — | — | — | N/A | **Deferred to Wave 2.** Documented, not fixed, consistent with domain boundaries. |
+
+## What this Wave 1 implementation pass actually does
+
+**Two items, both explicitly authorized, both technical (no business policy invented):**
+1. Fix the Reporting & Analytics cross-project data-scope leak.
+2. Consolidate Bank Reconciliation onto one authoritative engine, per this CR's own §4 detailed
+   instructions, with ICICI import retained as an adapter.
+
+**Four items explicitly deferred, each with a stated reason**, none silently dropped and none silently
+implemented as an assumption: Sales/CRM RBAC-ID cleanup (item 3), BOM pre-Won sequencing (item 4),
+Plan-to-Produce Demand trigger (item 5 — out of Wave 1's domain scope entirely), QC audit-log gap (item
+6 — out of Wave 1's domain scope entirely).
+
+This is not a reduction of Wave 1's ambition — it is this Wave 1 pass declining to implement any item
+this CR's own text does not affirmatively authorize, per §20's explicit STOP-and-report rule for
+unresolved management decisions, while still fully executing everything the CR DOES affirmatively
+authorize (Reporting fix + Bank Reconciliation consolidation, both named explicitly with detailed
+instructions in §4 and §7-§8 of this CR).

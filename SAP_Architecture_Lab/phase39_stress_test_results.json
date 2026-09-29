@@ -1,0 +1,113 @@
+{
+  "elapsedSec": "254.9",
+  "results": [
+    {
+      "part": "STRESS",
+      "name": "105 Sales Invoices posted",
+      "pass": true,
+      "detail": {
+        "created": 105,
+        "failed": 0,
+        "sampleFailures": []
+      }
+    },
+    {
+      "part": "STRESS",
+      "name": "105 Supplier Bills posted",
+      "pass": true,
+      "detail": {
+        "created": 105,
+        "failed": 0
+      }
+    },
+    {
+      "part": "STRESS",
+      "name": "105 Customer Receipts posted (full clearing of every stress invoice)",
+      "pass": true,
+      "detail": {
+        "ok": 105,
+        "failed": 0
+      }
+    },
+    {
+      "part": "STRESS",
+      "name": "105 Supplier Payments posted (full clearing of every stress bill)",
+      "pass": true,
+      "detail": {
+        "ok": 105,
+        "failed": 0
+      }
+    },
+    {
+      "part": "STRESS",
+      "name": "105 GRN inventory movements posted, across 5 projects / 2 materials",
+      "pass": true,
+      "detail": {
+        "ok": 105,
+        "failed": 0
+      }
+    },
+    {
+      "part": "STRESS-RECON",
+      "name": "Trial Balance: Total Debit = Total Credit after the full stress batch",
+      "pass": true,
+      "detail": {
+        "tbDebit": 5552092.14,
+        "tbCredit": 5552092.14
+      }
+    },
+    {
+      "part": "STRESS-RECON",
+      "name": "AR subledger reconciles to AR control account after stress batch",
+      "pass": true,
+      "detail": {
+        "subledgerTotal": 0,
+        "controlAccountBalance": -6.0254023992456496e-12,
+        "nonSubledgerLines": 0,
+        "matches": true
+      }
+    },
+    {
+      "part": "STRESS-RECON",
+      "name": "AP subledger reconciles to AP control account after stress batch",
+      "pass": true,
+      "detail": {
+        "subledgerTotal": 0,
+        "controlAccountBalance": -3.1650415621697903e-10,
+        "nonSubledgerLines": 0,
+        "matches": true
+      }
+    },
+    {
+      "part": "STRESS-RECON",
+      "name": "Output GST reconciles to output-tax GL after stress batch",
+      "pass": true,
+      "detail": {
+        "subledgerTotal": 9468.9,
+        "controlAccountBalance": 9468.9,
+        "nonSourceLines": 0,
+        "matches": true
+      }
+    },
+    {
+      "part": "STRESS-RECON",
+      "name": "Input GST reconciles to input-tax GL after stress batch",
+      "pass": true,
+      "detail": {
+        "subledgerTotal": 301877.52,
+        "controlAccountBalance": 301877.52,
+        "nonSourceLines": 0,
+        "matches": true
+      }
+    },
+    {
+      "part": "STRESS-RECON",
+      "name": "Document numbering remained unique under load — 525 vouchers, zero duplicates",
+      "pass": true,
+      "detail": {
+        "total": 525,
+        "unique": 525
+      }
+    }
+  ]
+}

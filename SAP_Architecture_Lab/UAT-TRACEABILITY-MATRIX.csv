@@ -1,0 +1,26 @@
+Business Requirement,Module,Screen/API,UAT Scenario,Test Result,Evidence,Defect/CR
+Sales can convert a prospect into a priced, approved offer,Sales & CRM / Estimation & Costing,Leads; Estimation & Costing; Quotations; /api/leads /api/estimation-requests /api/costing-versions /api/quotations,A1,PASS,PHASE_41_ESTIMATION_QUOTATION_UAT.md,None
+Discounts above the no-approval ceiling require a real approver,Sales & CRM,Quotations; /api/quotations/:id/submit /api/quotations/:id/approve-discount,A2,PASS,PHASE_41_ESTIMATION_QUOTATION_UAT.md,None
+A Quotation cannot mix references from unrelated Lead/Estimation chains,Sales & CRM,/api/quotations,A3,PASS,PHASE_41_ESTIMATION_QUOTATION_UAT.md,DEF-P41-01 (CLOSED)
+A won deal's full sales origin must be traceable from its Project,Projects / Document Viewer,/api/projects/document-trace,A4,PASS,PHASE_41_TRACEABILITY_REPORT.md,DEF-P41-02 (CLOSED)
+Procurement chain must hold at realistic transaction volume,Procurement / Inventory,Purchase Orders; GRNs; /api/purchase-orders /api/grns,C1,PASS,PHASE_41_REGRESSION_REPORT.md,None
+Site material must flow from warehouse to site under real approval control,Site Operations,Site Material; /api/site-material-requisitions,D1,PASS,CR-2026-001 live verification,None
+Manufacturing cost must be traceable per Production Order,Production & Job Work,Job Cards; /api/job-cards,E1,PASS,erp_phase39_manufacturing_jobwork_tests.js,None
+Job Work stock movements must net exactly (no double count),Production & Job Work,Job Work; /api/job-work-orders,E2,PASS,erp_phase39_manufacturing_jobwork_tests.js,None
+Unregistered Job Worker direct dispatch requires an active APOB,Production & Job Work,APOB & E-way Bill; /api/apob,E3,PASS,erp_phase39_manufacturing_jobwork_tests.js,None
+QC results must persist correctly across the full lifecycle,Execution & Delivery,QC; /api/qc-checklists,F1,PASS,DEF-2026-001-TEST-REPORT.md,None
+QC Dashboard must aggregate Passed/Failed/Pending correctly,Site Operations,QC Dashboard; /api/qc-dashboard,F2,PASS,DEF-2026-001-TEST-REPORT.md,DEF-2026-001 (CLOSED)
+QC status must gate Handover readiness,Execution & Delivery,QC; Handover; handoverReadinessCheck(),F3,PASS,erp_audit_p0_tests.js ERP-034,None
+Handover requires Installation+QC+zero-open-Critical-Snag,Execution & Delivery,Handover; /api/handovers,H1,PASS,erp_audit_p0_tests.js ERP-034,None
+A project cannot be handed over twice,Execution & Delivery,Handover; /api/handovers,H2,PASS,erp_audit_p0_tests.js ERP-034,None
+A posted invoice must move the Trial Balance by exactly its own value,Finance,Customer Invoice; Document Workflow; /api/ar/invoice,I1,PASS,PHASE_41_ESTIMATION_QUOTATION_UAT.md,None
+Sales-stage documents must never silently post to the GL,Finance,/api/trial-balance,I2,PASS,PHASE_41_ESTIMATION_QUOTATION_UAT.md,None
+Supplier payments above a threshold require real 3-person separation,Finance,Payment Requests; /api/payment-requests,J1,PASS,PHASE39_PAYMENT_APPROVAL_MATRIX_REPORT.md,None
+A payment maker cannot also approve their own request,Finance,Payment Requests,J2,PASS,PHASE39_PAYMENT_APPROVAL_MATRIX_REPORT.md,None
+The books must balance at any transaction volume,Financial Statements,Trial Balance; /api/trial-balance,L1,PASS,erp_phase39_stress_test.js,None
+AR/AP subledgers must reconcile to their GL control accounts,Financial Statements,Reconciliation; /api/reconciliation,L2,PASS,erp_phase39_stress_test.js,None
+GST must reconcile to its own GL accounts,Financial Statements,Reconciliation,L3,PASS,erp_phase39_stress_test.js,None
+Document numbers must stay unique under load,Financial Statements,Journal Register; /api/journal-entries,L4,PASS,erp_phase39_stress_test.js / PHASE_41_NUMBERING_REPORT.md,None
+The system must be recoverable from a real backup,Administration (API-only),/api/admin/backup /api/admin/restore,Backup1,PASS,PHASE_41_BACKUP_RESTORE_AUDIT.md,None
+Only Admin/CEO may back up or restore,Administration (API-only),/api/admin/*,Backup2,PASS,PHASE_41_BACKUP_RESTORE_AUDIT.md,None
+Viewer role must be read-only everywhere, including via a real click,Administration,All screens; Try Unauthorized Action,Viewer1,PASS,PHASE_41_VIEWER_UAT.md,None

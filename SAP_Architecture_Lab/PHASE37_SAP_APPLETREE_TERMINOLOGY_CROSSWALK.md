@@ -1,0 +1,89 @@
+# PHASE 37 — SAP / Appletree Terminology Crosswalk
+
+**Date:** 2026-09-11. Part 28 deliverable, built on `PHASE37_NOMENCLATURE_BASELINE.md` and
+`PHASE37_CURRENT_NOMENCLATURE_INVENTORY.md`. Every row states the SAP reference explicitly
+(S/4HANA vs Business One, per Part 42's rule) and the classification (Part 25). **This is a
+recommendation document. Nothing here is implemented until reviewed and approved — see
+`PHASE37_NOMENCLATURE_CHANGE_PLAN.md`.**
+
+## How the SAP reference was chosen for this codebase
+
+Before crosswalking individual terms, one structural decision governs most of them: **which SAP
+product is Appletree's ERP closer to?**
+
+Evidence from the inventory:
+- Single-entity, SME-scale operation (one company, branches — not a multi-entity/multi-company-code
+  group structure). No `CompanyCode` concept exists; `DB.branches` is the closest analog.
+- Simple document flow (PR→PO→GRN→Bill→Payment→Clearing) with no multi-level release strategies,
+  no purchasing-organization/purchasing-group hierarchy, no plant-vs-storage-location split — this
+  matches **Business One's** flatter document model far more than S/4HANA's MM/FI multi-org
+  structure.
+- BUT: the codebase never uses B1's own literal document names ("Goods Receipt PO," "A/P Invoice,"
+  "A/R Invoice" are all confirmed absent — see inventory). It uses more generic, India-market-
+  familiar terms ("GRN," "Supplier Bill," "Customer Invoice") that sit between the two products,
+  closer in spirit to how Tally/Indian mid-market ERPs and S/4HANA's India localization both speak.
+- Cost Centre/Profit Centre as independent GL-line tagging dimensions (not a hierarchy) is closer
+  to **S/4HANA CO's** dimension model than to B1's simpler project/cost-centre attachment.
+- "Clearing," "GR/IR Clearing" account, and the Journal Entry/Draft/Submit/Approve/Post workflow
+  are universal to both products.
+
+**Decision**: this crosswalk uses **Business One terminology as the primary reference for
+document/transaction structure** (since Appletree's actual process shape — single entity, simple
+document chain, no purchasing-org hierarchy — matches B1's SME model), and **S/4HANA terminology
+for accounting/controlling concepts** (Cost Centre/Profit Centre dimension tagging, Clearing,
+Reversal) where B1's simpler model doesn't have an equivalent distinction. Every row below states
+which source applies. Where the two genuinely differ, both are shown per Part 42's rule and the
+choice is justified per-row, not silently made.
+
+## Crosswalk table
+
+| Appletree Current Term | Recommended Term | SAP Reference | Reason | Action |
+|---|---|---|---|---|
+| Vendor (master/internal names) + Supplier (documents/UI) | **Supplier** (display layer); Vendor may stay as internal parameter/collection name | S/4HANA (post-2015 rename: "Vendor"→"Supplier" throughout S/4HANA MM/FI) | The DISPLAY layer already leans Supplier (Supplier Bill, Supplier Credit/Debit Note, Supplier Payment menu/heading — the dominant, more-visible surface); only one stray label (`domain.js:274`) and internal parameter names disagree. Standardizing display on "Supplier" requires fixing 1 label, not a mass rename. Internal `vendorId`/`DB.vendors` may stay per Part 31 (API-compatibility — renaming ~135 internal references is real risk for zero user-facing benefit). | REVIEW → MUST CHANGE (the 1 orphaned label only) |
+| "Vendor Payment" (`domain.js:274`, sole occurrence) | Supplier Payment | (see above) | Direct inconsistency with the sourceType/UI/report-name that all already say "Supplier Payment" for the identical transaction | MUST CHANGE |
+| Business Partner (1 occurrence, JE print template) | Party (or "Customer/Vendor") | S/4HANA's Business Partner is a real, unified master architecture — Appletree's is NOT (Customer and Vendor remain fully separate masters everywhere else in the codebase) | Using "Business Partner" here implies an architecture that does not exist — misleading, not merely stylistic. The underlying field is `party`. | **ARCHITECTURAL TERMINOLOGY DIFFERENCE** — do NOT adopt "Business Partner" as a real concept without first building a unified party master (a genuine architecture change, explicitly out of this audit's scope per the brief). Fix only the one mislabeled print-template cell to say "Party" or "Customer/Vendor." | MUST CHANGE (the one label only) |
+| GRN | GRN | Both S/4HANA ("Goods Receipt," transaction MIGO) and B1 ("Goods Receipt PO") use different exact terms; India ERPs and SAP's own India localization commonly retain "GRN" as the working term | GRN is already the universally-used, correctly-scoped term throughout this codebase (147+64 hits) with the registry-level spelled-out form ("Goods Receipt Note") available for anyone who needs it. Renaming to either SAP product's literal term would REDUCE clarity for the actual India-market SME users this app serves. | DO NOT CHANGE — SAP TERMINOLOGY SHOULD NOT BE ADOPTED HERE |
+| Material Issue | Material Issue | S/4HANA/B1 both say "Goods Issue" | "Goods Issue" is confirmed absent from this codebase entirely — a clean, deliberate, 100%-consistent departure, not an accidental gap. Given India-market Tally-trained users overwhelmingly know "Material Issue," and the term is used with zero internal ambiguity, changing to "Goods Issue" would cost real user-retraining for a purely cosmetic SAP-alignment gain. | DO NOT CHANGE — SAP TERMINOLOGY SHOULD NOT BE ADOPTED HERE |
+| Material Return (Site) | Material Return (Site) | S/4HANA: generic "Goods Movement"/"Transfer Posting" | No SAP product has an exact "site custody return" concept matching this app's site/warehouse distinction; forcing a generic SAP movement-type label here would LOSE the "(Site)" disambiguation that already correctly separates this from "Purchase Returns" | DO NOT CHANGE |
+| Purchase Returns | Purchase Return(s) | Both S/4HANA and B1 use "Purchase Return"/"Return to Vendor" | Already aligned | DO NOT CHANGE |
+| Stock (report/figure) vs Inventory (module/valuation) | Keep both, as currently distinguished | Both SAP products use "Stock" for the on-hand quantity and a separate "Inventory" for the valuation/module concept | Already correctly distinguished throughout (30 vs 23 hits, no confirmed conflation except 1 hybrid heading) | DO NOT CHANGE (OPTIONAL: split the one hybrid heading "Inventory Stock (Moving Average)") |
+| Stock Count | Stock Count | S/4HANA: "Physical Inventory Document"; B1: "Inventory Counting Transaction" | Neither SAP product's literal term is more accessible than "Stock Count" to the SME/India audience; "Physical Inventory" is confirmed absent everywhere, a deliberate, consistent choice | DO NOT CHANGE |
+| Warehouse | Warehouse | B1 uses "Warehouse" directly; S/4HANA splits into Plant+Storage Location | B1's simpler single-warehouse-per-entity model is the correct fit for Appletree's actual architecture (no `createWarehouse` even exists — seed-only, matching a small, fixed set of physical warehouses, not a multi-plant enterprise) | DO NOT CHANGE |
+| Location | Location | S/4HANA: "Storage Location"; B1: "Bin Location" | Already correctly scoped as an optional, warehouse-child bin/shelf dimension; "Location" alone is clear in context and shorter | DO NOT CHANGE |
+| Site | Site | Neither SAP product has an exact match for a construction-project execution site with its own pooled inventory ledger | Genuine Appletree/construction-industry concept, not a terminology gap | APPLETREE BUSINESS TERM — DO NOT CHANGE |
+| MRS (Material Requisition Slip / Material Requisition — Site) | MRS (Site Material Requisition) | No SAP equivalent (India-SME/construction-specific site-material-request process) | Real feature, real term, but TWO different spelled-out forms currently coexist ("Material Requisition Slip (Site)" in the registry vs. "Material Requisition — Site (MRS)" in the UI) | APPLETREE BUSINESS TERM — SHOULD CHANGE (standardize the spelled-out form only, not the abbreviation) |
+| Purchase Requisition (PR) vs Material Requirements (MRQ) vs Material Requests (MR) | Keep all three, document the distinction explicitly | S/4HANA/B1 both use "Purchase Requisition" for PR; MRQ/MR are Appletree's own 2-stage internal demand-aggregation model with no single SAP equivalent | These are genuinely 3 different documents serving 3 different stages (per-line demand → aggregated procurement-facing request → formal SOP-governed requisition) — confirmed by the procurement agent's function-level analysis, not a naming collision. The RISK is user confusion from near-identical names ("Material Requirements" vs "Material Requests"), not a wrong SAP mapping. | REVIEW — rename "Material Requirements" (MRQ) to something more visually distinct from "Material Requests" (MR), e.g. "Material Demand" or "BOM Material Need," WITHOUT changing its underlying meaning — a management/UX decision, not a pure terminology fix |
+| Delivery Challan | Delivery Challan | Indian GST/logistics statutory term; S/4HANA's India localization also uses this exact term | Correct as-is, India-appropriate | DO NOT CHANGE |
+| Gate Pass | N/A | N/A | Confirmed absent from the live application | NOT APPLICABLE |
+| Change Request (Variations) | Change Request (Variations) | Generic PM term, both SAP products have "Change Request"-shaped concepts in PS/PM contexts, but with no exact match to Appletree's revenue/cost variation model | Already correctly using both terms interchangeably with a clear parenthetical; confirmed via code evidence this is 100% one concept, not two | DO NOT CHANGE |
+| Project Cost / Project P&L / Project Profitability (3 distinct functions) | Keep distinguished; consider explicit UI labels matching each function's real scope | S/4HANA CO: "Actual Cost" (`projectCostBreakdown`'s committed/received/invoiced/paid/consumed) vs "Project P&L"/"Profitability Analysis" (`projectPL`, `companyProjectProfitability`) | Real, structurally distinct SAP CO concepts, and Appletree's 3 functions map cleanly onto them — but the exact word "Project Cost" is not itself surfaced as a single ambiguous UI label per the evidence gathered (needs final UI-copy confirmation before closing) | REVIEW |
+| Cost Centre / Profit Centre | Cost Centre / Profit Centre | Both S/4HANA CO and B1 use these exact terms (British spelling, consistent India-localization convention already used throughout) | Real, distinct, correctly-modeled masters (independent GL-line tagging dimensions, not a hierarchy) — confirmed spelling is 100% consistent (zero American-spelling occurrences found) | DO NOT CHANGE |
+| BOM / Bill of Materials | BOM | Universal SAP term (both products) | Single, correctly-scoped concept, no "Production BOM" duplication exists | DO NOT CHANGE |
+| Production Order | Production Order | Both S/4HANA PP and B1 use "Production Order" | Already SAP-aligned; the codebase's own comment ("not the full factory ERP") is an honest scope disclosure, not a naming issue — Work Order/Work Centre/Routing are absent FEATURES, not naming gaps | DO NOT CHANGE (feature-gap disclosure belongs in a different phase, not this nomenclature audit) |
+| Snag | Snag | Neither SAP product has this exact term — "Punch List" is the US-English construction-industry equivalent, "Snag List" is the UK/India-English equivalent | India/UK-English construction-industry standard term, correctly matches Appletree's own market | APPLETREE/INDIA BUSINESS TERM — DO NOT CHANGE |
+| Job Worker | Job Worker | Neither SAP product has an exact "Job Work" (India GST-specific outsourced-processing) concept — closest S/4HANA analog is "Subcontracting" (a different mechanism, PO-based with different tax treatment) | India-manufacturing/GST-specific term, correctly modeled as an entity (GSTIN/PAN/registered fields), not a person | APPLETREE/INDIA BUSINESS TERM — DO NOT CHANGE |
+| APOB | APOB | Indian GST statutory term (Additional Place of Business) — no SAP equivalent | Real feature, correct term, but never expanded on first UI appearance | DO NOT CHANGE the term; SHOULD CHANGE — add a one-time inline expansion the first time APOB appears in the UI (Part 19's own rule) |
+| Journal Voucher / Journal Entry | Journal Voucher (standardize) | S/4HANA: "Journal Entry"; B1 India localization / most Indian ERPs: "Journal Voucher" | India-market audience; already the dominant term in the live, user-facing UI (menu label, screen heading, doc-type label) | SHOULD CHANGE — fix the minority "Journal Entry" occurrences (1 user-visible prompt, a few comments, the JE-draft object's default narration text) to say "Journal Voucher" for full consistency |
+| Clearing | Clearing | Both S/4HANA and B1 use this exact term | Fully consistent, zero competing terms ("Settlement" appears once, in a comment, informally) | DO NOT CHANGE |
+| Reconciliation ("recon" tab) | AR/AP & Tax Reconciliation (label only) | Both SAP products distinguish Account Reconciliation from Bank Reconciliation | The underlying mechanism is already correctly separated into 2 tabs; only the bare tab label ("Reconciliation") could more explicitly state its scope (AR/AP/tax/advances) vs. the sibling "Bank Reconciliation" tab | OPTIONAL |
+| Customer Credit/Debit Note & Supplier Credit/Debit Note | Keep as-is | Credit Memo / Debit Memo (S/4HANA) or Credit Note / Debit Note (B1, India-standard) | B1's "Credit Note"/"Debit Note" wording matches what's already used and is India-market-standard; S/4HANA's "Memo" wording is less familiar to this audience | DO NOT CHANGE |
+| Trial Balance | Trial Balance | Universal | Genuinely, correctly computed (verified: real debit/credit-by-account sum) — the fact it's implemented inline in a route handler rather than a `domain.js` function is an ENGINEERING note, not a naming problem | DO NOT CHANGE (nomenclature); flag the implementation-location split as a separate, non-nomenclature engineering observation |
+| WBS / Work Breakdown Structure | N/A | S/4HANA Project System | Confirmed absent — a genuine unimplemented feature, not a naming gap | NOT APPLICABLE — NO DIRECT SAP EQUIVALENT IMPLEMENTED |
+| Batch / Serial Number / Bin tracking | N/A | S/4HANA MM (Batch Management, Serial Number Profile) | Confirmed absent — genuine unimplemented features; must not claim these terms apply to a single-fungible-pool inventory model | NOT APPLICABLE — NO DIRECT SAP EQUIVALENT IMPLEMENTED |
+| SAC (Services Accounting Code) | N/A (business decision, not nomenclature) | Indian GST statutory term, parallel to HSN for services | Confirmed present only as an optional rate-card attribute, never surfaced as a distinct master/field the way HSN is — this MAY reflect a genuine scope decision (Appletree's billable "services" — installation, AMC — may not require distinct SAC coding) rather than a terminology gap | MANAGEMENT DECISION — confirm with Finance/Compliance whether SAC needs first-class treatment; not a nomenclature fix either way |
+| "Save" (config screens) vs "Post"/"Submit"/"Approve" (documents) | Keep as-is | Universal UI convention (not SAP-specific) | Confirmed cleanly separated — "Save" never appears on a transactional document lifecycle button | DO NOT CHANGE |
+| "Release" (not used as a UI verb) | Do not introduce | S/4HANA MM/PP use "Release" as a standard workflow verb (e.g., release a PO, release a production order) | Appletree's "Approve" already fully covers what SAP calls "Release" for POs/production orders — introducing a second, SAP-matching verb for the same action would fragment, not improve, the existing clean verb discipline | DO NOT CHANGE — SAP TERMINOLOGY SHOULD NOT BE ADOPTED HERE |
+| Bare "Receipt" (ambiguous in isolated strings) | Qualify every isolated occurrence | N/A — a clarity issue, not an SAP-alignment issue | Confirmed genuinely ambiguous in at least 2 isolated UI strings ("Receipt Recorded," "Record Receipt" — disambiguated only by page context, not the string itself) | SHOULD CHANGE — qualify these 2 specific strings (e.g. "Site Receipt Recorded," "Record Site Receipt") |
+| Bare "Payment" (ambiguous in "Payment Requests" tab heading, Clearings table column) | Qualify where genuinely ambiguous | N/A | Confirmed the "Payment Requests" heading and the Clearings table's "Payment" column header don't by themselves indicate AR vs. AP vs. policy-object meaning | SHOULD CHANGE — minor label clarifications only, not a structural rename |
+| Status value CASE inconsistency (10 UPPERCASE_SNAKE vs 16 PascalCase enums) | No forced standardization recommended | N/A — internal representation, not necessarily user-visible | These are INTERNAL constant values; the audit did not find evidence the raw enum string is displayed to users unmodified everywhere (most screens render a status "pill" with its own styling/label) — recommend verifying display-layer mapping exists everywhere BEFORE deciding whether the internal values need normalizing | REVIEW — verify display-layer status labels are already human-friendly regardless of internal casing; if so, DO NOT CHANGE the internal enums (real code-risk for zero user benefit) |
+
+## Reference notes on Part 42 (SAP source evidence)
+
+Terminology comparisons in this crosswalk are drawn from general, publicly documented SAP product
+naming conventions for S/4HANA (Sales, MM, FI, CO modules) and SAP Business One (Purchasing, Sales,
+Banking, Financials modules), as commonly described in SAP's own product documentation and training
+materials. This audit does not have access to SAP's official online help portal in this environment;
+where a specific transaction code or exact screen label is cited (e.g., MIGO, "Goods Receipt PO"),
+it reflects widely and consistently documented product terminology, not a single blog/forum source.
+Any disputed mapping should be independently verified against SAP's official documentation before
+being treated as final for a customer-facing claim of "SAP-grade" terminology.

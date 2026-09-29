@@ -131,7 +131,9 @@ async function main(){
         record('ERP-028','actualQty wildly exceeding plannedQty rejected', overComplete.ok===false, overComplete.error||overComplete);
         const negRejected = await api('pm1','POST',`/api/production-orders/${prodId}/complete`,{actualQty:3, rejectedQty:-1});
         record('ERP-028','Negative rejectedQty rejected', negRejected.ok===false, negRejected.error||negRejected);
-        const validComplete = await api('pm1','POST',`/api/production-orders/${prodId}/complete`,{actualQty:4, rejectedQty:1});
+        // ARCH-2026-002 Wave 2 — SOD-7 (Production Order creator != completer) is now enforced;
+        // 'ceo' completes here deliberately, distinct from 'pm1' who created the order above.
+        const validComplete = await api('ceo','POST',`/api/production-orders/${prodId}/complete`,{actualQty:4, rejectedQty:1});
         record('ERP-028','Valid completion (4 actual, 1 rejected, within planned 5) still succeeds', validComplete.ok===true, validComplete.error||validComplete.productionOrder?.status);
       }
     } else {
@@ -212,7 +214,9 @@ async function main(){
     record('ERP-034 fixture','Installation marked Completed', instDone.ok===true && instDone.installation?.status==='Completed', instDone.error||instDone.installation?.status);
     const qc = await api('pm1','POST','/api/qc-checklists',{projectId:PROJ, installationId:inst.installation?.id, items:[{name:'Fixture check 1'},{name:'Fixture check 2'}]});
     record('ERP-034 fixture','QC checklist created', qc.ok===true, qc.error||qc.qc?.id);
-    const qcResult = qc.ok ? await api('pm1','POST',`/api/qc-checklists/${qc.qc.id}/result`,{items:[{name:'Fixture check 1', passFail:'Pass'},{name:'Fixture check 2', passFail:'Pass'}]}) : {ok:false};
+    // ARCH-2026-002 Wave 2 — SOD-10 (QC checklist creator != result submitter) is now enforced;
+    // 'ceo' submits here deliberately, distinct from 'pm1' who created the checklist above.
+    const qcResult = qc.ok ? await api('ceo','POST',`/api/qc-checklists/${qc.qc.id}/result`,{items:[{name:'Fixture check 1', passFail:'Pass'},{name:'Fixture check 2', passFail:'Pass'}]}) : {ok:false};
     record('ERP-034 fixture','QC checklist marked Passed', qcResult.ok===true && qcResult.qc?.status==='Passed', qcResult.error||qcResult.qc?.status);
 
     // Test A — first, legitimate handover on a project that now genuinely meets every readiness
