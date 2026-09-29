@@ -1549,12 +1549,18 @@ function sanitizeAllData(){
 async function loadOrSeed(){
   if(_sb && _currentUser){
     try{
-      await _sbLoadAll();
+      const failed=await _sbLoadAll();
       sanitizeAllData();
       try{ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }catch(e){}
       await _maybeOfferLocalUpload();
+      if(failed && failed.length){
+        alert(`Could not load shared data for: ${failed.join(', ')}\n\nYou may be seeing outdated or incomplete data for these — other people's entries might not show up until this is fixed. This usually means your account doesn't have permission to read this data yet; contact your admin.\n\nEverything else loaded normally from the shared database.`);
+      }
       return;
-    }catch(e){ console.error('Cloud load failed, falling back to local cache',e); }
+    }catch(e){
+      console.error('Cloud load failed, falling back to local cache',e);
+      alert('Could not connect to the shared database — you are seeing only data saved locally on this device, which may be outdated or missing what other people have entered. Try reloading the page, or contact your admin if this continues.');
+    }
   }
   loadOrSeedLocal();
 }
@@ -5549,18 +5555,35 @@ async function _sbFlush(){
     st.textContent='● Synced'; st.style.color=''; st.style.cursor=''; st.onclick=null;
   }
 }
+// Each table is loaded independently and a failure on one (typically a permission
+// gap — a role/table missing an RLS policy) no longer aborts the load for every
+// OTHER table too. It used to: this ran inside one Promise.all, so a single
+// rejected table (e.g. leads, for a role without access) threw and the caller
+// (loadOrSeed) fell back to that browser's stale local cache for EVERYTHING —
+// quotations, materials, all of it — with zero on-screen indication. That's
+// exactly the "each person only sees their own local copy" symptom this traces
+// back to. Now a failed table just keeps whatever was already in memory for it,
+// and the caller is told which table(s) failed so it can say so on screen.
 async function _sbLoadAll(){
+  const failed=[];
   const entries=await Promise.all(SS_KEYS.map(async k=>{
     const table=SS_TABLE_MAP[k];
-    const {data,error}=await _sb.from(table).select('id,data');
-    if(error) throw error;
-    return [k,(data||[]).map(row=>row.data)];
+    try{
+      const {data,error}=await _sb.from(table).select('id,data');
+      if(error) throw error;
+      return [k,(data||[]).map(row=>row.data)];
+    }catch(e){
+      console.error('Load failed for',k,e);
+      failed.push(k);
+      return [k, DB[k]||[]];
+    }
   }));
   entries.forEach(([k,rows])=>{ DB[k]=rows; });
   try{
     const {data}=await _sb.from('ss_settings').select('data').eq('id',SS_SETTINGS_ROW_ID).maybeSingle();
     if(data&&data.data) DB.settings={...DB.settings,...data.data};
   }catch(e){ console.error('Settings load failed',e); }
+  return failed;
 }
 async function _maybeOfferLocalUpload(){
   const cloudEmpty = SS_KEYS.every(k=>!(DB[k]&&DB[k].length));
