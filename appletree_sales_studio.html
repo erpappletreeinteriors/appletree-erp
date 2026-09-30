@@ -1200,6 +1200,21 @@ label.fl{display:block;font-size:11px;font-weight:600;color:#555;margin-bottom:4
 </div>
 
 <div class="modal-bg" id="modal-bg"><div class="modal" id="modal-box"></div></div>
+<!-- Local-data-safety overlay: shown instead of a forced file download, which is
+     unreliable on iOS Safari (it can navigate the whole tab away to a blob: URL
+     instead of downloading, replacing the app with raw JSON text). This works the
+     same everywhere — plain DOM, no download API, no popup window. -->
+<div id="backup-overlay" style="display:none;position:fixed;inset:0;background:rgba(28,28,26,.55);z-index:300;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:12px;padding:20px;max-width:600px;width:100%;max-height:82vh;display:flex;flex-direction:column;gap:10px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="font-weight:800;font-size:14px;color:var(--red)">⚠ Local data on this device — read before continuing</div>
+    <div id="backup-overlay-msg" style="font-size:12.5px;line-height:1.55;color:var(--text)"></div>
+    <textarea id="backup-overlay-json" readonly style="flex:1;min-height:140px;font-family:monospace;font-size:10.5px;padding:8px;border:1px solid var(--border);border-radius:6px;resize:vertical"></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button class="btn btn-outline" type="button" onclick="copyBackupOverlayJson()">📋 Copy to Clipboard</button>
+      <button class="btn btn-gold" type="button" onclick="closeBackupOverlay()">Continue</button>
+    </div>
+  </div>
+</div>
 
 <!-- ASK — offline smart search over the app's own data, no internet/AI-service required -->
 <button id="ai-assist-btn" onclick="toggleAiAssist()" style="display:none;position:fixed;bottom:22px;right:22px;width:52px;height:52px;border-radius:50%;background:var(--gold);border:none;color:var(--dark);font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.25);z-index:150">💬</button>
@@ -1546,6 +1561,34 @@ function sanitizeAllData(){
   // and self-persists when done, so it never blocks the caller.
   migratePhotosToIndexedDB();
 }
+// Shows local data as selectable/copyable text in-page instead of forcing a file
+// download. A forced download (Blob + <a download> + synthetic click) is unreliable
+// on iOS Safari — it can navigate the whole tab away to a blob: URL showing raw JSON
+// instead of downloading a file, replacing the app entirely and trapping the user in
+// a loop (this happened for real: an iPad user hit exactly this on the local-data-
+// safety warning below). This works identically on every device/browser since it's
+// plain DOM, no download API, no popup window.
+let _backupOverlayResolve=null;
+function showBackupOverlay(msg,dataObj){
+  return new Promise(resolve=>{
+    _backupOverlayResolve=resolve;
+    document.getElementById('backup-overlay-msg').textContent=msg;
+    document.getElementById('backup-overlay-json').value=JSON.stringify(dataObj,null,2);
+    document.getElementById('backup-overlay').style.display='flex';
+  });
+}
+function copyBackupOverlayJson(){
+  const ta=document.getElementById('backup-overlay-json');
+  ta.focus(); ta.select(); ta.setSelectionRange(0,ta.value.length);
+  let copied=false;
+  try{ copied=document.execCommand('copy'); }catch(e){}
+  if(!copied && navigator.clipboard){ navigator.clipboard.writeText(ta.value).catch(()=>{}); }
+  alert('Copied — paste it into a note, email, or message now so it\'s saved somewhere, then send it to your admin.');
+}
+function closeBackupOverlay(){
+  document.getElementById('backup-overlay').style.display='none';
+  if(_backupOverlayResolve){ const r=_backupOverlayResolve; _backupOverlayResolve=null; r(); }
+}
 async function loadOrSeed(){
   if(_sb && _currentUser){
     // Snapshot whatever this browser already had BEFORE the cloud load overwrites DB —
@@ -1566,9 +1609,7 @@ async function loadOrSeed(){
         });
         if(shrunk.length){
           const detail=shrunk.map(k=>`${k}: ${(preLoadLocal[k]||[]).length} on this device → ${(DB[k]||[]).length} in the shared database`).join('\n');
-          alert(`This device has MORE data saved locally than what just came from the shared database:\n\n${detail}\n\nThis usually means some past changes never actually reached the cloud (often a permission issue) and are about to be overwritten. Downloading a backup of what's on this device now, before continuing — send this file to your admin so nothing is lost.`);
-          const blob=new Blob([JSON.stringify(preLoadLocal,null,2)],{type:'application/json'});
-          const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`appletree_sales_studio_LOCAL_BACKUP_${today()}.json`; a.click();
+          await showBackupOverlay(`This device has MORE data saved locally than what just came from the shared database:\n\n${detail}\n\nThis usually means some past changes never actually reached the cloud (often a permission issue) and are about to be overwritten. Copy the text below (tap it, then "Copy to Clipboard") and send it to your admin before continuing, so nothing is lost.`, preLoadLocal);
         }
       }
       try{ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }catch(e){}
